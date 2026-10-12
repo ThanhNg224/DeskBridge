@@ -14,15 +14,18 @@ final class AppModel {
 
     @ObservationIgnored private let settings = Settings()
     @ObservationIgnored private var session: DeviceSession?
+    @ObservationIgnored private var retryNotBefore = Date.distantPast
 
     init() {
         prefs = settings.values
+        // Ask for the permission exactly once; the loop below only checks it silently.
+        _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
         Task { await discoveryLoop() }
     }
 
     private func discoveryLoop() async {
         while !Task.isCancelled {
-            if session == nil {
+            if session == nil, Date() >= retryNotBefore {
                 await tryStartSession()
             }
             try? await Task.sleep(for: .seconds(2))
@@ -30,9 +33,8 @@ final class AppModel {
     }
 
     private func tryStartSession() async {
-        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
-        guard AXIsProcessTrustedWithOptions(options) else {
-            status = "Allow DeskBridge in Privacy & Security > Accessibility"
+        guard AXIsProcessTrusted() else {
+            status = "Allow DeskBridge in Accessibility. If it is already listed, remove it with \u{2212} and add it again."
             needsAccessibility = true
             return
         }
@@ -71,6 +73,10 @@ final class AppModel {
             status = reason
             isActive = false
             session = nil // the discovery loop starts a new session
+            if reason == CaptureError.tapCreationFailed.description {
+                needsAccessibility = true
+                retryNotBefore = Date().addingTimeInterval(20) // do not relaunch the server in a tight loop
+            }
         }
     }
 }
