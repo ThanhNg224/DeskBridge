@@ -2,95 +2,114 @@
 
 ## 1. Overview & Vision
 
-**DeskBridge** is a modern, high-performance mouse and keyboard sharing utility connecting **macOS (Apple Silicon)** and **Android** as independent physical displays (similar to DeskDock, Synergy, or Logitech Flow).
+**DeskBridge** shares one Mac mouse and keyboard with a physical **Android** phone/tablet over a USB cable (similar to DeskDock, Synergy, or Logitech Flow).
 
-When the mouse cursor reaches the edge of the macOS screen, it seamlessly transitions onto the physical Android screen. Keystrokes are directed to whichever device currently holds cursor focus.
+When the Mac cursor pushes through the configured screen edge (left or right), control moves to the Android device. The cursor pushing back through the same edge returns control to the Mac. Keystrokes go to whichever device currently has control.
 
 ```
- +------------------------+                  +------------------------+
- |     macOS (Host)       |                  |    Android (Target)    |
- |  Apple Silicon Native  |                  |   Physical Hardware    |
- |                        |                  |                        |
- |  +------------------+  |                  |  +------------------+  |
- |  |  Swift Controller|  |                  |  | deskbridge-server|  |
- |  |   (CGEventTap)   |  |                  |  |   (app_process)  |  |
- |  +--------+---------+  |                  |  +--------^---------+  |
- |           |            |                  |           |            |
- |  +--------v---------+  |                  |  +--------+---------+  |
- |  |  TCP Client (Mac)|  |  USB ADB Tunnel  |  | TCP Server (DEX) |  |
- |  |  127.0.0.1:28282 +--+==================+->:28282 (Loopback)  |  |
- |  +------------------+  | adb forward tcp  |  +--------+---------+  |
- +------------------------+                  |           |            |
-                                             |  +--------v---------+  |
-                                             |  |   InputManager   |  |
-                                             |  |  (Native Pointer)|  |
-                                             |  +------------------+  |
-                                             +------------------------+
+ +------------------------+                     +--------------------------+
+ |      macOS (Host)      |                     |     Android (Target)     |
+ |                        |                     |                          |
+ |  CGEventTap thread     |                     |  deskbridge-server       |
+ |        |               |                     |  (app_process, UID 2000) |
+ |  DeviceSession         |   USB / adb         |        ^                 |
+ |  (state machine)       |   forward           |  LocalServerSocket       |
+ |        |               |                     |  "deskbridge-<random>"   |
+ |  Connection (NWConn)---+--127.0.0.1:<port>---+--> abstract unix socket   |
+ |                        |   (adb allocates)   |        |                 |
+ +------------------------+                     |  InputInjector           |
+                                                |  (InputManager)          |
+                                                +--------------------------+
 ```
 
 ---
 
-## 2. Core Decisions & Trade-Offs (Accepted)
+## 2. Core Decisions & Trade-Offs
 
 | Component | Selected Strategy | Rationale & Trade-offs |
 | :--- | :--- | :--- |
-| **Android Server Model** | **Standalone JAR via `app_process` (UID 2000)** | **Zero-install on Android**. Pushed to `/data/local/tmp/`. Possesses `INJECT_EVENTS` system permission out of the box. Immune to Android OS background battery optimization / Doze mode. Trade-off: Requires USB debugging enabled. |
-| **Input Injection** | **Native `InputManager.injectInputEvent` via Reflection** | Android renders its **genuine hardware mouse pointer** at full display refresh rate (90Hz/120Hz). Zero jitter, native hover, native scrolling, native drag-and-drop. Trade-off: Uses hidden Android APIs. |
-| **Keyboard Forwarding** | **Raw Keycode + Modifier Remap (`Cmd` -> `Ctrl`)** | Immediate latency-free key repeats and shortcut execution. Automatic remapping translates `Cmd+C` on Mac to `Ctrl+C` on Android. Trade-off: Vietnamese text input uses Android's active physical keyboard IME engine. |
-| **Right-Click Action** | **`BACK` button by default** (with toggle for Context Menu) | 95% of smartphone mouse workflows require quick Back navigation rather than desktop-style context menus. |
-| **Transport Layer** | **Local TCP over ADB Port Forward (`adb forward`)** | Sub-millisecond latency (< 1ms), 100% immune to Wi-Fi jitter or packet drops, charges device concurrently. |
+| **Android server** | Standalone DEX jar run via `app_process` as shell UID (2000) | No APK install; shell holds `INJECT_EVENTS`. Needs USB debugging. Plain Java (no Kotlin stdlib) for fast start. **One server process per session**: it exits when the host disconnects, so there are no stale daemons. |
+| **Input injection** | `InputManager.injectInputEvent` via reflection behind `InputInjector` | Delivers genuine mouse events (hover, scroll, buttons). **Unverified assumption:** whether Android draws the system pointer for injected events. Task 2 is a gate. Fallback: UHID virtual mouse/keyboard (what scrcpy documents for a visible device pointer), swapped in behind the same `InputInjector` method set. |
+| **Mouse model** | Relative deltas from the Mac, pointer position owned by the server | The Mac cursor is frozen while Android has control, so absolute Mac coordinates are meaningless. Deltas are coalesced under backpressure (`MoveCoalescer`). Pointer speed is a Mac-side multiplier (Mac points to Android pixels). |
+| **Transition** | Mac sends `ENTER{edge, along}`, server owns the pointer and sends `EXIT{along}` when pushed back through the entry edge | `along` is the normalized position along the shared edge, so the cursor lines up on both sides. Only left/right edges in MVP. |
+| **Keyboard** | Full Mac virtual keycode → Android keycode table; unmapped keys are dropped; Cmd/Ctrl → `META_CTRL` | Shortcuts like Cmd+C work. Text is not translated, so IME-composed text (Vietnamese Telex/VNI) is **out of MVP**. |
+| **Right click** | Mac sends `KEYCODE_BACK` by default (toggle: real secondary button) | scrcpy does the same; the Android framework does not turn an injected secondary click into Back. |
+| **Transport** | `adb forward tcp:0 localabstract:<random>` + per-session random token | adb allocates a free local port (multi-device safe). Abstract socket, not a TCP port on the phone, so nothing is exposed to the Wi-Fi network. See §5. |
+| **Mac concurrency** | Tap callback on a dedicated thread; all session state on one serial `DispatchQueue`; only the "remote?" flag is shared (unfair lock) | Keeps the tap callback fast (macOS disables slow taps). |
 
 ---
 
 ## 3. Subsystem Breakdown
 
-### 3.1 macOS Controller (`deskbridge-mac`)
-- **Technology:** Swift 6, SwiftUI (Settings/Menu Bar), AppKit, CoreGraphics.
-- **Event Tap:** `CGEventTapCreate` at `kCGHIDEventTap` level capturing:
-  - Mouse Moved, Mouse Down/Up (Left, Right, Other), Scroll Wheel.
-  - Key Down, Key Up, Flags Changed (Shift, Control, Option, Command).
-- **Edge Transition Logic:**
-  - Configurable edge boundary (Right, Left, Top, Bottom).
-  - Transition trigger: Cursor reaches edge coordinate with outward delta.
-  - Cursor Locking: Mac cursor locked at the edge (or invisible cursor positioned) while control is ceded to Android.
-  - Release trigger: Virtual cursor hits Android opposite edge returning to Mac.
-- **ADB Automation:**
-  - Monitors `adb devices -l` for device connection events.
-  - Runs `adb forward tcp:28282 tcp:28282`.
-  - Pushes `deskbridge-server.jar` to `/data/local/tmp/`.
-  - Spawns server via `adb shell app_process ...`.
+### 3.1 macOS (`mac/`, SwiftPM)
+- **`DeskBridgeCore` (library):** protocol codec, `ADBBridge`/`ServerLauncher`, `Connection`, `MoveCoalescer`, `KeyMapper`, `EdgeDetector`, `InputCapturer`, `DeviceSession`, `Settings`. Unit-testable without UI.
+- **`DeskBridge` (executable):** SwiftUI `MenuBarExtra` + `AppModel` (device discovery loop, permission check).
+- **Event tap:** `CGEvent.tapCreate` at `.cghidEventTap`, active filter. Captures mouse move/drag (all buttons), buttons, scroll, key down/up. In local mode events pass through; in remote mode they are swallowed. Re-enables itself on `tapDisabledByTimeout`.
+- **Remote mode:** `CGAssociateMouseAndMouseCursorPosition(false)` + hide cursor, read `mouseEventDeltaX/Y`.
+- **Fail-safes:** release chord **⌃⌥⌘⎋**; control returns to the Mac automatically on disconnect, server exit, or 6 s without a packet.
+- **Device lifecycle:** poll `adb devices` while no session is active; push jar, `forward`, spawn server, connect with retry until the server listens (≤ 8 s).
+- **Packaging:** `scripts/package_app.sh` builds `DeskBridge.app` (LSUIElement, jar in Resources, codesigned) because Accessibility/Input Monitoring permissions attach to a signed bundle.
 
-### 3.2 Android Server Daemon (`deskbridge-server`)
-- **Technology:** Java/Kotlin compiled to Android DEX/JAR (Android SDK 26+).
-- **Process Entry:** Standard `public static void main(String[] args)` executed via `app_process /system/bin com.deskbridge.server.ServerMain`.
-- **Hidden API Bridge:**
-  - Accesses `android.hardware.input.IInputManager` / `InputManager.getInstance()` via Java Reflection.
-  - Constructs `MotionEvent` with `InputDevice.SOURCE_MOUSE` and `MotionEvent.TOOL_TYPE_MOUSE`.
-  - Constructs `KeyEvent` with `InputDevice.SOURCE_KEYBOARD`.
-- **Display Resolution & Coordinate Scaling:**
-  - Query device display metrics (`DisplayManager` / `SurfaceControl.getDynamicDisplayInfo` or `IWindowManager`).
-  - Converts normalized coordinates `(normX: 0.0 .. 1.0, normY: 0.0 .. 1.0)` or relative deltas `(dx, dy)` into physical display pixels adjusted for screen orientation (0, 90, 180, 270 degrees).
+### 3.2 Android server (`server/`, plain Java, no Gradle)
+- Built with `javac --release 11` against the SDK `android.jar`, then `d8 --min-api 26`, zipped as `deskbridge-server.jar`.
+- Entry: `app_process / com.deskbridge.server.ServerMain <socketName> <token>`.
+- Pure-Java, unit-tested logic: `ProtocolDecoder`, `PointerState` (position, clamping, edge exit).
+- Android-bound: `InputInjector`, `DisplayHelper` (`DisplayManagerGlobal`/`DisplayInfo` logical size + rotation), `ServerMain`.
+- Display size is re-read on every `ENTER`, so rotation between visits is handled.
 
 ---
 
-## 4. Communication Protocol (Binary Packet Specification)
+## 4. Communication Protocol
 
-Communication runs over a stream TCP socket. Every packet starts with a 1-byte `PacketType` followed by a fixed-length payload.
+Stream over the forwarded socket. Big-endian. Each packet is `type:u8` + fixed payload. Action codes everywhere: `0 = DOWN`, `1 = UP`.
 
-### Packet Types:
-- `0x01` - `HANDSHAKE_INIT` (Mac -> Android): Client protocol version, configuration.
-- `0x02` - `HANDSHAKE_RESP` (Android -> Mac): Display width, display height, orientation, density.
-- `0x10` - `MOUSE_MOVE_ABS` (Mac -> Android): Absolute target coordinates `[x: Float32, y: Float32]`.
-- `0x11` - `MOUSE_MOVE_REL` (Mac -> Android): Relative movement delta `[dx: Float32, dy: Float32]`.
-- `0x12` - `MOUSE_BUTTON` (Mac -> Android): Button ID `[button: UInt8, action: UInt8]` (action: 0=UP, 1=DOWN).
-- `0x13` - `MOUSE_SCROLL` (Mac -> Android): Scroll deltas `[hScroll: Float32, vScroll: Float32]`.
-- `0x20` - `KEY_EVENT` (Mac -> Android): Keycode `[keyCode: Int32, action: UInt8, metaState: Int32]`.
-- `0x30` - `CLIPBOARD_SYNC` (Bidirectional): Length prefix + UTF-8 payload.
-- `0xFE` - `PING` / `0xFF` - `PONG`: Heartbeat.
+| Type | Name | Direction | Payload |
+| :--- | :--- | :--- | :--- |
+| `0x01` | `HELLO` | Mac→Android | `version:u8` (=1), `token:32 ASCII bytes` |
+| `0x02` | `HELLO_OK` | Android→Mac | `width:i32`, `height:i32`, `rotation:i32` |
+| `0x04` | `ENTER` | Mac→Android | `edge:u8` (Android edge the pointer appears on: 0 left, 1 right), `along:f32` (0..1) |
+| `0x05` | `EXIT` | Android→Mac | `along:f32` (0..1) |
+| `0x06` | `LEAVE` | Mac→Android | none (Mac took control back, e.g. release chord) |
+| `0x11` | `MOUSE_MOVE_REL` | Mac→Android | `dx:f32`, `dy:f32` (Android pixels) |
+| `0x12` | `MOUSE_BUTTON` | Mac→Android | `button:u8` (Android `BUTTON_*` bit: 1 primary, 2 secondary, 4 tertiary), `action:u8` |
+| `0x13` | `MOUSE_SCROLL` | Mac→Android | `h:f32`, `v:f32` (wheel lines; Android axis sign) |
+| `0x20` | `KEY_EVENT` | Mac→Android | `keyCode:i32` (Android), `action:u8`, `metaState:i32` (Android) |
+| `0xFE` | `PING` | Mac→Android | none (every 2 s) |
+| `0xFF` | `PONG` | Android→Mac | none |
+
+Rules:
+- The server accepts exactly one connection, requires `HELLO` first, and exits on a bad token, a bad version, an unknown packet type, 6 s without data, or EOF.
+- The server ignores move/button/scroll/key packets while the pointer is not "entered".
+- `CLIPBOARD_SYNC` is not part of the MVP.
 
 ---
 
-## 5. Security & System Requirements
-- **macOS:** macOS 13+ (Ventura, Sonoma, Sequoia) on Apple Silicon (M1/M2/M3/M4). Accessibility permission enabled in System Settings.
-- **Android:** Android 8.0 (API 26) through Android 15/16. Developer Options + USB Debugging enabled.
-- **Development Tools:** Xcode 16+, Swift 6, JDK 17+, Android SDK Platform Tools (ADB).
+## 5. Security Model
+
+The server runs as shell UID with the power to inject arbitrary input, so access to its socket is access to the phone.
+
+- **No network exposure:** the server listens on an Android *abstract unix socket*, never a TCP port. Nothing is reachable from Wi-Fi.
+- **Unguessable endpoint:** the socket name is `deskbridge-<8 random hex>`, chosen per session by the Mac and passed as an argument.
+- **Token:** a 32-hex-char random token (generated per session by the Mac, passed as an argument) must be the first thing sent (`HELLO`); compared in constant time. This also stops other local processes on the Mac that find the forwarded port.
+- **Short life:** the server exits if nobody connects within 15 s and ends with the session.
+- Process arguments are not visible to other Android apps (per-UID process isolation).
+
+---
+
+## 6. Requirements
+
+- **macOS:** 14+ on Apple Silicon. Accessibility permission (Input Monitoring if prompted). Build with Xcode 16+/Swift 6 toolchain.
+- **Android:** 8.0 (API 26) and up, including Android 16 (API 36). USB debugging enabled. Xiaomi/HyperOS and some other OEMs also need "USB debugging (Security settings)" for injection to work.
+- **Dev tools:** JDK 17+ (`javac`, `jar`), Android SDK (`build-tools` for `d8`, any `platforms/android-*`), `adb`.
+
+---
+
+## 7. Known Risks & Non-Goals
+
+**Risks (tracked by gates in the plan)**
+1. System pointer may not render for injected events (Task 2 gate; fallback UHID).
+2. Hidden APIs (`InputManager.getInstance`, `DisplayManagerGlobal`) can change per Android release; the spike script is the per-device regression check.
+3. Latency over adb USB is typically a few ms with jitter, not sub-ms. Target: p95 < 10 ms end-to-end; measure rather than promise.
+4. Hiding the cursor from a background (menu-bar) app is best effort.
+
+**Non-goals for MVP:** clipboard sync, Vietnamese/IME text input, top/bottom edges, multiple simultaneous devices, wireless ADB, rotation changes *during* a visit, display mirroring.
