@@ -13,7 +13,7 @@ Read first: `docs/ARCHITECTURE.md` (decisions, protocol, security) and `docs/IMP
 
 ## Rules
 
-- **Task 2 of the plan is a gate.** Do not start Task 3+ until `PointerSpike` shows a visible pointer, click, scroll and Back on a real device. If it fails, amend the plan (UHID fallback) first.
+- Android does not draw or move its system pointer for injected events (verified on Android 13). The server draws its own arrow with `CursorOverlay` (shell-owned `SurfaceControl` layer). Re-run `PointerSpike` on any new device/Android version; `hold` and `click X Y` modes exist for screenshots (`adb exec-out screencap -p`).
 - The protocol is a contract: `PacketType.java`/`ProtocolDecoder.java` and `Packets.swift` must match ARCHITECTURE §4 byte for byte. Actions: `0 = DOWN`, `1 = UP`. Change both sides and both test suites together.
 - Server must never listen on a TCP port. Abstract unix socket, random name, per-session token (ARCHITECTURE §5).
 - Fail fast: no silent fallbacks around reflection or injection; surface the error to the Mac.
@@ -21,7 +21,7 @@ Read first: `docs/ARCHITECTURE.md` (decisions, protocol, security) and `docs/IMP
 
 ## Gotchas already hit
 
-- `MotionEvent.setActionButton` is `@hide`: call it by reflection (not in `android.jar`).
+- `SurfaceControl.Transaction` has `setVisibility`, not `show/hide`, in the public stubs. `MotionEvent.setActionButton` is `@hide`: call it by reflection (not in `android.jar`).
 - Event tap callback must return `Unmanaged.passUnretained(event)` (not `passRetained`) and respond to `tapDisabledByTimeout`; keep the callback cheap and off the main thread.
 - While Android has control the Mac cursor is frozen: use `mouseEventDeltaX/Y`, never `event.location`, for movement.
 - Right click maps to `KEYCODE_BACK` on the Mac side; Android does not do it for injected secondary clicks.

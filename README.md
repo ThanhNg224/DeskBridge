@@ -4,7 +4,8 @@
 
 A spiritual successor to DeskDock built with modern tooling:
 - **No APK on Android**: a plain-Java server runs through ADB `app_process` (shell UID).
-- **Real mouse events**: hover, click, drag and scroll injected through Android's `InputManager` (visible-pointer behavior is verified by a gate task, see the plan).
+- **Real mouse events**: hover, click, drag and scroll injected through Android's `InputManager`, with a pointer drawn by the server itself (injected events do not move Android's system pointer; verified on a device).
+- **Sub-millisecond transport**: adb USB round trip measured p50 0.74 ms / p95 1.33 ms.
 - **USB only, no network exposure**: adb-forwarded abstract socket, random name and per-session token.
 - **Apple Silicon native**: Swift 6 menu bar app with a `CGEventTap`, edge transition in both directions.
 - **Shortcuts that work**: `Cmd` becomes `Ctrl` (Cmd+C/V/A), complete keycode table.

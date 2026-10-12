@@ -1,6 +1,6 @@
 # DeskBridge Implementation Plan
 
-> Steps use checkbox (`- [ ]`) syntax. Tasks are ordered by dependency. **Task 2 is a decision gate**: do not start Task 3+ before it passes.
+> Steps use checkbox (`- [ ]`) syntax. Tasks are ordered by dependency. **Status:** all tasks implemented; Task 2 gate result is recorded below. The code in `server/` and `mac/` is the source of truth; code blocks here are the original design and may lag it.
 
 **Goal:** A low-latency DeskDock alternative for macOS (Apple Silicon) and Android that shares the Mac mouse and keyboard across the screen edge over a USB/ADB tunnel, with no APK installed on the phone.
 
@@ -783,6 +783,8 @@ Record device, Android version and result in the commit message. Test at least o
 **Gate decision:**
 - Stages 1–4 pass → continue with Task 3.
 - Pointer not visible, or injection throws (`SecurityException`, `NoSuchMethodException`) → **stop**. Amend this plan: replace `InputInjector` with a UHID-backed injector (virtual HID mouse + keyboard through `/dev/uhid`, the approach scrcpy documents for a visible device pointer) behind the same method set (`hover`, `button`, `scroll`, `key`, ...), and re-run this step. If UHID is also blocked, evaluate AOA over USB from the Mac. The protocol, `PointerState`, and all Mac tasks stay unchanged except that UHID needs HID usage codes in `KeyMapper`.
+
+**Gate result (Galaxy Note10 Lite SM-N770F, Android 13, 2026-10-12):** injection works (a click opened Calendar, Back and scroll acted), but Android's system pointer is **not** drawn or moved by injected events (SurfaceFlinger `Sprite` layer: hidden, no buffer, position unchanged). Decision: keep absolute injection and draw the pointer ourselves with a shell-owned `SurfaceControl` layer (`CursorOverlay`, verified by screenshot). UHID stays a fallback only. `PointerSpike` now shows the overlay.
 
 - [ ] **Step 6: Commit**
 

@@ -29,7 +29,7 @@ When the Mac cursor pushes through the configured screen edge (left or right), c
 | Component | Selected Strategy | Rationale & Trade-offs |
 | :--- | :--- | :--- |
 | **Android server** | Standalone DEX jar run via `app_process` as shell UID (2000) | No APK install; shell holds `INJECT_EVENTS`. Needs USB debugging. Plain Java (no Kotlin stdlib) for fast start. **One server process per session**: it exits when the host disconnects, so there are no stale daemons. |
-| **Input injection** | `InputManager.injectInputEvent` via reflection behind `InputInjector` | Delivers genuine mouse events (hover, scroll, buttons). **Unverified assumption:** whether Android draws the system pointer for injected events. Task 2 is a gate. Fallback: UHID virtual mouse/keyboard (what scrcpy documents for a visible device pointer), swapped in behind the same `InputInjector` method set. |
+| **Input injection** | `InputManager.injectInputEvent` via reflection (absolute hover/click/scroll/keys) + a **server-drawn cursor** (`SurfaceControl` overlay) | Verified on a Galaxy Note10 Lite (Android 13): injected events do **not** move or draw Android's system pointer (its sprite layer stays hidden at its old position), but they act exactly (a click opens the app under it). A shell-owned `SurfaceControl` layer can be drawn above everything, so the server paints its own arrow and keeps it in sync with the injected position: exact tracking, no pointer acceleration drift, no `/dev/uhid` dependency. Trade-off: the arrow does not change shape (text/hand), and layer/hidden-API behavior must be re-checked per Android version with `PointerSpike`. Fallback if a device blocks the layer: UHID relative mouse. |
 | **Mouse model** | Relative deltas from the Mac, pointer position owned by the server | The Mac cursor is frozen while Android has control, so absolute Mac coordinates are meaningless. Deltas are coalesced under backpressure (`MoveCoalescer`). Pointer speed is a Mac-side multiplier (Mac points to Android pixels). |
 | **Transition** | Mac sends `ENTER{edge, along}`, server owns the pointer and sends `EXIT{along}` when pushed back through the entry edge | `along` is the normalized position along the shared edge, so the cursor lines up on both sides. Only left/right edges in MVP. |
 | **Keyboard** | Full Mac virtual keycode → Android keycode table; unmapped keys are dropped; Cmd/Ctrl → `META_CTRL` | Shortcuts like Cmd+C work. Text is not translated, so IME-composed text (Vietnamese Telex/VNI) is **out of MVP**. |
@@ -54,7 +54,7 @@ When the Mac cursor pushes through the configured screen edge (left or right), c
 - Built with `javac --release 11` against the SDK `android.jar`, then `d8 --min-api 26`, zipped as `deskbridge-server.jar`.
 - Entry: `app_process / com.deskbridge.server.ServerMain <socketName> <token>`.
 - Pure-Java, unit-tested logic: `ProtocolDecoder`, `PointerState` (position, clamping, edge exit).
-- Android-bound: `InputInjector`, `DisplayHelper` (`DisplayManagerGlobal`/`DisplayInfo` logical size + rotation), `ServerMain`.
+- Android-bound: `InputInjector`, `CursorOverlay` (arrow drawn into a `SurfaceControl` layer, shown on `ENTER`, hidden on exit), `DisplayHelper` (`DisplayManagerGlobal`/`DisplayInfo` logical size + rotation), `ServerMain`.
 - Display size is re-read on every `ENTER`, so rotation between visits is handled.
 
 ---
@@ -107,9 +107,9 @@ The server runs as shell UID with the power to inject arbitrary input, so access
 ## 7. Known Risks & Non-Goals
 
 **Risks (tracked by gates in the plan)**
-1. System pointer may not render for injected events (Task 2 gate; fallback UHID).
+1. ~~System pointer may not render for injected events~~ confirmed on Android 13: it does not. Mitigated by the server-drawn cursor (see §2). Untested on other Android versions/OEMs.
 2. Hidden APIs (`InputManager.getInstance`, `DisplayManagerGlobal`) can change per Android release; the spike script is the per-device regression check.
-3. Latency over adb USB is typically a few ms with jitter, not sub-ms. Target: p95 < 10 ms end-to-end; measure rather than promise.
+3. Latency: measured PING/PONG round trip over adb USB on a Galaxy Note10 Lite: p50 0.74 ms, p95 1.33 ms (one way about 0.4 ms). End-to-end adds Mac event tap + Android injection; target p95 < 10 ms, re-measure with `pingRoundTripLatency` and a video capture.
 4. Hiding the cursor from a background (menu-bar) app is best effort.
 
 **Non-goals for MVP:** clipboard sync, Vietnamese/IME text input, top/bottom edges, multiple simultaneous devices, wireless ADB, rotation changes *during* a visit, display mirroring.

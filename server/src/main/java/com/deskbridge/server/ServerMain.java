@@ -85,24 +85,28 @@ public final class ServerMain {
         System.out.println("[DeskBridge] host connected, display " + size.width + "x" + size.height);
 
         PointerState pointer = new PointerState();
-        ProtocolDecoder decoder = new ProtocolDecoder(new Handler(injector, pointer, out));
-        try {
-            while (decoder.processNext(in)) {
-                // loop until EOF
+        try (CursorOverlay overlay = new CursorOverlay(size.width)) {
+            ProtocolDecoder decoder = new ProtocolDecoder(new Handler(injector, overlay, pointer, out));
+            try {
+                while (decoder.processNext(in)) {
+                    // loop until EOF
+                }
+            } finally {
+                injector.releaseAll(pointer.x(), pointer.y());
             }
-        } finally {
-            injector.releaseAll(pointer.x(), pointer.y());
         }
     }
 
     /** Runs on the single session thread, so writes to `out` need no locking. */
     private static final class Handler implements ProtocolDecoder.Listener {
         private final InputInjector injector;
+        private final CursorOverlay overlay;
         private final PointerState pointer;
         private final DataOutputStream out;
 
-        Handler(InputInjector injector, PointerState pointer, DataOutputStream out) {
+        Handler(InputInjector injector, CursorOverlay overlay, PointerState pointer, DataOutputStream out) {
             this.injector = injector;
+            this.overlay = overlay;
             this.pointer = pointer;
             this.out = out;
         }
@@ -115,6 +119,7 @@ public final class ServerMain {
             } catch (ReflectiveOperationException e) {
                 throw new IllegalStateException("display query failed", e);
             }
+            overlay.show(pointer.x(), pointer.y());
             injector.hover(pointer.x(), pointer.y());
         }
 
@@ -133,10 +138,12 @@ public final class ServerMain {
             if (pointer.moveBy(dx, dy)) {
                 injector.releaseAll(pointer.x(), pointer.y());
                 injector.hoverExit(pointer.x(), pointer.y());
+                overlay.hide();
                 out.writeByte(PacketType.EXIT);
                 out.writeFloat(pointer.along());
                 out.flush();
             } else {
+                overlay.moveTo(pointer.x(), pointer.y());
                 injector.hover(pointer.x(), pointer.y());
             }
         }
@@ -171,6 +178,7 @@ public final class ServerMain {
         private void endVisit() {
             injector.releaseAll(pointer.x(), pointer.y());
             injector.hoverExit(pointer.x(), pointer.y());
+            overlay.hide();
             pointer.leave();
         }
     }
