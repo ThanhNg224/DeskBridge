@@ -2,7 +2,7 @@
 # Builds build/DeskBridge.app. Accessibility/Input Monitoring grants attach to the signed bundle,
 # so use a stable identity to keep them across rebuilds:
 #   CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" scripts/package_app.sh
-# The default ad-hoc identity ("-") changes on every build and resets the permissions.
+# The default ad-hoc identity keeps grants across rebuilds via a bundle-id requirement (see below).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -33,5 +33,12 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-codesign --force --sign "${CODESIGN_IDENTITY:--}" "$APP"
+IDENTITY="${CODESIGN_IDENTITY:--}"
+if [ "$IDENTITY" = "-" ]; then
+  # Ad-hoc: bind the signature to the bundle id instead of the binary hash, so the Accessibility /
+  # Input Monitoring grant survives rebuilds (a hash-bound grant goes stale after every build).
+  codesign --force --sign - --requirements '=designated => identifier "com.deskbridge.app"' "$APP"
+else
+  codesign --force --sign "$IDENTITY" "$APP"
+fi
 echo "Built $APP"
