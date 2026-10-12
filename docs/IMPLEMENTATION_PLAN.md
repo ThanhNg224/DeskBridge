@@ -512,8 +512,8 @@ OUT="$ROOT/server/build"
 rm -rf "$OUT/classes" "$OUT/dex" "$OUT/classes.jar" "$OUT/deskbridge-server.jar"
 mkdir -p "$OUT/classes" "$OUT/dex"
 
-javac --release 11 -Xlint:-options -cp "$ANDROID_JAR" -d "$OUT/classes" \
-  $(find "$ROOT/server/src/main" -name '*.java')
+find "$ROOT/server/src/main" -name '*.java' > "$OUT/sources.txt"
+javac --release 11 -Xlint:-options -cp "$ANDROID_JAR" -d "$OUT/classes" @"$OUT/sources.txt"
 jar cf "$OUT/classes.jar" -C "$OUT/classes" .
 
 "$BUILD_TOOLS/d8" --release --min-api 26 --lib "$ANDROID_JAR" --output "$OUT/dex" "$OUT/classes.jar"
@@ -1041,7 +1041,7 @@ let package = Package(
     name: "DeskBridge",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "DeskBridge", targets: ["DeskBridge"])
+        .executable(name: "DeskBridge", targets: ["DeskBridge"]),
     ],
     targets: [
         .target(name: "DeskBridgeCore", path: "Sources/DeskBridgeCore"),
@@ -1077,9 +1077,9 @@ struct DeskBridgeApp: App {
 - [ ] **Step 3: Write failing tests `mac/Tests/DeskBridgeCoreTests/PacketsTests.swift`**
 
 ```swift
+@testable import DeskBridgeCore
 import Foundation
 import Testing
-@testable import DeskBridgeCore
 
 struct PacketsTests {
     @Test func encodesHello() {
@@ -1112,14 +1112,15 @@ struct PacketsTests {
     @Test func tokenIs32HexChars() {
         let token = ProtocolEncoder.makeToken()
         #expect(token.count == 32)
-        #expect(token.allSatisfy { $0.isHexDigit })
+        let allHex = token.allSatisfy { $0.isHexDigit }
+        #expect(allHex)
         #expect(token != ProtocolEncoder.makeToken())
     }
 
     @Test func parsesHelloOKSplitAcrossReads() throws {
         var parser = ServerPacketParser()
         let bytes: [UInt8] = [0x02, 0, 0, 4, 56, 0, 0, 9, 96, 0, 0, 0, 1]
-        #expect(try parser.feed(Data(bytes[0..<5])).isEmpty)
+        #expect(try parser.feed(Data(bytes[0 ..< 5])).isEmpty)
         let packets = try parser.feed(Data(bytes[5...]))
         #expect(packets == [.helloOK(width: 1080, height: 2400, rotation: 1)])
     }
@@ -1176,7 +1177,7 @@ public enum ProtocolEncoder {
     /// 16 random bytes as 32 lowercase hex characters.
     public static func makeToken() -> String {
         var generator = SystemRandomNumberGenerator()
-        return (0..<16)
+        return (0 ..< 16)
             .map { _ in String(format: "%02x", UInt8.random(in: .min ... .max, using: &generator)) }
             .joined()
     }
@@ -1193,7 +1194,9 @@ public enum ProtocolEncoder {
         return data
     }
 
-    public static func leave() -> Data { Data([PacketType.leave.rawValue]) }
+    public static func leave() -> Data {
+        Data([PacketType.leave.rawValue])
+    }
 
     public static func moveRel(dx: Float, dy: Float) -> Data {
         var data = Data([PacketType.mouseMoveRel.rawValue])
@@ -1223,7 +1226,9 @@ public enum ProtocolEncoder {
         return data
     }
 
-    public static func ping() -> Data { Data([PacketType.ping.rawValue]) }
+    public static func ping() -> Data {
+        Data([PacketType.ping.rawValue])
+    }
 }
 
 public enum ServerPacket: Equatable, Sendable {
@@ -1252,7 +1257,8 @@ public struct ServerPacketParser: Sendable {
                 packets.append(.helloOK(
                     width: Int32(bitPattern: word(at: 1)),
                     height: Int32(bitPattern: word(at: 5)),
-                    rotation: Int32(bitPattern: word(at: 9))))
+                    rotation: Int32(bitPattern: word(at: 9))
+                ))
                 buffer.removeFirst(13)
             case .exit:
                 guard buffer.count >= 5 else { return packets }
@@ -1274,12 +1280,18 @@ public struct ServerPacketParser: Sendable {
     }
 }
 
-extension Data {
-    fileprivate mutating func appendBE(_ value: UInt32) {
+private extension Data {
+    mutating func appendBE(_ value: UInt32) {
         Swift.withUnsafeBytes(of: value.bigEndian) { append(contentsOf: $0) }
     }
-    fileprivate mutating func appendBE(_ value: Int32) { appendBE(UInt32(bitPattern: value)) }
-    fileprivate mutating func appendBE(_ value: Float) { appendBE(value.bitPattern) }
+
+    mutating func appendBE(_ value: Int32) {
+        appendBE(UInt32(bitPattern: value))
+    }
+
+    mutating func appendBE(_ value: Float) {
+        appendBE(value.bitPattern)
+    }
 }
 ```
 
@@ -1312,8 +1324,8 @@ git commit -m "feat(mac): SwiftPM package with core library and protocol codec"
 - [ ] **Step 1: Write failing test `mac/Tests/DeskBridgeCoreTests/ADBBridgeTests.swift`**
 
 ```swift
-import Testing
 @testable import DeskBridgeCore
+import Testing
 
 struct ADBBridgeTests {
     @Test func parsesDeviceList() {
@@ -1355,7 +1367,9 @@ import Foundation
 public struct AdbDevice: Equatable, Sendable {
     public let serial: String
     public let state: String
-    public var isReady: Bool { state == "device" }
+    public var isReady: Bool {
+        state == "device"
+    }
 }
 
 public enum ADBError: Error, CustomStringConvertible {
@@ -1366,8 +1380,8 @@ public enum ADBError: Error, CustomStringConvertible {
     public var description: String {
         switch self {
         case .adbNotFound: "adb not found. Install Android platform-tools or set ANDROID_HOME."
-        case .commandFailed(let output): "adb failed: \(output.trimmingCharacters(in: .whitespacesAndNewlines))"
-        case .badForwardOutput(let output): "Unexpected adb forward output: \(output)"
+        case let .commandFailed(output): "adb failed: \(output.trimmingCharacters(in: .whitespacesAndNewlines))"
+        case let .badForwardOutput(output): "Unexpected adb forward output: \(output)"
         }
     }
 }
@@ -1383,8 +1397,12 @@ public struct ADBBridge: Sendable {
     public static func locate() -> String? {
         let env = ProcessInfo.processInfo.environment
         var candidates: [String] = []
-        if let adb = env["ADB"] { candidates.append(adb) }
-        if let sdk = env["ANDROID_HOME"] ?? env["ANDROID_SDK_ROOT"] { candidates.append(sdk + "/platform-tools/adb") }
+        if let adb = env["ADB"] {
+            candidates.append(adb)
+        }
+        if let sdk = env["ANDROID_HOME"] ?? env["ANDROID_SDK_ROOT"] {
+            candidates.append(sdk + "/platform-tools/adb")
+        }
         candidates += [
             NSHomeDirectory() + "/Library/Android/sdk/platform-tools/adb",
             "/opt/homebrew/bin/adb",
@@ -1414,7 +1432,7 @@ public struct ADBBridge: Sendable {
     // MARK: - Commands
 
     public func devices() throws -> [AdbDevice] {
-        Self.parseDevices(try run(["devices"]))
+        try Self.parseDevices(run(["devices"]))
     }
 
     public func push(serial: String, local: URL, remote: String) throws {
@@ -1423,7 +1441,7 @@ public struct ADBBridge: Sendable {
 
     /// Lets adb pick a free local port and returns it.
     public func forward(serial: String, abstractSocket: String) throws -> Int {
-        try Self.parseForwardPort(try run(["-s", serial, "forward", "tcp:0", "localabstract:\(abstractSocket)"]))
+        try Self.parseForwardPort(run(["-s", serial, "forward", "tcp:0", "localabstract:\(abstractSocket)"]))
     }
 
     public func removeForward(serial: String, port: Int) {
@@ -1489,7 +1507,9 @@ public final class LaunchedServer: @unchecked Sendable {
         }
     }
 
-    public var isRunning: Bool { process.isRunning }
+    public var isRunning: Bool {
+        process.isRunning
+    }
 
     /// Last stderr output of the server (e.g. a SecurityException from input injection).
     public var lastError: String {
@@ -1497,7 +1517,9 @@ public final class LaunchedServer: @unchecked Sendable {
     }
 
     public func terminate() {
-        if process.isRunning { process.terminate() }
+        if process.isRunning {
+            process.terminate()
+        }
         adb.removeForward(serial: serial, port: port)
     }
 }
@@ -1574,8 +1596,8 @@ git commit -m "feat(mac): ADBBridge and ServerLauncher (random abstract socket +
 - [ ] **Step 1: Write failing tests `mac/Tests/DeskBridgeCoreTests/MoveCoalescerTests.swift`**
 
 ```swift
-import Testing
 @testable import DeskBridgeCore
+import Testing
 
 struct MoveCoalescerTests {
     @Test func sendsImmediatelyWhenIdle() {
@@ -1647,7 +1669,9 @@ public struct MoveCoalescer: Sendable {
     }
 
     /// Takes the pending delta even if a send is in flight (before a button/key, to keep ordering).
-    public mutating func flush() -> Delta? { take() }
+    public mutating func flush() -> Delta? {
+        take()
+    }
 
     private mutating func take() -> Delta? {
         guard pendingX != 0 || pendingY != 0 else { return nil }
@@ -1685,7 +1709,8 @@ public final class Connection: @unchecked Sendable {
         connection = NWConnection(
             host: "127.0.0.1",
             port: NWEndpoint.Port(rawValue: port) ?? 1,
-            using: NWParameters(tls: nil, tcp: tcp))
+            using: NWParameters(tls: nil, tcp: tcp)
+        )
     }
 
     public func start() {
@@ -1693,10 +1718,10 @@ public final class Connection: @unchecked Sendable {
             guard let self else { return }
             switch state {
             case .ready:
-                self.onReady?()
-                self.receiveLoop()
+                onReady?()
+                receiveLoop()
             case .failed, .cancelled, .waiting: // .waiting == connection refused; the caller retries
-                self.close()
+                close()
             default:
                 break
             }
@@ -1706,7 +1731,9 @@ public final class Connection: @unchecked Sendable {
 
     public func send(_ data: Data, completion: (@Sendable () -> Void)? = nil) {
         connection.send(content: data, completion: .contentProcessed { [weak self] error in
-            if error != nil { self?.close() }
+            if error != nil {
+                self?.close()
+            }
             completion?()
         })
     }
@@ -1718,11 +1745,13 @@ public final class Connection: @unchecked Sendable {
     private func receiveLoop() {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { [weak self] data, _, isComplete, error in
             guard let self else { return }
-            if let data, !data.isEmpty { self.onData?(data) }
+            if let data, !data.isEmpty {
+                onData?(data)
+            }
             if isComplete || error != nil {
-                self.close()
+                close()
             } else {
-                self.receiveLoop()
+                receiveLoop()
             }
         }
     }
@@ -1768,8 +1797,8 @@ Create `mac/Tests/DeskBridgeCoreTests/KeyMapperTests.swift`:
 ```swift
 import Carbon.HIToolbox
 import CoreGraphics
-import Testing
 @testable import DeskBridgeCore
+import Testing
 
 struct KeyMapperTests {
     @Test func mapsLettersDigitsAndControls() {
@@ -1813,16 +1842,16 @@ Create `mac/Tests/DeskBridgeCoreTests/EdgeDetectorTests.swift`:
 
 ```swift
 import CoreGraphics
-import Testing
 @testable import DeskBridgeCore
+import Testing
 
 struct EdgeDetectorTests {
     let bounds = CGRect(x: 0, y: 0, width: 1512, height: 982)
 
-    @Test func rightEdgeCrossingReportsAlong() {
+    @Test func rightEdgeCrossingReportsAlong() throws {
         let d = EdgeDetector(edge: .right, bounds: bounds)
         let along = d.crossing(at: CGPoint(x: 1511, y: 491), deltaX: 4)
-        #expect(along != nil && abs(along! - 0.5) < 0.001)
+        #expect(try along != nil && abs(#require(along) - 0.5) < 0.001)
     }
 
     @Test func noCrossingWhenMovingInwardOrAwayFromEdge() {
@@ -1895,10 +1924,14 @@ public enum KeyMapper {
     public static func androidMeta(forFlags rawFlags: UInt64) -> Int32 {
         let flags = CGEventFlags(rawValue: rawFlags)
         var meta: Int32 = 0
-        if flags.contains(.maskShift) { meta |= 0x1 | 0x40 }      // META_SHIFT_ON | META_SHIFT_LEFT_ON
-        if flags.contains(.maskAlternate) { meta |= 0x2 | 0x10 }  // META_ALT_ON | META_ALT_LEFT_ON
+        if flags.contains(.maskShift) {
+            meta |= 0x1 | 0x40
+        } // META_SHIFT_ON | META_SHIFT_LEFT_ON
+        if flags.contains(.maskAlternate) {
+            meta |= 0x2 | 0x10
+        } // META_ALT_ON | META_ALT_LEFT_ON
         if flags.contains(.maskCommand) || flags.contains(.maskControl) {
-            meta |= 0x1000 | 0x2000                                // META_CTRL_ON | META_CTRL_LEFT_ON
+            meta |= 0x1000 | 0x2000 // META_CTRL_ON | META_CTRL_LEFT_ON
         }
         return meta
     }
@@ -1923,7 +1956,9 @@ public enum ScreenEdge: Int, Sendable, CaseIterable {
     case right = 1
 
     /// The Android edge the pointer appears on is the opposite one.
-    public var androidEntryEdge: AndroidEdge { self == .right ? .left : .right }
+    public var androidEntryEdge: AndroidEdge {
+        self == .right ? .left : .right
+    }
 }
 
 public struct EdgeDetector: Sendable {
@@ -1953,7 +1988,8 @@ public struct EdgeDetector: Sendable {
     public func returnPoint(along: Float, inset: CGFloat = 12) -> CGPoint {
         CGPoint(
             x: edge == .right ? bounds.maxX - inset : bounds.minX + inset,
-            y: bounds.minY + CGFloat(along) * (bounds.height - 1))
+            y: bounds.minY + CGFloat(along) * (bounds.height - 1)
+        )
     }
 
     public static func currentBounds() -> CGRect {
@@ -2050,7 +2086,7 @@ public final class InputCapturer: @unchecked Sendable {
                 return
             }
             self.tap = tap
-            self.runLoop = CFRunLoopGetCurrent()
+            runLoop = CFRunLoopGetCurrent()
             let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
             CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
             CGEvent.tapEnable(tap: tap, enable: true)
@@ -2065,8 +2101,12 @@ public final class InputCapturer: @unchecked Sendable {
     }
 
     public func stop() {
-        if let tap { CGEvent.tapEnable(tap: tap, enable: false) }
-        if let runLoop { CFRunLoopStop(runLoop) }
+        if let tap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+        }
+        if let runLoop {
+            CFRunLoopStop(runLoop)
+        }
         tap = nil
         runLoop = nil
     }
@@ -2076,24 +2116,29 @@ public final class InputCapturer: @unchecked Sendable {
         let remote = isRemote()
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
-            if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
+            if let tap {
+                CGEvent.tapEnable(tap: tap, enable: true)
+            }
             return pass
 
         case .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
             onEvent(.move(
                 dx: event.getDoubleValueField(.mouseEventDeltaX),
                 dy: event.getDoubleValueField(.mouseEventDeltaY),
-                location: event.location))
+                location: event.location
+            ))
             return remote ? nil : pass
 
         case .leftMouseDown, .leftMouseUp:
             guard remote else { return pass }
             onEvent(.button(.left, down: type == .leftMouseDown))
             return nil
+
         case .rightMouseDown, .rightMouseUp:
             guard remote else { return pass }
             onEvent(.button(.right, down: type == .rightMouseDown))
             return nil
+
         case .otherMouseDown, .otherMouseUp:
             guard remote else { return pass }
             onEvent(.button(.other, down: type == .otherMouseDown))
@@ -2103,7 +2148,8 @@ public final class InputCapturer: @unchecked Sendable {
             guard remote else { return pass }
             onEvent(.scroll(
                 h: event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2),
-                v: event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1)))
+                v: event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1)
+            ))
             return nil
 
         case .keyDown, .keyUp:
@@ -2111,7 +2157,8 @@ public final class InputCapturer: @unchecked Sendable {
             onEvent(.key(
                 code: UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode)),
                 down: type == .keyDown,
-                flags: event.flags.rawValue))
+                flags: event.flags.rawValue
+            ))
             return nil
 
         default:
@@ -2121,7 +2168,7 @@ public final class InputCapturer: @unchecked Sendable {
 }
 
 private func tapCallback(
-    proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon: UnsafeMutableRawPointer?
+    proxy _: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon: UnsafeMutableRawPointer?
 ) -> Unmanaged<CGEvent>? {
     guard let refcon else { return Unmanaged.passUnretained(event) }
     return Unmanaged<InputCapturer>.fromOpaque(refcon).takeUnretainedValue().handle(type: type, event: event)
@@ -2153,8 +2200,12 @@ public final class Settings: @unchecked Sendable {
         if let raw = defaults.object(forKey: "edge") as? Int, let edge = ScreenEdge(rawValue: raw) {
             values.edge = edge
         }
-        if let back = defaults.object(forKey: "rightClickIsBack") as? Bool { values.rightClickIsBack = back }
-        if let speed = defaults.object(forKey: "pointerSpeed") as? Double { values.pointerSpeed = speed }
+        if let back = defaults.object(forKey: "rightClickIsBack") as? Bool {
+            values.rightClickIsBack = back
+        }
+        if let speed = defaults.object(forKey: "pointerSpeed") as? Double {
+            values.pointerSpeed = speed
+        }
         lock = OSAllocatedUnfairLock(initialState: values)
     }
 
@@ -2229,8 +2280,13 @@ public final class DeviceSession: @unchecked Sendable {
     private let remoteFlag = OSAllocatedUnfairLock(initialState: false)
 
     private var state: State = .starting {
-        didSet { if state != oldValue { onStateChange?(state) } }
+        didSet {
+            if state != oldValue {
+                onStateChange?(state)
+            }
+        }
     }
+
     private var server: LaunchedServer?
     private var connection: Connection?
     private var capturer: InputCapturer?
@@ -2280,7 +2336,7 @@ public final class DeviceSession: @unchecked Sendable {
         connection.onData = { [weak self] data in self?.received(data) }
         connection.onClosed = { [weak self, weak connection] in
             guard let self, let connection, connection === self.connection else { return }
-            self.connectionClosed()
+            connectionClosed()
         }
         connection.start()
     }
@@ -2304,7 +2360,7 @@ public final class DeviceSession: @unchecked Sendable {
             for packet in try parser.feed(data) {
                 switch packet {
                 case .helloOK: startRunning()
-                case .exit(let along): returnToMac(along: along, notifyServer: false)
+                case let .exit(along): returnToMac(along: along, notifyServer: false)
                 case .pong: break
                 }
             }
@@ -2322,8 +2378,9 @@ public final class DeviceSession: @unchecked Sendable {
             isRemote: { [remoteFlag] in remoteFlag.withLock { $0 } },
             onEvent: { [weak self] event in
                 guard let self else { return }
-                self.queue.async { self.handle(event) }
-            })
+                queue.async { self.handle(event) }
+            }
+        )
         do {
             try capturer.start()
         } catch {
@@ -2357,14 +2414,18 @@ public final class DeviceSession: @unchecked Sendable {
 
     private func handle(_ event: CapturedEvent) {
         switch (state, event) {
-        case (.local, .move(let dx, _, let location)):
-            if let along = detector.crossing(at: location, deltaX: dx) { enterRemote(along: along) }
+        case let (.local, .move(dx, _, location)):
+            if let along = detector.crossing(at: location, deltaX: dx) {
+                enterRemote(along: along)
+            }
 
-        case (.remote, .move(let dx, let dy, _)):
+        case let (.remote, .move(dx, dy, _)):
             let speed = settings.values.pointerSpeed
-            if let delta = coalescer.add(dx: Float(dx * speed), dy: Float(dy * speed)) { transmit(delta) }
+            if let delta = coalescer.add(dx: Float(dx * speed), dy: Float(dy * speed)) {
+                transmit(delta)
+            }
 
-        case (.remote, .button(let button, let down)):
+        case let (.remote, .button(button, down)):
             flushMoves()
             switch button {
             case .left: send(ProtocolEncoder.button(1, down: down))
@@ -2374,12 +2435,12 @@ public final class DeviceSession: @unchecked Sendable {
             case .other: send(ProtocolEncoder.button(4, down: down))
             }
 
-        case (.remote, .scroll(let h, let v)):
+        case let (.remote, .scroll(h, v)):
             flushMoves()
             send(ProtocolEncoder.scroll(h: Float(h) * Self.scrollSign, v: Float(v) * Self.scrollSign))
 
-        case (.remote, .key(let code, let down, let flags)):
-            if down && KeyMapper.isReleaseChord(keyCode: code, flags: flags) {
+        case let (.remote, .key(code, down, flags)):
+            if down, KeyMapper.isReleaseChord(keyCode: code, flags: flags) {
                 returnToMac(along: nil, notifyServer: true)
                 return
             }
@@ -2397,7 +2458,7 @@ public final class DeviceSession: @unchecked Sendable {
         send(ProtocolEncoder.enter(edge: detector.edge.androidEntryEdge, along: along))
         remoteFlag.withLock { $0 = true }
         CGAssociateMouseAndMouseCursorPosition(0) // freeze the Mac cursor; deltas keep flowing
-        CGDisplayHideCursor(CGMainDisplayID())    // best effort for a background app
+        CGDisplayHideCursor(CGMainDisplayID()) // best effort for a background app
         state = .remote
     }
 
@@ -2406,8 +2467,12 @@ public final class DeviceSession: @unchecked Sendable {
         remoteFlag.withLock { $0 = false }
         CGAssociateMouseAndMouseCursorPosition(1)
         CGDisplayShowCursor(CGMainDisplayID())
-        if notifyServer { send(ProtocolEncoder.leave()) }
-        if let along { CGWarpMouseCursorPosition(detector.returnPoint(along: along)) }
+        if notifyServer {
+            send(ProtocolEncoder.leave())
+        }
+        if let along {
+            CGWarpMouseCursorPosition(detector.returnPoint(along: along))
+        }
         state = .local
     }
 
@@ -2420,19 +2485,23 @@ public final class DeviceSession: @unchecked Sendable {
     private func transmit(_ delta: MoveCoalescer.Delta) {
         connection?.send(ProtocolEncoder.moveRel(dx: delta.dx, dy: delta.dy)) { [weak self] in
             // Runs on the connection queue, which is the session queue.
-            guard let self, let next = self.coalescer.sendCompleted() else { return }
-            self.transmit(next)
+            guard let self, let next = coalescer.sendCompleted() else { return }
+            transmit(next)
         }
     }
 
     private func flushMoves() {
-        if let delta = coalescer.flush() { transmit(delta) }
+        if let delta = coalescer.flush() {
+            transmit(delta)
+        }
     }
 
     // MARK: - Teardown
 
     private var isEnded: Bool {
-        if case .ended = state { return true }
+        if case .ended = state {
+            return true
+        }
         return false
     }
 
@@ -2505,7 +2574,9 @@ final class AppModel {
 
     private func discoveryLoop() async {
         while !Task.isCancelled {
-            if session == nil { await tryStartSession() }
+            if session == nil {
+                await tryStartSession()
+            }
             try? await Task.sleep(for: .seconds(2))
         }
     }
@@ -2546,7 +2617,7 @@ final class AppModel {
         case .starting: status = "Connecting to \(serial)…"; isActive = false
         case .local: status = "Connected: \(serial)"; isActive = true
         case .remote: status = "Controlling \(serial) (⌃⌥⌘⎋ to release)"; isActive = true
-        case .ended(let reason):
+        case let .ended(reason):
             status = reason
             isActive = false
             session = nil // the discovery loop starts a new session
@@ -2583,7 +2654,7 @@ struct MenuBarView: View {
 
             VStack(alignment: .leading) {
                 Text("Pointer speed \(model.prefs.pointerSpeed, specifier: "%.1f")×").font(.caption)
-                Slider(value: $model.prefs.pointerSpeed, in: 0.5...4)
+                Slider(value: $model.prefs.pointerSpeed, in: 0.5 ... 4)
             }
 
             Divider()
@@ -2685,10 +2756,10 @@ git commit -m "feat(mac): menu bar app with device discovery, permission check a
 Skipped unless `DESKBRIDGE_DEVICE=1`, so CI without a phone stays green.
 
 ```swift
-import Foundation
-import Testing
-import os
 @testable import DeskBridgeCore
+import Foundation
+import os
+import Testing
 
 @Suite(.enabled(if: ProcessInfo.processInfo.environment["DESKBRIDGE_DEVICE"] != nil))
 struct DeviceSmokeTests {
@@ -2698,7 +2769,7 @@ struct DeviceSmokeTests {
         defer { server.terminate() }
 
         let reply = await handshake(port: server.port, token: server.token)
-        guard case .helloOK(let width, let height, _) = reply else {
+        guard case let .helloOK(width, height, _) = reply else {
             Issue.record("no HELLO_OK. server stderr: \(server.lastError)")
             return
         }
@@ -2727,7 +2798,9 @@ struct DeviceSmokeTests {
     private func handshake(port: Int, token: String, within seconds: Double = 8) async -> ServerPacket? {
         let deadline = Date().addingTimeInterval(seconds)
         while Date() < deadline {
-            if let packet = await attempt(port: port, token: token) { return packet }
+            if let packet = await attempt(port: port, token: token) {
+                return packet
+            }
             try? await Task.sleep(for: .milliseconds(250))
         }
         return nil
@@ -2745,7 +2818,9 @@ struct DeviceSmokeTests {
             }
             connection.onReady = { connection.send(ProtocolEncoder.hello(token: token)) }
             connection.onData = { data in
-                if let first = parser.withLock({ try? $0.feed(data) })?.first { finish(first) }
+                if let first = parser.withLock({ try? $0.feed(data) })?.first {
+                    finish(first)
+                }
             }
             connection.onClosed = { finish(nil) }
             connection.start()
