@@ -40,6 +40,22 @@ struct MenuBarView: View {
 
             Divider()
 
+            Text("Scrolling").font(.caption).foregroundStyle(.secondary)
+            Toggle("Invert scroll direction", isOn: $model.prefs.invertScroll)
+            VStack(alignment: .leading) {
+                Text("Scroll speed \(model.prefs.scrollSpeed, specifier: "%.1f")×").font(.caption)
+                Slider(value: $model.prefs.scrollSpeed, in: 0.25 ... 4)
+            }
+
+            Text("Keyboard").font(.caption).foregroundStyle(.secondary)
+            Toggle("⌘ acts as Ctrl (⌘C / ⌘V / ⌘A)", isOn: $model.prefs.commandIsControl)
+
+            Text("General").font(.caption).foregroundStyle(.secondary)
+            Toggle("Launch at login", isOn: $model.launchAtLogin)
+            Text("Release control: ⌃⌥⌘⎋").font(.caption).foregroundStyle(.secondary)
+
+            Divider()
+
             Button("Show Window") {
                 openWindow(id: "main")
                 NSApplication.shared.activate(ignoringOtherApps: true)

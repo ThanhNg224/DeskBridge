@@ -15,7 +15,8 @@ public final class DeviceSession: @unchecked Sendable {
 
     private static let connectTimeout: TimeInterval = 8
     private static let silenceTimeout: TimeInterval = 6
-    private static let scrollSign: Float = 1 // flip to -1 if the manual check shows inverted scrolling
+    private static let scrollSign: Float = 1 // base direction; users can invert it in Settings
+    private static let log = Logger(subsystem: "com.deskbridge.app", category: "session")
 
     private let adb: ADBBridge
     private let serial: String
@@ -27,6 +28,8 @@ public final class DeviceSession: @unchecked Sendable {
     private var state: State = .starting {
         didSet {
             if state != oldValue {
+                let description = String(describing: state)
+                Self.log.info("state: \(description, privacy: .public)")
                 onStateChange?(state)
             }
         }
@@ -94,6 +97,7 @@ public final class DeviceSession: @unchecked Sendable {
             return
         }
         let detail = server?.lastError ?? ""
+        Self.log.error("connection closed: \(detail, privacy: .public)")
         end(detail.isEmpty ? "Connection to the device was lost" : detail)
     }
 
@@ -182,7 +186,9 @@ public final class DeviceSession: @unchecked Sendable {
 
         case let (.remote, .scroll(h, v)):
             flushMoves()
-            send(ProtocolEncoder.scroll(h: Float(h) * Self.scrollSign, v: Float(v) * Self.scrollSign))
+            let prefs = settings.values
+            let factor = Float(prefs.scrollSpeed) * (prefs.invertScroll ? -1 : 1) * Self.scrollSign
+            send(ProtocolEncoder.scroll(h: Float(h) * factor, v: Float(v) * factor))
 
         case let (.remote, .key(code, down, flags)):
             if down, KeyMapper.isReleaseChord(keyCode: code, flags: flags) {
@@ -191,7 +197,11 @@ public final class DeviceSession: @unchecked Sendable {
             }
             guard let android = KeyMapper.androidKeyCode(forMacKeyCode: code) else { return }
             flushMoves()
-            send(ProtocolEncoder.key(code: android, down: down, meta: KeyMapper.androidMeta(forFlags: flags)))
+            send(ProtocolEncoder.key(
+                code: android,
+                down: down,
+                meta: KeyMapper.androidMeta(forFlags: flags, commandIsControl: settings.values.commandIsControl)
+            ))
 
         default:
             break

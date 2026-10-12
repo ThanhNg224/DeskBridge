@@ -21,6 +21,16 @@ struct ADBBridgeTests {
         #expect(ADBBridge.parseDevices("List of devices attached\n\n").isEmpty)
     }
 
+    @Test func findsStaleForwards() {
+        let output = """
+        RF8NA2EZKZK tcp:57534 localabstract:deskbridge-59cfef45
+        RF8NA2EZKZK tcp:6000 localabstract:other
+        OTHER tcp:57535 localabstract:deskbridge-aaaaaaaa
+
+        """
+        #expect(ADBBridge.staleForwardPorts(in: output, serial: "RF8NA2EZKZK") == [57534])
+    }
+
     @Test func parsesForwardPort() throws {
         #expect(try ADBBridge.parseForwardPort("54321\n") == 54321)
         #expect(throws: ADBError.self) { try ADBBridge.parseForwardPort("error: closed") }

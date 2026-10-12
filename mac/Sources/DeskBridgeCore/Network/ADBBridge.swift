@@ -65,6 +65,17 @@ public struct ADBBridge: Sendable {
         return port
     }
 
+    /// Local ports of leftover DeskBridge forwards for `serial` (left behind when the app was killed).
+    public static func staleForwardPorts(in output: String, serial: String) -> [Int] {
+        output.split(whereSeparator: \.isNewline).compactMap { line in
+            let parts = line.split(whereSeparator: \.isWhitespace)
+            guard parts.count == 3, parts[0] == serial,
+                  parts[1].hasPrefix("tcp:"), parts[2].hasPrefix("localabstract:deskbridge-")
+            else { return nil }
+            return Int(parts[1].dropFirst(4))
+        }
+    }
+
     // MARK: - Commands
 
     public func devices() throws -> [AdbDevice] {
@@ -78,6 +89,13 @@ public struct ADBBridge: Sendable {
     /// Lets adb pick a free local port and returns it.
     public func forward(serial: String, abstractSocket: String) throws -> Int {
         try Self.parseForwardPort(run(["-s", serial, "forward", "tcp:0", "localabstract:\(abstractSocket)"]))
+    }
+
+    public func removeStaleForwards(serial: String) {
+        guard let list = try? run(["forward", "--list"]) else { return }
+        for port in Self.staleForwardPorts(in: list, serial: serial) {
+            removeForward(serial: serial, port: port)
+        }
     }
 
     public func removeForward(serial: String, port: Int) {

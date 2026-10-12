@@ -30,8 +30,9 @@ public enum KeyMapper {
         table[Int(code)]
     }
 
-    /// Cmd and Ctrl both become Android Ctrl, so Cmd+C / Cmd+V work in Android apps.
-    public static func androidMeta(forFlags rawFlags: UInt64) -> Int32 {
+    /// Ctrl is Android Ctrl. Cmd is Android Ctrl too (Cmd+C / Cmd+V work) unless `commandIsControl`
+    /// is false, in which case it becomes the Android Meta key.
+    public static func androidMeta(forFlags rawFlags: UInt64, commandIsControl: Bool = true) -> Int32 {
         let flags = CGEventFlags(rawValue: rawFlags)
         var meta: Int32 = 0
         if flags.contains(.maskShift) {
@@ -40,8 +41,11 @@ public enum KeyMapper {
         if flags.contains(.maskAlternate) {
             meta |= 0x2 | 0x10
         } // META_ALT_ON | META_ALT_LEFT_ON
-        if flags.contains(.maskCommand) || flags.contains(.maskControl) {
+        if flags.contains(.maskControl) || (commandIsControl && flags.contains(.maskCommand)) {
             meta |= 0x1000 | 0x2000 // META_CTRL_ON | META_CTRL_LEFT_ON
+        }
+        if !commandIsControl, flags.contains(.maskCommand) {
+            meta |= 0x10000 | 0x20000 // META_META_ON | META_META_LEFT_ON
         }
         return meta
     }

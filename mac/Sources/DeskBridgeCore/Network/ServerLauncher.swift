@@ -50,6 +50,7 @@ extension ADBBridge {
         let socketName = "deskbridge-" + ProtocolEncoder.makeToken().prefix(8)
         let token = ProtocolEncoder.makeToken()
 
+        removeStaleForwards(serial: serial)
         try push(serial: serial, local: jar, remote: Self.remoteJar)
         let port = try forward(serial: serial, abstractSocket: socketName)
         do {

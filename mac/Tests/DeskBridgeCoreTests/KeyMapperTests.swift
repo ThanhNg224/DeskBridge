@@ -32,6 +32,13 @@ struct KeyMapperTests {
         #expect(KeyMapper.androidMeta(forFlags: 0) == 0)
     }
 
+    @Test func commandAsMetaWhenConfigured() {
+        let cmd = CGEventFlags.maskCommand.rawValue
+        #expect(KeyMapper.androidMeta(forFlags: cmd, commandIsControl: false) == 0x10000 | 0x20000)
+        #expect(KeyMapper.androidMeta(forFlags: CGEventFlags.maskControl.rawValue, commandIsControl: false)
+            == 0x1000 | 0x2000)
+    }
+
     @Test func releaseChord() {
         let chord = CGEventFlags([.maskControl, .maskAlternate, .maskCommand]).rawValue
         #expect(KeyMapper.isReleaseChord(keyCode: UInt16(kVK_Escape), flags: chord))

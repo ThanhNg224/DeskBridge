@@ -2,12 +2,17 @@ import AppKit
 import ApplicationServices
 import DeskBridgeCore
 import Observation
+import ServiceManagement
 
 @MainActor @Observable
 final class AppModel {
     var status = "Looking for a device…"
     var isActive = false
     var needsAccessibility = false
+    var launchAtLogin: Bool {
+        didSet { updateLoginItem() }
+    }
+
     var prefs: Settings.Values {
         didSet { settings.values = prefs }
     }
@@ -15,12 +20,30 @@ final class AppModel {
     @ObservationIgnored private let settings = Settings()
     @ObservationIgnored private var session: DeviceSession?
     @ObservationIgnored private var retryNotBefore = Date.distantPast
+    @ObservationIgnored private var syncingLoginItem = false
 
     init() {
         prefs = settings.values
+        launchAtLogin = SMAppService.mainApp.status == .enabled
         // Ask for the permission exactly once; the loop below only checks it silently.
         _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
         Task { await discoveryLoop() }
+    }
+
+    private func updateLoginItem() {
+        guard !syncingLoginItem else { return }
+        do {
+            if launchAtLogin {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        } catch {
+            status = "Launch at login failed: \(error.localizedDescription)"
+            syncingLoginItem = true
+            launchAtLogin = SMAppService.mainApp.status == .enabled
+            syncingLoginItem = false
+        }
     }
 
     private func discoveryLoop() async {

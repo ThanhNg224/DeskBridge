@@ -9,6 +9,12 @@ public final class Settings: @unchecked Sendable {
         public var rightClickIsBack = true
         /// Mac points -> Android pixels multiplier for pointer deltas.
         public var pointerSpeed: Double = 2.0
+        /// Flip scroll direction (Android axis sign).
+        public var invertScroll = false
+        /// Multiplier for wheel/trackpad scrolling.
+        public var scrollSpeed: Double = 1.0
+        /// true: Cmd acts as Ctrl (Cmd+C/V/A work). false: Cmd becomes the Android Meta key.
+        public var commandIsControl = true
     }
 
     private let lock: OSAllocatedUnfairLock<Values>
@@ -26,6 +32,15 @@ public final class Settings: @unchecked Sendable {
         if let speed = defaults.object(forKey: "pointerSpeed") as? Double {
             values.pointerSpeed = speed
         }
+        if let invert = defaults.object(forKey: "invertScroll") as? Bool {
+            values.invertScroll = invert
+        }
+        if let speed = defaults.object(forKey: "scrollSpeed") as? Double {
+            values.scrollSpeed = speed
+        }
+        if let cmd = defaults.object(forKey: "commandIsControl") as? Bool {
+            values.commandIsControl = cmd
+        }
         lock = OSAllocatedUnfairLock(initialState: values)
     }
 
@@ -36,6 +51,9 @@ public final class Settings: @unchecked Sendable {
             defaults.set(newValue.edge.rawValue, forKey: "edge")
             defaults.set(newValue.rightClickIsBack, forKey: "rightClickIsBack")
             defaults.set(newValue.pointerSpeed, forKey: "pointerSpeed")
+            defaults.set(newValue.invertScroll, forKey: "invertScroll")
+            defaults.set(newValue.scrollSpeed, forKey: "scrollSpeed")
+            defaults.set(newValue.commandIsControl, forKey: "commandIsControl")
         }
     }
 }
