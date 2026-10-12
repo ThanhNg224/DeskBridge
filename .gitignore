@@ -1,0 +1,31 @@
+# macOS
+.DS_Store
+*.swp
+*~
+
+# Xcode / Swift
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcworkspace/xcuserdata/
+.build/
+Package.resolved
+
+# Android / Gradle / Java
+.gradle/
+build/
+bin/
+*.class
+*.dex
+*.apk
+*.ap_
+*.aab
+local.properties
+.idea/
+*.iml
+.cxx/
+captures/
+
+# Output binaries
+dist/
+target/
