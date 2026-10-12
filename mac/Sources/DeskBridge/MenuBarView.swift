@@ -3,12 +3,20 @@ import SwiftUI
 
 struct MenuBarView: View {
     @Bindable var model: AppModel
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Circle().fill(model.isActive ? Color.green : Color.red).frame(width: 8, height: 8)
                 Text(model.status).font(.headline).lineLimit(3)
+            }
+
+            if model.needsAccessibility {
+                Button("Open Accessibility Settings") {
+                    NSWorkspace.shared.open(URL(string:
+                        "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+                }
             }
 
             Divider()
@@ -27,6 +35,11 @@ struct MenuBarView: View {
             }
 
             Divider()
+
+            Button("Show Window") {
+                openWindow(id: "main")
+                NSApplication.shared.activate(ignoringOtherApps: true)
+            }
 
             Button("Quit DeskBridge") { NSApplication.shared.terminate(nil) }
                 .keyboardShortcut("q")

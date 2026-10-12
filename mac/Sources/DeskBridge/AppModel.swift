@@ -7,6 +7,7 @@ import Observation
 final class AppModel {
     var status = "Looking for a device…"
     var isActive = false
+    var needsAccessibility = false
     var prefs: Settings.Values {
         didSet { settings.values = prefs }
     }
@@ -16,7 +17,6 @@ final class AppModel {
 
     init() {
         prefs = settings.values
-        NSApplication.shared.setActivationPolicy(.accessory)
         Task { await discoveryLoop() }
     }
 
@@ -33,8 +33,10 @@ final class AppModel {
         let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         guard AXIsProcessTrustedWithOptions(options) else {
             status = "Allow DeskBridge in Privacy & Security > Accessibility"
+            needsAccessibility = true
             return
         }
+        needsAccessibility = false
         guard let jar = ServerJar.locate() else {
             status = "deskbridge-server.jar not found. Run scripts/build_server.sh"
             return

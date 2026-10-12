@@ -48,7 +48,7 @@ When the Mac cursor pushes through the configured screen edge (left or right), c
 - **Remote mode:** `CGAssociateMouseAndMouseCursorPosition(false)` + hide cursor, read `mouseEventDeltaX/Y`.
 - **Fail-safes:** release chord **⌃⌥⌘⎋**; control returns to the Mac automatically on disconnect, server exit, or 6 s without a packet.
 - **Device lifecycle:** poll `adb devices` while no session is active; push jar, `forward`, spawn server, connect with retry until the server listens (≤ 8 s).
-- **Packaging:** `scripts/package_app.sh` builds `DeskBridge.app` (LSUIElement, jar in Resources, codesigned) because Accessibility/Input Monitoring permissions attach to a signed bundle.
+- **Packaging:** `scripts/package_app.sh` builds `DeskBridge.app` (window + menu bar item, jar in Resources, codesigned) because Accessibility/Input Monitoring permissions attach to a signed bundle.
 
 ### 3.2 Android server (`server/`, plain Java, no Gradle)
 - Built with `javac --release 11` against the SDK `android.jar`, then `d8 --min-api 26`, zipped as `deskbridge-server.jar`.
