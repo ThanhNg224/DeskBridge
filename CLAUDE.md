@@ -10,7 +10,7 @@ Read first: `docs/ARCHITECTURE.md` (decisions, protocol, security) and `docs/IMP
 - Individual: `scripts/test_server.sh`, `scripts/build_server.sh`, `cd mac && swift test`.
 - Device-only (needs an authorized phone): `scripts/run_on_device.sh com.deskbridge.server.PointerSpike`, `DESKBRIDGE_DEVICE=1 swift test --filter DeviceSmokeTests`. Look at the result yourself with `adb exec-out screencap -p > shot.png` and read the image.
 - Format: `swiftformat mac` (config in `.swiftformat`). It strips `self.` that closures/logger interpolations need: compute a local first.
-- App logs: `/usr/bin/log show --last 5m --predicate 'subsystem == "com.deskbridge.app"' --style compact` (note: plain `log` is shadowed in zsh).
+- App logs: `/usr/bin/log show --info --last 5m --predicate 'subsystem == "com.deskbridge.app"' --style compact` (note: plain `log` is shadowed in zsh).
 
 ## Rules
 
