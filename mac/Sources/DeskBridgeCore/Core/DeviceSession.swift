@@ -41,13 +41,15 @@ public final class DeviceSession: @unchecked Sendable {
     private var heartbeat: DispatchSourceTimer?
     private var parser = ServerPacketParser()
     private var coalescer = MoveCoalescer()
-    private var detector = EdgeDetector(edge: .right, bounds: .zero)
+    private var detector = EdgeDetector(edge: .right, displays: [])
     private var connectDeadline = Date()
     private var lastReceived = Date()
     /// Our own cursor warp comes back through the event tap as a big mouse move; it must not reach Android.
     private var ignoreMovesUntil = Date.distantPast
     private let shield = CursorShield()
     private var cursorHidden = false
+    /// Display the cursor left from; control returns to the same display.
+    private var entryDisplay = CGRect.zero
 
     public init(adb: ADBBridge, serial: String, jar: URL, settings: Settings) {
         self.adb = adb
@@ -129,7 +131,7 @@ public final class DeviceSession: @unchecked Sendable {
 
     private func startRunning() {
         guard state == .starting else { return }
-        detector = EdgeDetector(edge: settings.values.edge, bounds: EdgeDetector.currentBounds())
+        detector = EdgeDetector(edge: settings.values.edge, displays: EdgeDetector.currentDisplays())
         lastReceived = Date()
         CursorVisibility.allowHidingInBackground()
         CGEventSource(stateID: .combinedSessionState)?.localEventsSuppressionInterval = 0 // no input freeze after warps
@@ -166,7 +168,7 @@ public final class DeviceSession: @unchecked Sendable {
         }
         connection?.send(ProtocolEncoder.ping())
         if state == .local {
-            detector = EdgeDetector(edge: settings.values.edge, bounds: EdgeDetector.currentBounds())
+            detector = EdgeDetector(edge: settings.values.edge, displays: EdgeDetector.currentDisplays())
         }
     }
 
@@ -175,8 +177,8 @@ public final class DeviceSession: @unchecked Sendable {
     private func handle(_ event: CapturedEvent) {
         switch (state, event) {
         case let (.local, .move(dx, dy, location)):
-            if let along = detector.crossing(at: location, deltaX: dx, deltaY: dy) {
-                enterRemote(along: along, from: location)
+            if let crossing = detector.crossing(at: location, deltaX: dx, deltaY: dy) {
+                enterRemote(crossing, from: location)
             }
 
         case let (.remote, .move(dx, dy, _)):
@@ -220,9 +222,10 @@ public final class DeviceSession: @unchecked Sendable {
         }
     }
 
-    private func enterRemote(along: Float, from location: CGPoint) {
+    private func enterRemote(_ crossing: EdgeDetector.Crossing, from location: CGPoint) {
+        entryDisplay = crossing.display
         coalescer = MoveCoalescer()
-        send(ProtocolEncoder.enter(edge: detector.edge.androidEntryEdge, along: along))
+        send(ProtocolEncoder.enter(edge: detector.edge.androidEntryEdge, along: crossing.along))
         remoteFlag.withLock { $0 = true }
         // Park the frozen cursor well inside the screen: at the very edge the Dock (bottom) or another
         // system UI owns the cursor image and ignores our hide request, leaving a sliver visible.
@@ -331,7 +334,7 @@ public final class DeviceSession: @unchecked Sendable {
             send(ProtocolEncoder.leave())
         }
         if let along {
-            CGWarpMouseCursorPosition(detector.returnPoint(along: along))
+            CGWarpMouseCursorPosition(detector.returnPoint(along: along, in: entryDisplay))
         }
         state = .local
     }
