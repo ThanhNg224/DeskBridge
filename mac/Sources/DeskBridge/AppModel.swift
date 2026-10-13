@@ -52,6 +52,7 @@ final class AppModel {
     @ObservationIgnored private var backoff = Backoff()
     @ObservationIgnored private var retryNotBefore = Date.distantPast
     @ObservationIgnored private var syncingLoginItem = false
+    @ObservationIgnored private var discoveryTask: Task<Void, Never>?
 
     init() {
         prefs = settings.values
@@ -67,7 +68,17 @@ final class AppModel {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.session?.stopAndWait() }
         }
-        Task { await discoveryLoop() }
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            // Back from System Settings, say: re-check now. Not during a session (the cursor shield activates the app).
+            MainActor.assumeIsolated {
+                if let model = self, model.session == nil {
+                    model.wakeDiscovery()
+                }
+            }
+        }
+        wakeDiscovery()
     }
 
     // MARK: - Switches
@@ -77,6 +88,7 @@ final class AppModel {
             phase = .searching
             status = StatusText.searching
             retryNotBefore = .distantPast
+            wakeDiscovery()
         } else {
             phase = .paused
             status = StatusText.paused
@@ -102,18 +114,38 @@ final class AppModel {
 
     // MARK: - Discovery
 
+    /// Runs one discovery pass now and restarts the polling clock (the loop sleeps long when nothing changes).
+    private func wakeDiscovery() {
+        discoveryTask?.cancel()
+        discoveryTask = Task { await discoveryLoop() }
+    }
+
     private func discoveryLoop() async {
-        var tick = 0
         while !Task.isCancelled {
-            refreshSetup()
-            if isEnabled, session == nil, Date() >= retryNotBefore {
-                await tryStartSession()
-            } else if session != nil, tick % 5 == 0 {
+            if session != nil {
                 await refreshPhones() // so a second phone plugged in meanwhile shows up in the picker
+            } else {
+                refreshSetup()
+                if isEnabled, Date() >= retryNotBefore {
+                    await tryStartSession()
+                }
             }
-            tick += 1
-            try? await Task.sleep(for: .seconds(2))
+            try? await Task.sleep(for: pollInterval)
         }
+    }
+
+    /// Each pass without a session spawns `adb`, so poll slowly when nothing is expected to change soon.
+    private var pollInterval: Duration {
+        if session != nil {
+            return .seconds(10) // the session reports its own end (wakeDiscovery)
+        }
+        if !isEnabled {
+            return .seconds(5)
+        }
+        if case .none = setup.device {
+            return .seconds(4) // no phone plugged in
+        }
+        return .seconds(2)
     }
 
     private func refreshPhones() async {
@@ -200,6 +232,7 @@ final class AppModel {
             sessionSerial = nil
             phase = isEnabled ? .searching : .paused
             status = isEnabled ? StatusText.searching : StatusText.paused
+            wakeDiscovery()
         case let .ended(reason):
             session = nil // the discovery loop starts a new session
             sessionSerial = nil
@@ -212,6 +245,7 @@ final class AppModel {
                 backoff.recordFailure() // never got going: wait longer each time
                 retryNotBefore = Date().addingTimeInterval(backoff.delay)
             }
+            wakeDiscovery()
         }
     }
 }
