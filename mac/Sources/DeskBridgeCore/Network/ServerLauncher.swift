@@ -18,8 +18,12 @@ public final class LaunchedServer: @unchecked Sendable {
         self.process = process
         let log = errorLog
         stderr.fileHandleForReading.readabilityHandler = { handle in
-            let text = String(decoding: handle.availableData, as: UTF8.self)
-            guard !text.isEmpty else { return }
+            let data = handle.availableData
+            guard !data.isEmpty else {
+                handle.readabilityHandler = nil // end of stream: the process is gone; a kept handler spins at 100% CPU
+                return
+            }
+            let text = String(decoding: data, as: UTF8.self)
             log.withLock { $0 = String(($0 + text).suffix(2000)) }
         }
     }
