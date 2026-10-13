@@ -2,7 +2,7 @@
 # Boots each AVD headless (one at a time), runs the PointerSpike checks and prints one PASS|FAIL line per AVD.
 # Usage: scripts/device_matrix.sh [avd ...]   (default: deskbridge-api34 deskbridge-api35 deskbridge-api36)
 # Checks: server starts and holds the pointer, no "Untrusted touch" occlusion, a click opens the Phone app,
-# the Back key (injected) leaves it. Screencaps go to build/matrix/. Only the emulator on PORT is touched.
+# the Back key (injected) leaves it. MATRIX_SWIFT=1 also runs the Swift DeviceSmokeTests against the emulator. Screencaps go to build/matrix/. Only the emulator on PORT is touched.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -75,6 +75,14 @@ check() {
     return 0
 }
 
+# Swift smoke tests against the emulator; prints "reason" on failure. Latency threshold relaxed for emulators.
+swift_smoke() {
+    local out
+    out="$(cd "$ROOT/mac" && DESKBRIDGE_DEVICE=1 ANDROID_SERIAL="$EMU" DESKBRIDGE_MAX_P95_MS=200 \
+        swift test --filter DeviceSmokeTests 2>&1)" && return 0
+    echo "swift smoke failed: $(echo "$out" | grep -m1 -E 'error|✘|failed')"
+}
+
 STATUS=0
 for AVD in "${AVDS[@]}"; do
     API="${AVD##*-}"
@@ -85,11 +93,16 @@ for AVD in "${AVDS[@]}"; do
         continue
     fi
     REASON="$(check "$AVD" "$API")"
+    SUFFIX=""
+    if [ -z "$REASON" ] && [ "${MATRIX_SWIFT:-}" = 1 ]; then
+        REASON="$(swift_smoke)"
+        SUFFIX=", swift smoke ok"
+    fi
     if [ -n "$REASON" ]; then
         echo "FAIL $API $REASON"
         STATUS=1
     else
-        echo "PASS $API arrow drawn (see build/matrix/$API.png), no untrusted touch, click and Back landed"
+        echo "PASS $API arrow drawn (see build/matrix/$API.png), no untrusted touch, click and Back landed$SUFFIX"
     fi
     shutdown
 done
