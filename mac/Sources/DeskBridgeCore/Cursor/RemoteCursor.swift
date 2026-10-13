@@ -6,8 +6,10 @@ import os
 /// hide it, and give it back. Used from the session queue only (except `swallowingProbe`).
 ///
 /// The call order is the result of many rounds of real-world testing, see the cursor notes in CLAUDE.md:
-/// move the cursor off whatever it hovers while events still pass (so the Dock clears its icon label),
-/// cover the display with our own foreground window, warp again under it, then freeze and hide.
+/// hide the cursor at once (so nothing visibly jumps), move it off whatever it hovers while events still pass
+/// (so the Dock clears its icon label), cover the display with our own foreground window, warp again under
+/// it, then freeze. Where the system ignores the hide (over the Dock), the shield's transparent cursor image
+/// makes it invisible a moment later.
 final class RemoteCursor: @unchecked Sendable {
     private static let log = Logger(subsystem: "com.deskbridge.app", category: "cursor")
     private static let beginSwallowingDelay = 0.05
@@ -18,6 +20,7 @@ final class RemoteCursor: @unchecked Sendable {
     private var warpFilter = WarpFilter()
     private var engaged = false
     private var hidden = false
+    private var frozen = false
 
     init(queue: DispatchQueue) {
         self.queue = queue
@@ -42,6 +45,8 @@ final class RemoteCursor: @unchecked Sendable {
 
     func engage(from location: CGPoint, on display: CGRect, edge: ScreenEdge) {
         engaged = true
+        frozen = false
+        hidden = CGDisplayHideCursor(CGMainDisplayID()) == .success // before it jumps: nothing visible
         let parkDisplay = Displays.bounds(containing: location) ?? display
         let target = ParkingPoint.find(
             from: location, edge: edge, display: parkDisplay, isOccupied: Displays.isOccupiedByAnotherApp
@@ -60,6 +65,7 @@ final class RemoteCursor: @unchecked Sendable {
     /// Gives the cursor back; `point` is where it reappears (nil: where it is).
     func release(returnTo point: CGPoint?) {
         engaged = false
+        frozen = false
         swallowing.withLock { $0 = false }
         CGAssociateMouseAndMouseCursorPosition(1)
         if hidden {
@@ -73,12 +79,12 @@ final class RemoteCursor: @unchecked Sendable {
     }
 
     private func freeze(at target: CGPoint) {
-        guard engaged, !hidden else { return }
+        guard engaged, !frozen else { return }
+        frozen = true
         CGWarpMouseCursorPosition(target)
         warpFilter.noteWarp()
         CGAssociateMouseAndMouseCursorPosition(0) // freeze the Mac cursor; deltas keep flowing
-        let hide = CGDisplayHideCursor(CGMainDisplayID())
-        hidden = hide == .success
-        Self.log.info("cursor frozen at (\(Int(target.x)),\(Int(target.y))) hide=\(hide.rawValue)")
+        let wasHidden = hidden
+        Self.log.info("cursor frozen at (\(Int(target.x)),\(Int(target.y))) hidden=\(wasHidden)")
     }
 }
