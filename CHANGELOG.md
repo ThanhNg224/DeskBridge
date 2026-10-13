@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.3 (2026-10-13)
 
 - Bottom edge over the Dock: the Dock icon label no longer stays after the pointer moves to Android when the mouse is pushed down fast (the cursor was dragged back onto the icon before it froze).
 - The transparent cursor of the shield is verified after every hand-over and re-applied if the arrow is still showing (it was sometimes not applied after the Mac had been idle for a while).
