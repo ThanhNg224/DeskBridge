@@ -81,6 +81,7 @@ Stream over the forwarded socket. Big-endian. Each packet is `type:u8` + fixed p
 Rules:
 - The server accepts exactly one connection, requires `HELLO` first, and exits on a bad token, a bad version, an unknown packet type, 6 s without data, or EOF.
 - The server ignores move/button/scroll/key packets while the pointer is not "entered".
+- `EXIT` is only sent after the pointer has been at least 48 Android px away from the entry edge once ("armed"); the pointer starts exactly on that edge, so without this any jitter toward it hands control straight back.
 - `CLIPBOARD_SYNC` is not part of the MVP.
 
 ---

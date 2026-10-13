@@ -7,10 +7,18 @@ public final class PointerState {
     public static final int EDGE_TOP = 2;
     public static final int EDGE_BOTTOM = 3;
 
+    /**
+     * The pointer starts exactly on the entry edge, which is also the exit boundary. Without a guard any
+     * small jitter toward the edge hands control straight back. Exit is only allowed after the pointer
+     * has been this far (Android px) inside the screen once.
+     */
+    static final float ARM_DISTANCE = 48f;
+
     private int width;
     private int height;
     private int entryEdge;
     private boolean entered;
+    private boolean armed;
     private float x;
     private float y;
 
@@ -20,6 +28,7 @@ public final class PointerState {
         this.height = height;
         this.entryEdge = edge;
         this.entered = true;
+        this.armed = false;
         switch (edge) {
             case EDGE_LEFT:
                 x = 0;
@@ -59,22 +68,36 @@ public final class PointerState {
     }
 
     /**
-     * Applies a relative move. Returns true when the pointer pushed back through the entry edge;
-     * the visit is then over (isEntered() == false) and the position stays on that edge.
+     * Applies a relative move. Returns true when the pointer pushed back through the entry edge (after
+     * having moved ARM_DISTANCE away from it); the visit is then over (isEntered() == false) and the
+     * position stays on that edge.
      */
     public boolean moveBy(float dx, float dy) {
         float nx = x + dx;
         float ny = y + dy;
-        boolean exit = (entryEdge == EDGE_LEFT && nx < 0)
+        boolean outside = (entryEdge == EDGE_LEFT && nx < 0)
                 || (entryEdge == EDGE_RIGHT && nx > width - 1)
                 || (entryEdge == EDGE_TOP && ny < 0)
                 || (entryEdge == EDGE_BOTTOM && ny > height - 1);
         x = clamp(nx, 0, width - 1);
         y = clamp(ny, 0, height - 1);
-        if (exit) {
-            entered = false;
+        if (!armed && distanceFromEntryEdge() >= ARM_DISTANCE) {
+            armed = true;
         }
-        return exit;
+        if (outside && armed) {
+            entered = false;
+            return true;
+        }
+        return false;
+    }
+
+    private float distanceFromEntryEdge() {
+        switch (entryEdge) {
+            case EDGE_LEFT: return x;
+            case EDGE_RIGHT: return width - 1 - x;
+            case EDGE_TOP: return y;
+            default: return height - 1 - y;
+        }
     }
 
     private static float clamp(float v, float min, float max) {

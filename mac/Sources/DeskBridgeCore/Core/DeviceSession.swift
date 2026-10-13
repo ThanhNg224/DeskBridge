@@ -48,6 +48,7 @@ public final class DeviceSession: @unchecked Sendable {
     private var ignoreMovesUntil = Date.distantPast
     private let shield = CursorShield()
     private var cursorHidden = false
+    private var loggedMoves = 0
     /// Display the cursor left from; control returns to the same display.
     private var entryDisplay = CGRect.zero
 
@@ -120,7 +121,9 @@ public final class DeviceSession: @unchecked Sendable {
             for packet in try parser.feed(data) {
                 switch packet {
                 case .helloOK: startRunning()
-                case let .exit(along): returnToMac(along: along, notifyServer: false)
+                case let .exit(along):
+                    Self.log.info("server exit along=\(along)")
+                    returnToMac(along: along, notifyServer: false)
                 case .pong: break
                 }
             }
@@ -187,7 +190,14 @@ public final class DeviceSession: @unchecked Sendable {
             }
 
         case let (.remote, .move(dx, dy, _)):
-            guard Date() >= ignoreMovesUntil else { return }
+            guard Date() >= ignoreMovesUntil else {
+                Self.log.info("ignored warp move dx=\(Int(dx)) dy=\(Int(dy))")
+                return
+            }
+            if loggedMoves < 6 {
+                loggedMoves += 1
+                Self.log.info("first moves after enter: dx=\(Int(dx)) dy=\(Int(dy))")
+            }
             let speed = settings.values.pointerSpeed
             if let delta = coalescer.add(dx: Float(dx * speed), dy: Float(dy * speed)) {
                 transmit(delta)
@@ -229,6 +239,7 @@ public final class DeviceSession: @unchecked Sendable {
 
     private func enterRemote(_ crossing: EdgeDetector.Crossing, from location: CGPoint) {
         entryDisplay = crossing.display
+        loggedMoves = 0
         coalescer = MoveCoalescer()
         send(ProtocolEncoder.enter(edge: detector.edge.androidEntryEdge, along: crossing.along))
         remoteFlag.withLock { $0 = true }

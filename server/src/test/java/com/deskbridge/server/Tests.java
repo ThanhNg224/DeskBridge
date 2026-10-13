@@ -21,13 +21,13 @@ public final class Tests {
             "decodeEnterAndLeave", "decodeMoveButtonScrollKey", "decodePing", "unknownPacketThrows",
             "eofReturnsFalse", "helloAccepted", "helloRejectsBadVersion", "helloRejectsWrongType",
             "pointerEnterLeftPlacesAtEdge", "pointerClamps", "pointerExitsThroughEntryEdge", "pointerAlong",
-            "pointerTopBottomEntryAndExit", "pointerRejectsUnknownEdge"
+            "pointerTopBottomEntryAndExit", "pointerRejectsUnknownEdge", "pointerExitNeedsArmDistance"
         };
         Case[] cases = {
             Tests::decodeEnterAndLeave, Tests::decodeMoveButtonScrollKey, Tests::decodePing, Tests::unknownPacketThrows,
             Tests::eofReturnsFalse, Tests::helloAccepted, Tests::helloRejectsBadVersion, Tests::helloRejectsWrongType,
             Tests::pointerEnterLeftPlacesAtEdge, Tests::pointerClamps, Tests::pointerExitsThroughEntryEdge, Tests::pointerAlong,
-            Tests::pointerTopBottomEntryAndExit, Tests::pointerRejectsUnknownEdge
+            Tests::pointerTopBottomEntryAndExit, Tests::pointerRejectsUnknownEdge, Tests::pointerExitNeedsArmDistance
         };
         for (int i = 0; i < cases.length; i++) {
             try {
@@ -191,13 +191,26 @@ public final class Tests {
     static void pointerExitsThroughEntryEdge() {
         PointerState left = new PointerState();
         left.enter(1080, 2400, PointerState.EDGE_LEFT, 0.5f);
-        check(left.moveBy(-1f, 0f), "left entry exits on negative x");
+        check(!left.moveBy(-1f, 0f), "jitter toward the edge right after entering must not exit");
+        check(left.isEntered(), "still entered");
+        check(!left.moveBy(100f, 0f), "moving inward arms the exit");
+        check(left.moveBy(-500f, 0f), "left entry exits on negative x once armed");
         check(!left.isEntered(), "visit over");
 
         PointerState right = new PointerState();
         right.enter(1080, 2400, PointerState.EDGE_RIGHT, 0.5f);
-        check(!right.moveBy(-100f, 0f), "moving inward does not exit");
-        check(right.moveBy(5000f, 0f), "right entry exits past width");
+        check(!right.moveBy(5000f, 0f), "pushing out before arming does not exit");
+        check(!right.moveBy(-100f, 0f), "moving inward arms the exit");
+        check(right.moveBy(5000f, 0f), "right entry exits past width once armed");
+    }
+
+    static void pointerExitNeedsArmDistance() {
+        PointerState p = new PointerState();
+        p.enter(1080, 2400, PointerState.EDGE_LEFT, 0.5f);
+        check(!p.moveBy(PointerState.ARM_DISTANCE - 1f, 0f), "just short of the arm distance");
+        check(!p.moveBy(-(PointerState.ARM_DISTANCE + 10f), 0f), "still not armed, so no exit");
+        check(!p.moveBy(PointerState.ARM_DISTANCE, 0f), "reaching the arm distance arms it");
+        check(p.moveBy(-1000f, 0f), "now it exits");
     }
 
     static void pointerAlong() {
@@ -214,14 +227,14 @@ public final class Tests {
         check(!top.moveBy(0f, 100f), "moving down is inside");
         near(100f, top.y());
         near(539.5f / 1079f, top.along());
-        check(top.moveBy(0f, -500f), "pushing up exits");
+        check(top.moveBy(0f, -500f), "pushing up exits (armed by the earlier 100 px)");
         check(!top.isEntered(), "visit over");
 
         PointerState bottom = new PointerState();
         bottom.enter(1080, 2400, PointerState.EDGE_BOTTOM, 1f);
         near(1079f, bottom.x());
         near(2399f, bottom.y());
-        check(!bottom.moveBy(0f, -300f), "moving up is inside");
+        check(!bottom.moveBy(0f, -300f), "moving up is inside and arms the exit");
         check(bottom.moveBy(0f, 5000f), "pushing down exits");
     }
 
