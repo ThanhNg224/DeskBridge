@@ -15,6 +15,8 @@ public final class Settings: @unchecked Sendable {
         public var scrollSpeed: Double = 1.0
         /// true: Cmd acts as Ctrl (Cmd+C/V/A work). false: Cmd becomes the Android Meta key.
         public var commandIsControl = true
+        /// Master switch of the app: off keeps it idle.
+        public var enabled = true
     }
 
     private let lock: OSAllocatedUnfairLock<Values>
@@ -41,6 +43,9 @@ public final class Settings: @unchecked Sendable {
         if let cmd = defaults.object(forKey: "commandIsControl") as? Bool {
             values.commandIsControl = cmd
         }
+        if let enabled = defaults.object(forKey: "enabled") as? Bool {
+            values.enabled = enabled
+        }
         lock = OSAllocatedUnfairLock(initialState: values)
     }
 
@@ -54,6 +59,7 @@ public final class Settings: @unchecked Sendable {
             defaults.set(newValue.invertScroll, forKey: "invertScroll")
             defaults.set(newValue.scrollSpeed, forKey: "scrollSpeed")
             defaults.set(newValue.commandIsControl, forKey: "commandIsControl")
+            defaults.set(newValue.enabled, forKey: "enabled")
         }
     }
 }

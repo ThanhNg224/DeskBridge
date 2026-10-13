@@ -1,8 +1,6 @@
 import AppKit
-import ApplicationServices
 import DeskBridgeCore
 import Observation
-import ServiceManagement
 
 @MainActor @Observable
 final class AppModel {
@@ -14,34 +12,38 @@ final class AppModel {
     var status = "Looking for a device…"
     var needsAccessibility = false
 
-    /// Master switch: off stops the session and keeps the app idle.
-    var isEnabled: Bool {
-        didSet { enabledChanged() }
-    }
-
-    var launchAtLogin: Bool {
-        didSet { updateLoginItem() }
-    }
-
     var prefs: Settings.Values {
         didSet { settings.values = prefs }
     }
 
+    /// Master switch: off stops the session and keeps the app idle.
+    var isEnabled: Bool {
+        get { prefs.enabled }
+        set {
+            prefs.enabled = newValue
+            enabledChanged()
+        }
+    }
+
+    var launchAtLogin: Bool {
+        didSet { loginItemChanged() }
+    }
+
     @ObservationIgnored private let settings = Settings()
     @ObservationIgnored private var session: DeviceSession?
+    @ObservationIgnored private var reachedConnected = false
+    @ObservationIgnored private var backoff = Backoff()
     @ObservationIgnored private var retryNotBefore = Date.distantPast
     @ObservationIgnored private var syncingLoginItem = false
 
     init() {
         prefs = settings.values
-        isEnabled = UserDefaults.standard.object(forKey: "enabled") as? Bool ?? true
-        launchAtLogin = SMAppService.mainApp.status == .enabled
-        if !isEnabled {
+        launchAtLogin = LoginItem.isEnabled
+        if !prefs.enabled {
             phase = .paused
             status = "Paused"
         }
-        // Ask for the permission exactly once; the loop below only checks it silently.
-        _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+        Permissions.requestAccessibility() // once; the loop below only checks silently
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -53,7 +55,6 @@ final class AppModel {
     // MARK: - Switches
 
     private func enabledChanged() {
-        UserDefaults.standard.set(isEnabled, forKey: "enabled")
         if isEnabled {
             phase = .searching
             status = "Looking for a device…"
@@ -65,18 +66,14 @@ final class AppModel {
         }
     }
 
-    private func updateLoginItem() {
+    private func loginItemChanged() {
         guard !syncingLoginItem else { return }
         do {
-            if launchAtLogin {
-                try SMAppService.mainApp.register()
-            } else {
-                try SMAppService.mainApp.unregister()
-            }
+            try LoginItem.set(launchAtLogin)
         } catch {
             status = "Launch at login failed: \(error.localizedDescription)"
             syncingLoginItem = true
-            launchAtLogin = SMAppService.mainApp.status == .enabled
+            launchAtLogin = LoginItem.isEnabled
             syncingLoginItem = false
         }
     }
@@ -93,7 +90,7 @@ final class AppModel {
     }
 
     private func tryStartSession() async {
-        guard AXIsProcessTrusted() else {
+        guard Permissions.accessibilityGranted else {
             status = "Allow DeskBridge in Accessibility. If it is already listed, remove it with \u{2212} and add it again."
             needsAccessibility = true
             return
@@ -106,28 +103,33 @@ final class AppModel {
         do {
             let adb = try ADBBridge()
             let devices = try await Task.detached { try adb.devices() }.value
-            guard let device = devices.first(where: \.isReady) else {
-                status = devices.isEmpty
-                    ? "Connect an Android device with USB debugging"
-                    : "Authorize this Mac on the device (\(devices[0].state))"
-                return
+            switch DevicePicker.pick(from: devices) {
+            case .none:
+                status = "Connect an Android device with USB debugging"
+            case let .notReady(device):
+                status = "Authorize this Mac on the device (\(device.state))"
+            case let .ready(device):
+                let name = await Task.detached { adb.deviceName(serial: device.serial) }.value
+                guard isEnabled, session == nil else { return }
+                startSession(adb: adb, serial: device.serial, name: name, jar: jar)
             }
-            let name = await Task.detached { adb.deviceName(serial: device.serial) }.value
-            guard isEnabled, session == nil else { return }
-
-            status = "Connecting to \(name)…"
-            let session = DeviceSession(adb: adb, serial: device.serial, jar: jar, settings: settings)
-            session.onStateChange = { [weak self, weak session] state in
-                Task { @MainActor in
-                    guard let self, let session else { return }
-                    self.apply(state, name: name, from: session)
-                }
-            }
-            self.session = session
-            session.start()
         } catch {
             status = "\(error)"
         }
+    }
+
+    private func startSession(adb: ADBBridge, serial: String, name: String, jar: URL) {
+        status = "Connecting to \(name)…"
+        reachedConnected = false
+        let session = DeviceSession(adb: adb, serial: serial, jar: jar, settings: settings)
+        session.onStateChange = { [weak self, weak session] state in
+            Task { @MainActor in
+                guard let model = self, let session else { return }
+                model.apply(state, name: name, from: session)
+            }
+        }
+        self.session = session
+        session.start()
     }
 
     private func apply(_ state: DeviceSession.State, name: String, from source: DeviceSession) {
@@ -137,6 +139,8 @@ final class AppModel {
             phase = .searching
             status = "Connecting to \(name)…"
         case .local:
+            reachedConnected = true
+            backoff.reset()
             phase = .connected
             status = "Connected to \(name)"
         case .remote:
@@ -144,16 +148,14 @@ final class AppModel {
             status = "Controlling \(name). ⌃⌥⌘⎋ to release."
         case let .ended(reason):
             session = nil // the discovery loop starts a new session
-            if isEnabled {
-                phase = .searching
-                status = reason
-            } else {
-                phase = .paused
-                status = "Paused"
-            }
-            if reason == CaptureError.tapCreationFailed.description {
+            phase = isEnabled ? .searching : .paused
+            status = isEnabled ? reason.description : "Paused"
+            if reason == .captureDenied {
                 needsAccessibility = true
-                retryNotBefore = Date().addingTimeInterval(20) // do not relaunch the server in a tight loop
+            }
+            if !reachedConnected {
+                backoff.recordFailure() // never got going: wait longer each time
+                retryNotBefore = Date().addingTimeInterval(backoff.delay)
             }
         }
     }

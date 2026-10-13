@@ -95,16 +95,4 @@ public struct EdgeDetector: Sendable {
         case .top: return CGPoint(x: display.minX + t * (display.width - 1), y: display.minY + inset)
         }
     }
-
-    public static func primaryDisplay() -> CGRect {
-        CGDisplayBounds(CGMainDisplayID())
-    }
-
-    public static func currentDisplays() -> [CGRect] {
-        var count: UInt32 = 0
-        CGGetActiveDisplayList(0, nil, &count)
-        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
-        CGGetActiveDisplayList(count, &ids, &count)
-        return ids.prefix(Int(count)).map { CGDisplayBounds($0) }
-    }
 }

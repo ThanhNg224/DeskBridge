@@ -12,8 +12,8 @@ struct ContentView: View {
             Form {
                 if model.needsAccessibility {
                     Section("Permissions") {
-                        Button("Open Accessibility Settings") { open("Privacy_Accessibility") }
-                        Button("Open Input Monitoring Settings") { open("Privacy_ListenEvent") }
+                        Button("Open Accessibility Settings") { Permissions.openSettings(.accessibility) }
+                        Button("Open Input Monitoring Settings") { Permissions.openSettings(.inputMonitoring) }
                     }
                 }
 
@@ -111,12 +111,6 @@ struct ContentView: View {
                     .frame(width: 30, alignment: .trailing)
             }
             .frame(width: 210)
-        }
-    }
-
-    private func open(_ pane: String) {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") {
-            NSWorkspace.shared.open(url)
         }
     }
 }
