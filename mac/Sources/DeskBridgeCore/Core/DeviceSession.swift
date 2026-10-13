@@ -243,37 +243,37 @@ public final class DeviceSession: @unchecked Sendable {
         coalescer = MoveCoalescer()
         send(ProtocolEncoder.enter(edge: detector.edge.androidEntryEdge, along: crossing.along))
         remoteFlag.withLock { $0 = true }
-        // Park the frozen cursor well inside the screen: at the very edge the Dock (bottom) or another
-        // system UI owns the cursor image and ignores our hide request, leaving a sliver visible.
+        state = .remote
+
+        // Order matters. The window under a cursor decides which app owns the cursor image, and macOS only
+        // re-evaluates that when the cursor moves. If the Dock (or another app) is under it now, it keeps
+        // the image and ignores our hide request. So: cover the display with our own window first, THEN
+        // warp the cursor (it moves under our window and we become the owner), THEN hide it.
         let target = parkingPoint(for: location)
+        shield.show(covering: crossing.display) { [weak self] in
+            self?.queue.async { self?.freezeCursor(at: target, from: location) }
+        }
+    }
+
+    private func freezeCursor(at target: CGPoint, from location: CGPoint) {
+        guard state == .remote, !cursorHidden else { return }
         CGWarpMouseCursorPosition(target)
         ignoreMovesUntil = Date().addingTimeInterval(0.15)
         let associate = CGAssociateMouseAndMouseCursorPosition(0) // freeze the Mac cursor; deltas keep flowing
-        // Cover that display first so this app owns the cursor image, then hide it (best effort).
-        shield.show(covering: displayBounds(containing: target)) { [weak self] in
-            self?.queue.async {
-                guard let self, self.state == .remote, !self.cursorHidden else { return }
-                let hide = CGDisplayHideCursor(CGMainDisplayID())
-                self.cursorHidden = hide == .success
-                Self.log.info("remote: hide=\(hide.rawValue)")
-            }
-        }
+        let hide = CGDisplayHideCursor(CGMainDisplayID())
+        cursorHidden = hide == .success
+
         let edge = String(describing: detector.edge)
-        let width = Int(detector.bounds.width)
-        let height = Int(detector.bounds.height)
         Self.log.info("""
         remote: edge=\(edge, privacy: .public) from=(\(Int(location.x)),\(Int(location.y))) \
-        park=(\(Int(target.x)),\(Int(target.y))) bounds=\(width)x\(height) \
-        associate=\(associate.rawValue)
+        park=(\(Int(target.x)),\(Int(target.y))) associate=\(associate.rawValue) hide=\(hide.rawValue)
         """)
-        // Ground truth a moment later: where the cursor really is and which app's window is under it
-        // (e.g. the Dock owns the cursor image while the pointer is over it).
+        // Ground truth a moment later: where the cursor really is and which app's window is under it.
         queue.asyncAfter(deadline: .now() + 0.2) { [log = Self.log] in
             let now = CGEvent(source: nil)?.location ?? .zero
             let owner = Self.windowOwner(at: now)
             log.info("remote+200ms: cursor=(\(Int(now.x)),\(Int(now.y))) windowUnderCursor=\(owner, privacy: .public)")
         }
-        state = .remote
     }
 
     /// Front-most on-screen window containing `point`, if any.
