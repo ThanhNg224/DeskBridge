@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Builds build/DeskBridge.app. Accessibility/Input Monitoring grants attach to the signed bundle,
-# so use a stable identity to keep them across rebuilds:
+# Builds build/DeskBridge.app. Accessibility/Input Monitoring grants attach to the signed bundle, so sign
+# with a stable identity: run scripts/setup_signing.sh once (creates "DeskBridge Dev"), or pass
 #   CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" scripts/package_app.sh
-# The default ad-hoc identity keeps grants across rebuilds via a bundle-id requirement (see below).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -34,12 +33,16 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-IDENTITY="${CODESIGN_IDENTITY:--}"
+# Identity: $CODESIGN_IDENTITY, else the local "DeskBridge Dev" (scripts/setup_signing.sh), else ad-hoc.
+IDENTITY="${CODESIGN_IDENTITY:-}"
+if [ -z "$IDENTITY" ]; then
+  if security find-identity -p codesigning | grep -q '"DeskBridge Dev"'; then IDENTITY="DeskBridge Dev"; else IDENTITY="-"; fi
+fi
 if [ "$IDENTITY" = "-" ]; then
-  # Ad-hoc: bind the signature to the bundle id instead of the binary hash, so the Accessibility /
-  # Input Monitoring grant survives rebuilds (a hash-bound grant goes stale after every build).
+  # Ad-hoc: bind the signature to the bundle id instead of the binary hash so grants survive rebuilds.
   codesign --force --sign - --requirements '=designated => identifier "com.deskbridge.app"' "$APP"
 else
   codesign --force --sign "$IDENTITY" "$APP"
 fi
+echo "Signed with: $IDENTITY"
 echo "Built $APP"

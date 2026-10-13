@@ -27,4 +27,4 @@ Read first: `docs/ARCHITECTURE.md` (decisions, protocol, security) and `docs/IMP
 - While Android has control the Mac cursor is frozen: use `mouseEventDeltaX/Y`, never `event.location`, for movement.
 - Right click maps to `KEYCODE_BACK` on the Mac side; Android does not do it for injected secondary clicks.
 - NWConnection needs `noDelay = true`; `.waiting` means connection refused (retry), not "still connecting".
-- Accessibility/Input Monitoring grants attach to the signed `.app`; ad-hoc signing resets them every build.
+- Accessibility/Input Monitoring grants attach to the signed `.app`. `scripts/setup_signing.sh` creates the local identity "DeskBridge Dev" (once); `scripts/package_app.sh` uses it automatically (designated requirement: bundle id + cert hash), so grants survive rebuilds. Without it the build is ad-hoc signed with a bundle-id requirement.
