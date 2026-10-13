@@ -27,13 +27,13 @@ struct MenuBarView: View {
             }
 
             if !model.setup.isComplete {
-                Button("Finish setup…") { SettingsWindow.open() }
+                Button("Finish setup…") { AppWindow.show() }
             }
 
             Divider()
 
             HStack {
-                Button("Settings…") { SettingsWindow.open() }
+                Button("Settings…") { AppWindow.show() }
                     .keyboardShortcut(",")
                 Spacer()
                 Button("Quit") { NSApplication.shared.terminate(nil) }

@@ -46,7 +46,6 @@ final class AppModel {
     @ObservationIgnored private var backoff = Backoff()
     @ObservationIgnored private var retryNotBefore = Date.distantPast
     @ObservationIgnored private var syncingLoginItem = false
-    @ObservationIgnored private var openedSettingsForSetup = false
 
     init() {
         prefs = settings.values
@@ -103,7 +102,6 @@ final class AppModel {
             if isEnabled, session == nil, Date() >= retryNotBefore {
                 await tryStartSession()
             }
-            openSettingsOnceIfSetupIncomplete()
             try? await Task.sleep(for: .seconds(2))
         }
     }
@@ -111,13 +109,6 @@ final class AppModel {
     private func refreshSetup() {
         setup.accessibility = Permissions.accessibilityGranted
         setup.adbFound = ADBBridge.locate() != nil
-    }
-
-    /// First run (or after losing a permission): show the checklist once instead of a silent menu bar icon.
-    private func openSettingsOnceIfSetupIncomplete() {
-        guard !openedSettingsForSetup, !setup.isComplete, !setup.accessibility || !setup.adbFound else { return }
-        openedSettingsForSetup = true
-        SettingsWindow.open()
     }
 
     private func tryStartSession() async {
