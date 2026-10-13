@@ -51,10 +51,11 @@ final class CursorShield: @unchecked Sendable {
         DispatchQueue.main.async {
             self.window?.orderOut(nil)
             self.window = nil
+            // Keep `previousApp`: a quick re-entry may happen before the system has switched back, and then
+            // the front app is still us; `show()` only overwrites it when another app is in front.
             if let previous = self.previousApp, !previous.isTerminated {
                 previous.activate()
             }
-            self.previousApp = nil
         }
     }
 }

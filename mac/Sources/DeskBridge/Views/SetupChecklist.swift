@@ -34,6 +34,8 @@ struct SetupChecklist: View {
             row(ok: false, title: "Phone not authorized (\(state))", hint: "Unlock the phone and tap Allow.") {
                 EmptyView()
             }
+        case let .choose(count):
+            row(ok: false, title: "\(count) phones found", hint: "Pick one in the Phone section below.") { EmptyView() }
         case .none:
             row(ok: false, title: "No phone found", hint: "Plug it in and turn on USB debugging.") { EmptyView() }
         }

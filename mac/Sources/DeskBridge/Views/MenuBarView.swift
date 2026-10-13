@@ -42,6 +42,7 @@ struct MenuBarView: View {
         }
         .padding(16)
         .frame(width: 320)
+        .modifier(RegisterWindowOpener()) // so "Settings…" works even if the window was never shown
     }
 
     private var statusColor: Color {

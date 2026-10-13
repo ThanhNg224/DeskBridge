@@ -16,6 +16,11 @@ final class AppModel {
         didSet {
             settings.values = prefs
             session?.settingsChanged()
+            if let current = sessionSerial, let wanted = prefs.preferredSerial,
+               oldValue.preferredSerial != wanted, wanted != current
+            {
+                session?.stop() // the discovery loop reconnects to the phone that was just chosen
+            }
         }
     }
 
@@ -43,6 +48,7 @@ final class AppModel {
     @ObservationIgnored private let settings = Settings()
     @ObservationIgnored private var session: DeviceSession?
     @ObservationIgnored private var reachedConnected = false
+    @ObservationIgnored private var sessionSerial: String?
     @ObservationIgnored private var backoff = Backoff()
     @ObservationIgnored private var retryNotBefore = Date.distantPast
     @ObservationIgnored private var syncingLoginItem = false
@@ -97,13 +103,23 @@ final class AppModel {
     // MARK: - Discovery
 
     private func discoveryLoop() async {
+        var tick = 0
         while !Task.isCancelled {
             refreshSetup()
             if isEnabled, session == nil, Date() >= retryNotBefore {
                 await tryStartSession()
+            } else if session != nil, tick % 5 == 0 {
+                await refreshPhones() // so a second phone plugged in meanwhile shows up in the picker
             }
+            tick += 1
             try? await Task.sleep(for: .seconds(2))
         }
+    }
+
+    private func refreshPhones() async {
+        guard let adb = try? ADBBridge(), let devices = try? await Task.detached(operation: { try adb.devices() }).value
+        else { return }
+        setup.phones = devices.filter(\.isReady)
     }
 
     private func refreshSetup() {
@@ -130,7 +146,7 @@ final class AppModel {
             setup.phones = devices.filter(\.isReady)
             switch pick {
             case let .choose(candidates):
-                setup.device = .none
+                setup.device = .choose(candidates.count)
                 status = StatusText.choosePhone(count: candidates.count)
             case .none:
                 setup.device = .none
@@ -152,6 +168,7 @@ final class AppModel {
     private func startSession(adb: ADBBridge, serial: String, name: String, jar: URL) {
         status = StatusText.connecting(name)
         reachedConnected = false
+        sessionSerial = serial
         let session = DeviceSession(adb: adb, serial: serial, jar: jar, settings: settings)
         session.onStateChange = { [weak self, weak session] state in
             Task { @MainActor in
@@ -177,8 +194,15 @@ final class AppModel {
         case .remote:
             phase = .controlling
             status = StatusText.controlling(name)
+        case .ended(.stopped):
+            // We stopped it (switch off, or another phone chosen): not a failure, no back-off.
+            session = nil
+            sessionSerial = nil
+            phase = isEnabled ? .searching : .paused
+            status = isEnabled ? StatusText.searching : StatusText.paused
         case let .ended(reason):
             session = nil // the discovery loop starts a new session
+            sessionSerial = nil
             phase = isEnabled ? .searching : .paused
             status = isEnabled ? StatusText.ended(reason) : StatusText.paused
             if reason == .captureDenied {

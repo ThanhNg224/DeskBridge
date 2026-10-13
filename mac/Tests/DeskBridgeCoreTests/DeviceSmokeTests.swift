@@ -55,6 +55,10 @@ struct DeviceSmokeTests {
         let (adb, serial, jar) = try DeviceHarness.setup()
         let server = try adb.launchServer(serial: serial, jar: jar)
         defer { server.terminate() }
+        // Start from the home screen: the click below lands wherever the phone currently is, and an app in the
+        // foreground (a video player, ...) can swallow it and make the test flaky.
+        _ = try adb.run(["-s", serial, "shell", "input", "keyevent", "KEYCODE_HOME"])
+        try await Task.sleep(for: .seconds(1))
         _ = try adb.run(["-s", serial, "logcat", "-c"])
 
         // ENTER on the left edge, wait for the overlay layer to register, then click and ping.

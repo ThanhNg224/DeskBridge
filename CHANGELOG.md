@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 (2026-10-13)
 
 - Android 14, 15 and 16: input injection fixed (Android 14 crashed the server at startup); verified on emulators.
 - Held keys are released on the phone when control goes back to the Mac.

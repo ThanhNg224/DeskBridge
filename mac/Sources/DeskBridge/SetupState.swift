@@ -4,6 +4,8 @@ import DeskBridgeCore
 struct SetupState: Equatable {
     enum Device: Equatable {
         case none
+        /// Several phones are ready and none is chosen yet.
+        case choose(Int)
         case notAuthorized(String)
         case ready(String)
     }
