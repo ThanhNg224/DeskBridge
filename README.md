@@ -46,11 +46,19 @@ The DeskBridge window shows what is still missing and turns green when everythin
 
 **Can I use it without a cable?** Not at the moment. USB is what keeps it fast and private.
 
-**Can I type in Vietnamese or other languages with an input method?** Not yet. Plain typing and shortcuts work; input methods and clipboard sync between the two devices do not.
-
-**Two phones at once?** One at a time. With several plugged in, DeskBridge lets you choose.
-
 **Is it safe?** The phone side is a small program started over `adb`; it only talks over the USB cable and every session uses a one-time token. Details in [the architecture notes](docs/ARCHITECTURE.md).
+
+## Known limits
+
+- **Typing:** plain keys and shortcuts work. Input methods (Vietnamese Telex/VNI, Japanese, ...) do not, because DeskBridge sends key presses, not text.
+- **Clipboard:** copying on the Mac does not paste on the phone, and the other way round.
+- **One phone at a time.** With several plugged in, DeskBridge lets you choose which one.
+- **USB only.** No wireless mode.
+- **Rotating the phone** while the pointer is on it takes effect the next time the pointer enters.
+- **Locked phone:** the mouse wakes a sleeping screen but does not unlock it.
+- **Bottom edge over the Dock:** the Mac pointer can flash for about a tenth of a second before it disappears, mostly when the DeskBridge window is on a second display. DeskBridge also comes to the front each time the pointer goes to the phone: it has to be the active app to hide the pointer.
+- **Phones:** Android 13 and newer. Tested on a Samsung with Android 13, by hand on Android 10, and on Android 14, 15 and 16 emulators. Xiaomi/HyperOS and other vendor skins are untested.
+- **Not notarized yet:** macOS asks you to approve the first launch (see *Get started*).
 
 ---
 

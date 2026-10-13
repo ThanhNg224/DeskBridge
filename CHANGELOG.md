@@ -8,6 +8,8 @@
 - Logs: one line per hand-over (`cursor frozen at ..., blank after N ms`), with a notice when a retry was needed and an error if the arrow stayed.
 - Fixed a Swift concurrency warning in `RemoteCursor`.
 
+Known limits: input methods (Vietnamese/IME) and clipboard sync are not supported; one phone at a time; USB only; rotating the phone during a visit applies at the next visit; the mouse wakes a sleeping screen but does not unlock it; at the bottom edge over the Dock the pointer can flash for about 0.1 s (more noticeable with the DeskBridge window on a second display) and DeskBridge comes to the front on each hand-over; Xiaomi/HyperOS and other vendor skins untested; the download is not notarized (first launch needs Open Anyway).
+
 ## 1.1.2 (2026-10-13)
 
 - The mouse now wakes a phone whose screen is off (injected events do not wake it by themselves, so the server sends a wake key first). Leaving the phone never wakes it.
