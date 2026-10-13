@@ -25,6 +25,14 @@ final class AppModel {
         }
     }
 
+    var showDockIcon: Bool {
+        get { prefs.showDockIcon }
+        set {
+            prefs.showDockIcon = newValue
+            applyDockIcon()
+        }
+    }
+
     var launchAtLogin: Bool {
         didSet { loginItemChanged() }
     }
@@ -44,6 +52,7 @@ final class AppModel {
             phase = .paused
             status = StatusText.paused
         }
+        applyDockIcon()
         Permissions.requestAccessibility() // once; the loop below only checks silently
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
@@ -65,6 +74,10 @@ final class AppModel {
             status = StatusText.paused
             session?.stop() // the .ended callback clears `session`
         }
+    }
+
+    private func applyDockIcon() {
+        NSApplication.shared.setActivationPolicy(prefs.showDockIcon ? .regular : .accessory)
     }
 
     private func loginItemChanged() {
@@ -119,7 +132,12 @@ final class AppModel {
         }
         do {
             let devices = try await Task.detached { try adb.devices() }.value
-            switch DevicePicker.pick(from: devices) {
+            let pick = DevicePicker.pick(from: devices, preferredSerial: prefs.preferredSerial)
+            setup.phones = devices.filter(\.isReady)
+            switch pick {
+            case let .choose(candidates):
+                setup.device = .none
+                status = StatusText.choosePhone(count: candidates.count)
             case .none:
                 setup.device = .none
                 status = StatusText.noDevice
@@ -127,7 +145,7 @@ final class AppModel {
                 setup.device = .notAuthorized(device.state)
                 status = StatusText.notAuthorized(device.state)
             case let .ready(device):
-                let name = await Task.detached { adb.deviceName(serial: device.serial) }.value
+                let name = device.displayName
                 setup.device = .ready(name)
                 guard isEnabled, session == nil else { return }
                 startSession(adb: adb, serial: device.serial, name: name, jar: jar)

@@ -14,7 +14,17 @@ struct DevicePickerTests {
         #expect(DevicePicker.pick(from: [unauthorized]) == .notReady(unauthorized))
     }
 
-    @Test func firstReadyDeviceWinsEvenAfterAnUnusableOne() {
-        #expect(DevicePicker.pick(from: [unauthorized, ready, second]) == .ready(ready))
+    @Test func theOnlyReadyDeviceIsUsedEvenAfterAnUnusableOne() {
+        #expect(DevicePicker.pick(from: [unauthorized, ready]) == .ready(ready))
+    }
+
+    @Test func severalReadyDevicesNeedAChoice() {
+        #expect(DevicePicker.pick(from: [unauthorized, ready, second]) == .choose([ready, second]))
+    }
+
+    @Test func thePreferredDeviceWinsWhenReady() {
+        #expect(DevicePicker.pick(from: [ready, second], preferredSerial: "B") == .ready(second))
+        #expect(DevicePicker.pick(from: [ready, second], preferredSerial: "gone") == .choose([ready, second]))
+        #expect(DevicePicker.pick(from: [ready], preferredSerial: "gone") == .ready(ready))
     }
 }

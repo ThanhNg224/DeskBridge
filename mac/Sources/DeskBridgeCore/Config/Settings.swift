@@ -17,6 +17,10 @@ public final class Settings: @unchecked Sendable {
         public var commandIsControl = true
         /// Master switch of the app: off keeps it idle.
         public var enabled = true
+        /// Show the app in the Dock (otherwise it only lives in the menu bar).
+        public var showDockIcon = true
+        /// Serial of the phone to use when several are attached.
+        public var preferredSerial: String?
     }
 
     private let lock: OSAllocatedUnfairLock<Values>
@@ -46,6 +50,10 @@ public final class Settings: @unchecked Sendable {
         if let enabled = defaults.object(forKey: "enabled") as? Bool {
             values.enabled = enabled
         }
+        if let dock = defaults.object(forKey: "showDockIcon") as? Bool {
+            values.showDockIcon = dock
+        }
+        values.preferredSerial = defaults.string(forKey: "preferredSerial")
         lock = OSAllocatedUnfairLock(initialState: values)
     }
 
@@ -60,6 +68,8 @@ public final class Settings: @unchecked Sendable {
             defaults.set(newValue.scrollSpeed, forKey: "scrollSpeed")
             defaults.set(newValue.commandIsControl, forKey: "commandIsControl")
             defaults.set(newValue.enabled, forKey: "enabled")
+            defaults.set(newValue.showDockIcon, forKey: "showDockIcon")
+            defaults.set(newValue.preferredSerial, forKey: "preferredSerial")
         }
     }
 }

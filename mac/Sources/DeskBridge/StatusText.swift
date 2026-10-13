@@ -9,6 +9,10 @@ enum StatusText {
     static let needsAccessibility = String(localized: "DeskBridge needs Accessibility access")
     static let jarMissing = String(localized: "The Android server file is missing. Run scripts/build_server.sh")
 
+    static func choosePhone(count: Int) -> String {
+        String(localized: "\(count) phones are connected. Choose one in Settings.")
+    }
+
     static func connecting(_ name: String) -> String {
         String(localized: "Connecting to \(name)…")
     }

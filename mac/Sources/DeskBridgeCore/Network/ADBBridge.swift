@@ -3,8 +3,22 @@ import Foundation
 public struct AdbDevice: Equatable, Sendable {
     public let serial: String
     public let state: String
+    /// Model reported by `adb devices -l` (e.g. "SM N770F"), if any.
+    public let model: String?
+
+    public init(serial: String, state: String, model: String? = nil) {
+        self.serial = serial
+        self.state = state
+        self.model = model
+    }
+
     public var isReady: Bool {
         state == "device"
+    }
+
+    /// Short name for the UI.
+    public var displayName: String {
+        model ?? serial
     }
 }
 
@@ -54,7 +68,10 @@ public struct ADBBridge: Sendable {
             guard !line.hasPrefix("*"), !line.hasPrefix("List of devices") else { return nil }
             let parts = line.split(whereSeparator: \.isWhitespace)
             guard parts.count >= 2 else { return nil }
-            return AdbDevice(serial: String(parts[0]), state: String(parts[1]))
+            let model = parts.dropFirst(2)
+                .first { $0.hasPrefix("model:") }
+                .map { String($0.dropFirst("model:".count)).replacingOccurrences(of: "_", with: " ") }
+            return AdbDevice(serial: String(parts[0]), state: String(parts[1]), model: model)
         }
     }
 
@@ -79,7 +96,7 @@ public struct ADBBridge: Sendable {
     // MARK: - Commands
 
     public func devices() throws -> [AdbDevice] {
-        try Self.parseDevices(run(["devices"]))
+        try Self.parseDevices(run(["devices", "-l"]))
     }
 
     public func push(serial: String, local: URL, remote: String) throws {

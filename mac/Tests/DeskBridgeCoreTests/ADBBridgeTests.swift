@@ -17,6 +17,19 @@ struct ADBBridgeTests {
         #expect(devices.filter(\.isReady).map(\.serial) == ["emulator-5554", "192.168.1.50:5555"])
     }
 
+    @Test func parsesModelFromLongListing() {
+        let output = """
+        List of devices attached
+        RF8NA2EZKZK            device usb:17956864X product:r7nsxx model:SM_N770F device:r7 transport_id:29
+        emulator-5554          device product:sdk model:sdk_gphone64_arm64 device:emu64a transport_id:3
+
+        """
+        let devices = ADBBridge.parseDevices(output)
+        #expect(devices.map(\.model) == ["SM N770F", "sdk gphone64 arm64"])
+        #expect(devices[0].displayName == "SM N770F")
+        #expect(AdbDevice(serial: "X", state: "device").displayName == "X")
+    }
+
     @Test func parsesEmptyList() {
         #expect(ADBBridge.parseDevices("List of devices attached\n\n").isEmpty)
     }

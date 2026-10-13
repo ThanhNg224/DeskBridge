@@ -54,3 +54,8 @@
 "⌘ acts as Ctrl (⌘C, ⌘V, ⌘A)" = "⌘ hoạt động như Ctrl (⌘C, ⌘V, ⌘A)";
 "General" = "Chung";
 "Launch at login" = "Mở khi đăng nhập";
+"Show icon in the Dock" = "Hiện biểu tượng trên Dock";
+"%lld phones are connected. Choose one in Settings." = "Có %lld điện thoại đang kết nối. Hãy chọn một máy trong Cài đặt.";
+"Phone" = "Điện thoại";
+"Use this phone" = "Dùng điện thoại này";
+"Choose…" = "Chọn…";

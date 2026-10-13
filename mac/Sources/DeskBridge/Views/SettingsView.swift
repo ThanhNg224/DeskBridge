@@ -10,6 +10,17 @@ struct SettingsView: View {
                 SetupChecklist(setup: model.setup)
             }
 
+            if model.setup.phones.count > 1 {
+                Section("Phone") {
+                    Picker("Use this phone", selection: $model.prefs.preferredSerial) {
+                        Text("Choose…").tag(String?.none)
+                        ForEach(model.setup.phones, id: \.serial) { phone in
+                            Text(phone.displayName).tag(String?.some(phone.serial))
+                        }
+                    }
+                }
+            }
+
             Section("Layout") {
                 Picker("Android is on the", selection: $model.prefs.edge) {
                     Text("Left").tag(ScreenEdge.left)
@@ -36,6 +47,7 @@ struct SettingsView: View {
 
             Section("General") {
                 Toggle("Launch at login", isOn: $model.launchAtLogin)
+                Toggle("Show icon in the Dock", isOn: $model.showDockIcon)
             }
         }
         .formStyle(.grouped)

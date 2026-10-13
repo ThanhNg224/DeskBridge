@@ -1,3 +1,5 @@
+import DeskBridgeCore
+
 /// What the first-run checklist shows. Updated on every discovery tick.
 struct SetupState: Equatable {
     enum Device: Equatable {
@@ -6,6 +8,8 @@ struct SetupState: Equatable {
         case ready(String)
     }
 
+    /// All ready phones while more than one is attached (the user picks one in Settings).
+    var phones: [AdbDevice] = []
     var accessibility = false
     var adbFound = true
     var device = Device.none
