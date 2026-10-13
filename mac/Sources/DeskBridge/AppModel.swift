@@ -13,7 +13,10 @@ final class AppModel {
     var setup = SetupState()
 
     var prefs: Settings.Values {
-        didSet { settings.values = prefs }
+        didSet {
+            settings.values = prefs
+            session?.settingsChanged()
+        }
     }
 
     /// Master switch: off stops the session and keeps the app idle.

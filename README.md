@@ -16,6 +16,13 @@ A spiritual successor to DeskDock built with modern tooling:
 
 ---
 
+## Install (from source)
+
+1. Install the Android tools: `brew install --cask android-platform-tools`.
+2. Build the app: `scripts/setup_signing.sh` once (a local signing identity so macOS keeps the Accessibility grant across rebuilds), then `scripts/package_app.sh`.
+3. Open `build/DeskBridge.app`, allow it in **System Settings > Privacy & Security > Accessibility**, plug in the phone (USB debugging on, tap Allow on the phone). The Settings window shows what is still missing.
+4. Push the mouse past the screen edge you chose. **⌃⌥⌘⎋** gives it back to the Mac at any time.
+
 ## Documentation
 
 - **[System Architecture](docs/ARCHITECTURE.md)**: decisions, protocol, security model, risks and non-goals.

@@ -42,14 +42,35 @@ When the Mac cursor pushes through the configured screen edge (left, right, top 
 ## 3. Subsystem Breakdown
 
 ### 3.1 macOS (`mac/`, SwiftPM)
-- **`DeskBridgeCore` (library):** protocol codec, `ADBBridge`/`ServerLauncher`, `Connection`, `MoveCoalescer`, `KeyMapper`, `EdgeDetector`, `InputCapturer`, `DeviceSession`, `Settings`. Unit-testable without UI.
-- **`DeskBridge` (executable):** SwiftUI `MenuBarExtra` + `AppModel` (device discovery loop, permission check).
+
+**Layout.** `DeskBridgeCore` is a library (unit-testable, no UI); `DeskBridge` is the app target.
+
+```
+DeskBridgeCore/
+  Protocol/    Packets            wire format: encoder + incremental parser (matches the server byte for byte)
+  Network/     ADBBridge, ServerLauncher, Connection (NWConnection, TCP_NODELAY)
+  Input/       InputCapturer (event tap), RemoteInput (event -> packet, pure), KeyMapper, MoveCoalescer
+  Display/     EdgeDetector (per-display edges, pure), Displays (display/window layout reads)
+  Cursor/      RemoteCursor (park, swallow, freeze, hide, give back), CursorShield, ParkingPoint, WarpFilter
+  Session/     DeviceSession (state machine + launch/connect/heartbeat), SessionEndReason, Backoff
+  Discovery/   DevicePicker (which phone to use, pure)
+  Config/      Settings (persisted), ServerJar
+DeskBridge/
+  AppModel (observable state, discovery loop), StatusText (user-facing text), SetupState
+  Views/       MenuBarView (popover), SettingsView, SetupChecklist
+  System/      Permissions, LoginItem, SettingsWindow
+  AppDelegate, BrandIcon
+```
+
+Pure units (everything marked "pure") have unit tests; the session itself and the cursor choreography are covered by the device smoke tests and by manual checks.
+
 - **Event tap:** `CGEvent.tapCreate` at `.cghidEventTap`, active filter. Captures mouse move/drag (all buttons), buttons, scroll, key down/up. In local mode events pass through; in remote mode they are swallowed. Re-enables itself on `tapDisabledByTimeout`.
-- **Edges:** computed per display (`EdgeDetector`): an edge counts only where no other display sits right behind it. Top and bottom only count on the **main display**, so a tall or rotated secondary display never blocks the way. Left and right use every exposed edge. Control returns to the display it left from.
-- **Remote mode:** park the frozen cursor, cover that display with a near-invisible `CursorShield` window (so this app owns the cursor image) and hide it; read `mouseEventDeltaX/Y`. After each cursor warp, moves of 60 px or more are ignored for 0.3 s (smaller moves still reach Android).
+- **Edges:** computed per display (`EdgeDetector`): an edge counts only where no other display sits right behind it. Top and bottom only count on the **main display**, so a tall or rotated secondary display never blocks the way. Left and right use every exposed edge. Control returns to the display it left from. Edges are rebuilt when displays change or the edge setting changes, and never while Android has control.
+- **Remote mode (`RemoteCursor`)**, in this order: move the cursor off whatever it hovers while events still pass (so the Dock clears its icon label); start swallowing; cover the display with a near-invisible foreground `CursorShield` window above the Dock level that shows a transparent cursor; warp again under it; freeze (`CGAssociateMouseAndMouseCursorPosition(false)`) and hide. Mouse input comes from `mouseEventDeltaX/Y`. After each warp, moves of 60 px or more are ignored for 0.3 s (smaller moves still reach Android). Background-app cursor hiding alone is unreliable (see CLAUDE.md).
 - **Fail-safes:** release chord **⌃⌥⌘⎋**; control returns to the Mac automatically on disconnect, server exit, or 6 s without a packet.
-- **Device lifecycle:** poll `adb devices` while no session is active; push jar, `forward`, spawn server, connect with retry until the server listens (≤ 8 s).
-- **Packaging:** `scripts/package_app.sh` builds `DeskBridge.app` (window + menu bar item, jar in Resources, codesigned) because Accessibility/Input Monitoring permissions attach to a signed bundle.
+- **Device lifecycle:** poll `adb devices -l` while no session is active (2 s, with a growing back-off after repeated failed starts: 2, 4, 8 ... 30 s); push jar, `forward`, spawn server, connect with retry until the server listens (up to 8 s). Several ready phones: the user picks one in Settings.
+- **UI:** a menu bar popover (status, enable switch, Settings, Quit) plus a Settings window with a live setup checklist (Accessibility, adb, phone). The Dock icon is on by default and can be turned off. English and Vietnamese (`mac/Resources/vi.lproj`, English text is the key).
+- **Packaging:** `scripts/package_app.sh` builds `DeskBridge.app` (version from `VERSION`, jar and localizations in Resources, codesigned) because Accessibility/Input Monitoring permissions attach to a signed bundle. `scripts/setup_signing.sh` creates the stable local identity.
 
 ### 3.2 Android server (`server/`, plain Java, no Gradle)
 - Built with `javac --release 11` against the SDK `android.jar`, then `d8 --min-api 26`, zipped as `deskbridge-server.jar`.

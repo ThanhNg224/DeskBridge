@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 import os
@@ -44,6 +45,7 @@ public final class DeviceSession: @unchecked Sendable {
     private var parser = ServerPacketParser()
     private var coalescer = MoveCoalescer()
     private var detector = EdgeDetector(edge: .right, displays: [])
+    private var screenObserver: NSObjectProtocol?
     private var connectDeadline = Date()
     private var lastReceived = Date()
     /// Display the cursor left from; control returns to the same display.
@@ -63,6 +65,11 @@ public final class DeviceSession: @unchecked Sendable {
 
     public func stop() {
         queue.async { self.end(.stopped) }
+    }
+
+    /// Call when the edge setting changed so the new edge applies at once.
+    public func settingsChanged() {
+        queue.async { self.refreshDetector() }
     }
 
     /// For app termination: finishes teardown (cursor, forward, server) before returning.
@@ -132,6 +139,14 @@ public final class DeviceSession: @unchecked Sendable {
         }
         self.capturer = capturer
 
+        // Displays plugged, unplugged or rearranged: rebuild the edges right away.
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: nil
+        ) { [weak self] _ in
+            guard let self else { return }
+            queue.async { self.refreshDetector() }
+        }
+
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now() + Self.heartbeatInterval, repeating: Self.heartbeatInterval)
         timer.setEventHandler { [weak self] in self?.tick() }
@@ -141,7 +156,10 @@ public final class DeviceSession: @unchecked Sendable {
         state = .local
     }
 
+    /// Edges are fixed while Android has control (the way back must match the way in); the change is
+    /// applied when control returns.
     private func refreshDetector() {
+        guard state != .remote else { return }
         detector = EdgeDetector(edge: settings.values.edge, displays: Displays.current(), primary: Displays.primary())
     }
 
@@ -152,9 +170,6 @@ public final class DeviceSession: @unchecked Sendable {
             return
         }
         connection?.send(ProtocolEncoder.ping())
-        if state == .local {
-            refreshDetector()
-        }
     }
 
     // MARK: - Incoming packets
@@ -223,6 +238,7 @@ public final class DeviceSession: @unchecked Sendable {
         }
         cursor.release(returnTo: along.map { detector.returnPoint(along: $0, in: entryDisplay) })
         state = .local
+        refreshDetector()
     }
 
     // MARK: - Sending
@@ -259,6 +275,10 @@ public final class DeviceSession: @unchecked Sendable {
         returnToMac(along: nil, notifyServer: false)
         heartbeat?.cancel()
         heartbeat = nil
+        if let screenObserver {
+            NotificationCenter.default.removeObserver(screenObserver)
+        }
+        screenObserver = nil
         capturer?.stop()
         capturer = nil
         connection?.cancel()
