@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.1 (2026-10-13)
+
+- Settings window shows the live status again: coloured dot, status text, on/off switch and the release shortcut.
+- The status text reserves two lines, so nothing below it jumps when the message gets longer or shorter.
+- Downloadable `DeskBridge.zip` on the release page; `scripts/release.sh` builds it (and signs and notarizes when a Developer ID is available).
+- README rewritten for everyday users; developer notes moved to the end.
+
 ## 1.1.0 (2026-10-13)
 
 - Android 14, 15 and 16: input injection fixed (Android 14 crashed the server at startup); verified on emulators.

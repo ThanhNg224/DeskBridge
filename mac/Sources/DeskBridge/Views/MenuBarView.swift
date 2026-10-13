@@ -8,16 +8,13 @@ struct MenuBarView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 8) {
                 Circle()
-                    .fill(statusColor)
+                    .fill(model.phase.color)
                     .frame(width: 8, height: 8)
                     .padding(.top, 6)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("DeskBridge").font(.headline)
-                    Text(model.status)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    StatusLine(text: model.status)
                 }
                 Spacer(minLength: 8)
                 Toggle("Enabled", isOn: $model.isEnabled)
@@ -41,16 +38,7 @@ struct MenuBarView: View {
             }
         }
         .padding(16)
-        .frame(width: 320)
+        .frame(width: 340)
         .modifier(RegisterWindowOpener()) // so "Settings…" works even if the window was never shown
-    }
-
-    private var statusColor: Color {
-        switch model.phase {
-        case .paused: .gray
-        case .searching: .orange
-        case .connected: .green
-        case .controlling: .blue
-        }
     }
 }

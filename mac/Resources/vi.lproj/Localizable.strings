@@ -18,6 +18,7 @@
 /* Menu bar */
 "DeskBridge" = "DeskBridge";
 "Enabled" = "Bật";
+"Release control: ⌃⌥⌘⎋" = "Trả chuột về Mac: ⌃⌥⌘⎋";
 "Finish setup…" = "Hoàn tất cài đặt…";
 "Settings…" = "Cài đặt…";
 "Quit" = "Thoát";

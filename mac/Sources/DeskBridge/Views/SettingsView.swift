@@ -5,6 +5,14 @@ struct SettingsView: View {
     @Bindable var model: AppModel
 
     var body: some View {
+        VStack(spacing: 0) {
+            StatusHeader(model: model)
+            form
+        }
+        .frame(width: 440, height: 680)
+    }
+
+    private var form: some View {
         Form {
             if !model.setup.isComplete {
                 SetupChecklist(setup: model.setup)
@@ -51,7 +59,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 440, height: 600)
     }
 }
 
