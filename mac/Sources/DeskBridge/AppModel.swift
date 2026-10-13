@@ -9,8 +9,8 @@ final class AppModel {
     }
 
     var phase = Phase.searching
-    var status = "Looking for a device…"
-    var needsAccessibility = false
+    var status = StatusText.searching
+    var setup = SetupState()
 
     var prefs: Settings.Values {
         didSet { settings.values = prefs }
@@ -35,13 +35,14 @@ final class AppModel {
     @ObservationIgnored private var backoff = Backoff()
     @ObservationIgnored private var retryNotBefore = Date.distantPast
     @ObservationIgnored private var syncingLoginItem = false
+    @ObservationIgnored private var openedSettingsForSetup = false
 
     init() {
         prefs = settings.values
         launchAtLogin = LoginItem.isEnabled
         if !prefs.enabled {
             phase = .paused
-            status = "Paused"
+            status = StatusText.paused
         }
         Permissions.requestAccessibility() // once; the loop below only checks silently
         NotificationCenter.default.addObserver(
@@ -57,11 +58,11 @@ final class AppModel {
     private func enabledChanged() {
         if isEnabled {
             phase = .searching
-            status = "Looking for a device…"
+            status = StatusText.searching
             retryNotBefore = .distantPast
         } else {
             phase = .paused
-            status = "Paused"
+            status = StatusText.paused
             session?.stop() // the .ended callback clears `session`
         }
     }
@@ -71,7 +72,7 @@ final class AppModel {
         do {
             try LoginItem.set(launchAtLogin)
         } catch {
-            status = "Launch at login failed: \(error.localizedDescription)"
+            status = error.localizedDescription
             syncingLoginItem = true
             launchAtLogin = LoginItem.isEnabled
             syncingLoginItem = false
@@ -82,34 +83,52 @@ final class AppModel {
 
     private func discoveryLoop() async {
         while !Task.isCancelled {
+            refreshSetup()
             if isEnabled, session == nil, Date() >= retryNotBefore {
                 await tryStartSession()
             }
+            openSettingsOnceIfSetupIncomplete()
             try? await Task.sleep(for: .seconds(2))
         }
     }
 
+    private func refreshSetup() {
+        setup.accessibility = Permissions.accessibilityGranted
+        setup.adbFound = ADBBridge.locate() != nil
+    }
+
+    /// First run (or after losing a permission): show the checklist once instead of a silent menu bar icon.
+    private func openSettingsOnceIfSetupIncomplete() {
+        guard !openedSettingsForSetup, !setup.isComplete, !setup.accessibility || !setup.adbFound else { return }
+        openedSettingsForSetup = true
+        SettingsWindow.open()
+    }
+
     private func tryStartSession() async {
-        guard Permissions.accessibilityGranted else {
-            status = "Allow DeskBridge in Accessibility. If it is already listed, remove it with \u{2212} and add it again."
-            needsAccessibility = true
+        guard setup.accessibility else {
+            status = StatusText.needsAccessibility
             return
         }
-        needsAccessibility = false
         guard let jar = ServerJar.locate() else {
-            status = "deskbridge-server.jar not found. Run scripts/build_server.sh"
+            status = StatusText.jarMissing
+            return
+        }
+        guard setup.adbFound, let adb = try? ADBBridge() else {
+            status = StatusText.noDevice
             return
         }
         do {
-            let adb = try ADBBridge()
             let devices = try await Task.detached { try adb.devices() }.value
             switch DevicePicker.pick(from: devices) {
             case .none:
-                status = "Connect an Android device with USB debugging"
+                setup.device = .none
+                status = StatusText.noDevice
             case let .notReady(device):
-                status = "Authorize this Mac on the device (\(device.state))"
+                setup.device = .notAuthorized(device.state)
+                status = StatusText.notAuthorized(device.state)
             case let .ready(device):
                 let name = await Task.detached { adb.deviceName(serial: device.serial) }.value
+                setup.device = .ready(name)
                 guard isEnabled, session == nil else { return }
                 startSession(adb: adb, serial: device.serial, name: name, jar: jar)
             }
@@ -119,7 +138,7 @@ final class AppModel {
     }
 
     private func startSession(adb: ADBBridge, serial: String, name: String, jar: URL) {
-        status = "Connecting to \(name)…"
+        status = StatusText.connecting(name)
         reachedConnected = false
         let session = DeviceSession(adb: adb, serial: serial, jar: jar, settings: settings)
         session.onStateChange = { [weak self, weak session] state in
@@ -137,21 +156,21 @@ final class AppModel {
         switch state {
         case .starting:
             phase = .searching
-            status = "Connecting to \(name)…"
+            status = StatusText.connecting(name)
         case .local:
             reachedConnected = true
             backoff.reset()
             phase = .connected
-            status = "Connected to \(name)"
+            status = StatusText.connected(name)
         case .remote:
             phase = .controlling
-            status = "Controlling \(name). ⌃⌥⌘⎋ to release."
+            status = StatusText.controlling(name)
         case let .ended(reason):
             session = nil // the discovery loop starts a new session
             phase = isEnabled ? .searching : .paused
-            status = isEnabled ? reason.description : "Paused"
+            status = isEnabled ? StatusText.ended(reason) : StatusText.paused
             if reason == .captureDenied {
-                needsAccessibility = true
+                setup.accessibility = false
             }
             if !reachedConnected {
                 backoff.recordFailure() // never got going: wait longer each time

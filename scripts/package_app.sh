@@ -15,6 +15,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/DeskBridge"
 cp "$ROOT/server/build/deskbridge-server.jar" "$ROOT/mac/Resources/AppIcon.icns" "$APP/Contents/Resources/"
+cp -R "$ROOT"/mac/Resources/*.lproj "$APP/Contents/Resources/"
 
 VERSION="$(cat "$ROOT/VERSION")"
 cat > "$APP/Contents/Info.plist" <<PLIST
@@ -24,12 +25,15 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <dict>
   <key>CFBundleIdentifier</key><string>com.deskbridge.app</string>
   <key>CFBundleName</key><string>DeskBridge</string>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleLocalizations</key><array><string>en</string><string>vi</string></array>
   <key>CFBundleExecutable</key><string>DeskBridge</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>LSUIElement</key><true/>
 </dict>
 </plist>
 PLIST

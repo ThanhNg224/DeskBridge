@@ -43,6 +43,7 @@ shopt -u nullglob
 
 stage "shellcheck"        "scripts"                         shellcheck -S warning "${scripts[@]}"
 stage "swiftformat"       "mac/Package.swift"               swiftformat --lint mac
+stage "strings"          "mac/Resources/vi.lproj"          plutil -lint mac/Resources/vi.lproj/Localizable.strings
 stage "server tests"      "scripts/test_server.sh"          scripts/test_server.sh
 stage "server jar"        "scripts/build_server.sh"         scripts/build_server.sh
 stage "mac build"         "mac/Package.swift"               mac_build

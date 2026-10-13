@@ -9,6 +9,13 @@ public enum SessionEndReason: Equatable, Sendable, CustomStringConvertible {
     case deviceSilent
     case protocolError(String)
 
+    /// The server could not inject input (typically a SecurityException on OEMs that need an extra
+    /// developer setting, e.g. Xiaomi/HyperOS "USB debugging (Security settings)").
+    public var isInjectionDenied: Bool {
+        guard case let .connectionLost(log) = self else { return false }
+        return log.contains("SecurityException") || log.contains("INJECT_EVENTS")
+    }
+
     public var description: String {
         switch self {
         case .stopped: "Stopped"

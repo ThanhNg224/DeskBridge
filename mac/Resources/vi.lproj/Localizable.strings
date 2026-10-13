@@ -1,0 +1,56 @@
+/* DeskBridge: Vietnamese. The English text is the key. */
+
+/* Status */
+"Looking for a device…" = "Đang tìm thiết bị…";
+"Paused" = "Đã tạm dừng";
+"Connect an Android phone with USB debugging turned on" = "Cắm điện thoại Android và bật gỡ lỗi USB";
+"DeskBridge needs Accessibility access" = "DeskBridge cần quyền Trợ năng (Accessibility)";
+"The Android server file is missing. Run scripts/build_server.sh" = "Thiếu tệp máy chủ Android. Hãy chạy scripts/build_server.sh";
+"Connecting to %@…" = "Đang kết nối với %@…";
+"Connected to %@" = "Đã kết nối với %@";
+"Controlling %@. Press ⌃⌥⌘⎋ to give the mouse back to the Mac." = "Đang điều khiển %@. Nhấn ⌃⌥⌘⎋ để trả chuột về Mac.";
+"Allow this Mac on the phone (%@)" = "Hãy cho phép máy Mac này trên điện thoại (%@)";
+"The phone refused input. On Xiaomi, turn on “USB debugging (Security settings)”." = "Điện thoại từ chối nhận thao tác. Trên Xiaomi, hãy bật “Gỡ lỗi USB (Cài đặt bảo mật)”.";
+"The phone stopped responding" = "Điện thoại không phản hồi";
+"Unexpected reply from the phone" = "Điện thoại trả lời không hợp lệ";
+"The connection to the phone was lost" = "Mất kết nối với điện thoại";
+
+/* Menu bar */
+"DeskBridge" = "DeskBridge";
+"Enabled" = "Bật";
+"Finish setup…" = "Hoàn tất cài đặt…";
+"Settings…" = "Cài đặt…";
+"Quit" = "Thoát";
+
+/* Setup checklist */
+"Setup" = "Thiết lập";
+"Accessibility access" = "Quyền Trợ năng";
+"Needed to read the mouse and keyboard." = "Cần để đọc chuột và bàn phím.";
+"Open Settings" = "Mở Cài đặt";
+"Input Monitoring" = "Giám sát đầu vào";
+"Android tools (adb)" = "Công cụ Android (adb)";
+"Install them with Homebrew:" = "Cài bằng Homebrew:";
+"Copy command" = "Sao chép lệnh";
+"Phone: %@" = "Điện thoại: %@";
+"Phone not authorized (%@)" = "Điện thoại chưa cho phép (%@)";
+"Unlock the phone and tap Allow." = "Mở khóa điện thoại và chạm Cho phép.";
+"No phone found" = "Không thấy điện thoại";
+"Plug it in and turn on USB debugging." = "Cắm cáp và bật gỡ lỗi USB.";
+
+/* Settings */
+"Layout" = "Bố cục";
+"Android is on the" = "Điện thoại nằm ở phía";
+"Left" = "Trái";
+"Right" = "Phải";
+"Top" = "Trên";
+"Bottom" = "Dưới";
+"Mouse" = "Chuột";
+"Pointer speed" = "Tốc độ con trỏ";
+"Right click = Back" = "Chuột phải = Quay lại";
+"Scrolling" = "Cuộn";
+"Scroll speed" = "Tốc độ cuộn";
+"Invert scroll direction" = "Đảo chiều cuộn";
+"Keyboard" = "Bàn phím";
+"⌘ acts as Ctrl (⌘C, ⌘V, ⌘A)" = "⌘ hoạt động như Ctrl (⌘C, ⌘V, ⌘A)";
+"General" = "Chung";
+"Launch at login" = "Mở khi đăng nhập";
