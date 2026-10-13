@@ -224,11 +224,11 @@ public final class DeviceSession: @unchecked Sendable {
         remoteFlag.withLock { $0 = true }
         // Park the frozen cursor well inside the screen: at the very edge the Dock (bottom) or another
         // system UI owns the cursor image and ignores our hide request, leaving a sliver visible.
-        CGWarpMouseCursorPosition(parkingPoint(for: location))
+        let target = parkingPoint(for: location)
+        CGWarpMouseCursorPosition(target)
         ignoreMovesUntil = Date().addingTimeInterval(0.15)
         let associate = CGAssociateMouseAndMouseCursorPosition(0) // freeze the Mac cursor; deltas keep flowing
         let hide = CGDisplayHideCursor(CGMainDisplayID()) // best effort for a background app
-        let target = parkingPoint(for: location)
         let edge = String(describing: detector.edge)
         let width = Int(detector.bounds.width)
         let height = Int(detector.bounds.height)
@@ -247,33 +247,65 @@ public final class DeviceSession: @unchecked Sendable {
         state = .remote
     }
 
-    /// Owner of the front-most on-screen window containing `point` (diagnostics only).
-    private static func windowOwner(at point: CGPoint) -> String {
+    /// Front-most on-screen window containing `point`, if any.
+    private static func topWindow(at point: CGPoint) -> (owner: String, layer: Int)? {
         let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
         guard let windows = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
-            return "?"
+            return nil
         }
         for window in windows {
             guard let bounds = window[kCGWindowBounds as String] as? [String: CGFloat],
                   let x = bounds["X"], let y = bounds["Y"], let w = bounds["Width"], let h = bounds["Height"],
                   CGRect(x: x, y: y, width: w, height: h).contains(point)
             else { continue }
-            let owner = window[kCGWindowOwnerName as String] as? String ?? "?"
-            let layer = window[kCGWindowLayer as String] as? Int ?? 0
-            return "\(owner)(layer \(layer))"
+            return (
+                window[kCGWindowOwnerName as String] as? String ?? "?",
+                window[kCGWindowLayer as String] as? Int ?? 0
+            )
         }
-        return "none"
+        return nil
     }
 
-    private func parkingPoint(for location: CGPoint, inset: CGFloat = 120) -> CGPoint {
-        var point = location
-        switch detector.edge {
-        case .bottom: point.y -= inset
-        case .top: point.y += inset
-        case .left: point.x += inset
-        case .right: point.x -= inset
+    private static func windowOwner(at point: CGPoint) -> String {
+        topWindow(at: point).map { "\($0.owner)(layer \($0.layer))" } ?? "none"
+    }
+
+    /// Bounds of the display containing `point`, falling back to the union of all displays.
+    private func displayBounds(containing point: CGPoint) -> CGRect {
+        var display: CGDirectDisplayID = 0
+        var count: UInt32 = 0
+        guard CGGetDisplaysWithPoint(point, 1, &display, &count) == .success, count > 0 else {
+            return detector.bounds
         }
-        return point
+        return CGDisplayBounds(display)
+    }
+
+    /// Where to leave the frozen cursor while Android has control. It has to be somewhere no other app's
+    /// window sits: that app owns the cursor image there and ignores our hide request (the Dock at the
+    /// bottom edge, floating panels, ...). Tries points further inside the screen, then sideways.
+    private func parkingPoint(for location: CGPoint) -> CGPoint {
+        let display = displayBounds(containing: location).insetBy(dx: 24, dy: 24)
+        let inward = switch detector.edge {
+        case .bottom: CGVector(dx: 0, dy: -1)
+        case .top: CGVector(dx: 0, dy: 1)
+        case .left: CGVector(dx: 1, dy: 0)
+        case .right: CGVector(dx: -1, dy: 0)
+        }
+        let along = CGVector(dx: abs(inward.dy), dy: abs(inward.dx))
+        for distance in [120.0, 240, 400] as [CGFloat] {
+            for offset in [0, -250, 250, -500, 500] as [CGFloat] {
+                let point = CGPoint(
+                    x: location.x + inward.dx * distance + along.dx * offset,
+                    y: location.y + inward.dy * distance + along.dy * offset
+                )
+                guard display.contains(point) else { continue }
+                if let window = Self.topWindow(at: point), window.layer >= 0, window.owner != "DeskBridge" {
+                    continue
+                }
+                return point
+            }
+        }
+        return CGPoint(x: location.x + inward.dx * 120, y: location.y + inward.dy * 120)
     }
 
     private func returnToMac(along: Float?, notifyServer: Bool) {
