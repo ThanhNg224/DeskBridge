@@ -45,8 +45,8 @@ public final class DeviceSession: @unchecked Sendable {
     private var detector = EdgeDetector(edge: .right, displays: [])
     private var connectDeadline = Date()
     private var lastReceived = Date()
-    /// Our own cursor warp comes back through the event tap as a big mouse move; it must not reach Android.
-    private var ignoreMovesUntil = Date.distantPast
+    /// Our own cursor warps come back through the event tap as big mouse moves; those must not reach Android.
+    private var warpWindowEnd = Date.distantPast
     private let shield = CursorShield()
     private var cursorHidden = false
     private var loggedMoves = 0
@@ -191,7 +191,7 @@ public final class DeviceSession: @unchecked Sendable {
             }
 
         case let (.remote, .move(dx, dy, _)):
-            guard Date() >= ignoreMovesUntil else {
+            if Date() < warpWindowEnd, hypot(dx, dy) >= 60 {
                 Self.log.info("ignored warp move dx=\(Int(dx)) dy=\(Int(dy))")
                 return
             }
@@ -243,23 +243,30 @@ public final class DeviceSession: @unchecked Sendable {
         loggedMoves = 0
         coalescer = MoveCoalescer()
         send(ProtocolEncoder.enter(edge: detector.edge.androidEntryEdge, along: crossing.along))
-        remoteFlag.withLock { $0 = true }
         state = .remote
 
-        // Order matters. The window under a cursor decides which app owns the cursor image, and macOS only
-        // re-evaluates that when the cursor moves. If the Dock (or another app) is under it now, it keeps
-        // the image and ignores our hide request. So: cover the display with our own window first, THEN
-        // warp the cursor (it moves under our window and we become the owner), THEN hide it.
+        // 1. Move the cursor off whatever it is hovering (a Dock icon, ...) while the event tap still lets
+        //    events through, so that app sees the pointer leave and clears its hover state (the Dock
+        //    otherwise keeps showing the icon's name). Only then start swallowing input.
         let target = parkingPoint(for: location)
-        shield.show(covering: crossing.display) { [weak self] in
-            self?.queue.async { self?.freezeCursor(at: target, from: location) }
+        CGWarpMouseCursorPosition(target)
+        warpWindowEnd = Date().addingTimeInterval(0.3)
+        queue.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let self, state == .remote else { return }
+            remoteFlag.withLock { $0 = true }
+            // 2. Order matters. The window under a cursor decides which app owns the cursor image, and
+            //    macOS only re-evaluates that when the cursor moves. Cover the display with our own
+            //    window first, THEN warp (we become the owner), THEN hide.
+            shield.show(covering: crossing.display) { [weak self] in
+                self?.queue.async { self?.freezeCursor(at: target, from: location) }
+            }
         }
     }
 
     private func freezeCursor(at target: CGPoint, from location: CGPoint) {
         guard state == .remote, !cursorHidden else { return }
         CGWarpMouseCursorPosition(target)
-        ignoreMovesUntil = Date().addingTimeInterval(0.15)
+        warpWindowEnd = Date().addingTimeInterval(0.3)
         let associate = CGAssociateMouseAndMouseCursorPosition(0) // freeze the Mac cursor; deltas keep flowing
         let hide = CGDisplayHideCursor(CGMainDisplayID())
         cursorHidden = hide == .success
