@@ -12,14 +12,15 @@ import os
 final class RemoteCursor: @unchecked Sendable {
     private static let log = Logger(subsystem: "com.deskbridge.app", category: "cursor")
     private static let freezeDelay = 0.05
-    private static let verifyDelay = 0.12
-    private static let maxRetries = 4
+    private static let verifyDelay = 0.03
+    private static let maxRetries = 12
 
     private let queue: DispatchQueue
     private let shield = CursorShield()
     private let swallowing = OSAllocatedUnfairLock(initialState: false)
     private var warpFilter = WarpFilter()
     private var engaged = false
+    private var engagedAt = DispatchTime.now()
     private var hidden = false
     private var frozen = false
 
@@ -47,6 +48,7 @@ final class RemoteCursor: @unchecked Sendable {
     func engage(from location: CGPoint, on display: CGRect, edge: ScreenEdge) {
         engaged = true
         frozen = false
+        engagedAt = .now()
         Self.log.debug("engage at (\(Int(location.x)),\(Int(location.y))) edge=\(edge.rawValue)")
         hidden = CGDisplayHideCursor(CGMainDisplayID()) == .success // before anything moves: nothing visible
         let parkDisplay = Displays.bounds(containing: location) ?? display
@@ -115,6 +117,7 @@ final class RemoteCursor: @unchecked Sendable {
         swallowing.withLock { $0 = true }
         warpAndNotify(to: target)
         CGAssociateMouseAndMouseCursorPosition(0) // freeze the Mac cursor; deltas keep flowing
+        shield.refreshCursor(reactivate: false) // right away: when another app was in front this is often enough
         verifyBlankCursor(at: target, attempt: 0)
     }
 
@@ -132,8 +135,8 @@ final class RemoteCursor: @unchecked Sendable {
                         report(blank: blank, retries: attempt, at: target)
                         return
                     }
-                    shield.refreshCursor(reactivate: attempt >= 1)
-                    if attempt >= 2 {
+                    shield.refreshCursor(reactivate: attempt >= 2)
+                    if attempt >= 4 {
                         nudge(at: target)
                     }
                     verifyBlankCursor(at: target, attempt: attempt + 1)
@@ -155,17 +158,18 @@ final class RemoteCursor: @unchecked Sendable {
 
     private func report(blank: Bool, retries: Int, at target: CGPoint) {
         let x = Int(target.x), y = Int(target.y)
+        let ms = Int(Double(DispatchTime.now().uptimeNanoseconds - engagedAt.uptimeNanoseconds) / 1_000_000)
         if blank, retries == 0 {
-            Self.log.info("cursor frozen at (\(x),\(y))")
+            Self.log.info("cursor frozen at (\(x),\(y)), blank after \(ms) ms")
         } else if blank {
-            Self.log.notice("cursor frozen at (\(x),\(y)) after \(retries) retries")
+            Self.log.notice("cursor frozen at (\(x),\(y)), blank after \(ms) ms and \(retries) retries")
         } else {
             let top = Displays.frontWindow(at: target)
             let owner = top?.owner ?? "none"
             let layer = top?.layer ?? 0
             let front = NSWorkspace.shared.frontmostApplication?.localizedName ?? "none"
             Self.log.error("""
-            cursor still visible after \(retries) retries at (\(x),\(y)): \
+            cursor still visible after \(ms) ms and \(retries) retries at (\(x),\(y)): \
             top=\(owner, privacy: .public)/\(layer) front=\(front, privacy: .public)
             """)
         }
