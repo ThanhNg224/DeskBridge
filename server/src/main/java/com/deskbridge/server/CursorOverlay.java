@@ -17,7 +17,7 @@ import android.view.SurfaceControl;
  * as an occluding overlay and drops the touch ("Untrusted touch due to occlusion"). So the sprite is
  * placed one pixel right/below the hotspot; the arrow tip is drawn at (TIP, TIP) inside the sprite.
  */
-final class CursorOverlay implements AutoCloseable {
+final class CursorOverlay implements Session.Cursor, AutoCloseable {
     private static final float BASE_WIDTH = 1080f;
     private static final float TIP = 1.5f; // arrow tip offset inside the 48x72 sprite
 
@@ -25,8 +25,9 @@ final class CursorOverlay implements AutoCloseable {
     private final SurfaceControl.Transaction transaction = new SurfaceControl.Transaction();
     private final float scale;
 
-    CursorOverlay(int displayWidth) {
-        scale = Math.max(1f, displayWidth / BASE_WIDTH);
+    /** `shortSide` = min(width, height) so the arrow size does not depend on the rotation at start. */
+    CursorOverlay(int shortSide) {
+        scale = Math.max(1f, shortSide / BASE_WIDTH);
         layer = new SurfaceControl.Builder()
                 .setName("DeskBridgeCursor")
                 .setBufferSize(Math.round(48 * scale), Math.round(72 * scale))
@@ -65,11 +66,13 @@ final class CursorOverlay implements AutoCloseable {
         surface.release();
     }
 
-    void show(float x, float y) {
+    @Override
+    public void show(float x, float y) {
         transaction.setPosition(layer, spriteX(x), spriteY(y)).setVisibility(layer, true).apply();
     }
 
-    void moveTo(float x, float y) {
+    @Override
+    public void moveTo(float x, float y) {
         transaction.setPosition(layer, spriteX(x), spriteY(y)).apply();
     }
 
@@ -81,7 +84,8 @@ final class CursorOverlay implements AutoCloseable {
         return Math.round(y) + 1; // strictly below the hotspot pixel
     }
 
-    void hide() {
+    @Override
+    public void hide() {
         transaction.setVisibility(layer, false).apply();
     }
 

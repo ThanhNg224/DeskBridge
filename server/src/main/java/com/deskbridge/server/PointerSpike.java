@@ -12,7 +12,7 @@ public final class PointerSpike {
         float cx = size.width / 2f;
         float cy = size.height / 2f;
 
-        try (CursorOverlay overlay = new CursorOverlay(size.width)) {
+        try (CursorOverlay overlay = new CursorOverlay(Math.min(size.width, size.height))) {
             if (args.length == 3 && args[0].equals("click")) {
                 float x = Float.parseFloat(args[1]);
                 float y = Float.parseFloat(args[2]);

@@ -9,6 +9,7 @@ rm -rf "$OUT" && mkdir -p "$OUT"
 javac --release 11 -d "$OUT" \
   "$ROOT"/server/src/main/java/com/deskbridge/server/protocol/*.java \
   "$ROOT"/server/src/main/java/com/deskbridge/server/PointerState.java \
+  "$ROOT"/server/src/main/java/com/deskbridge/server/Session.java \
   "$ROOT"/server/src/test/java/com/deskbridge/server/Tests.java
 
 java -ea -cp "$OUT" com.deskbridge.server.Tests

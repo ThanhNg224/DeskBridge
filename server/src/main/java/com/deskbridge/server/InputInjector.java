@@ -8,9 +8,12 @@ import android.view.MotionEvent;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 /** Injects mouse and keyboard events through the hidden InputManager. Failures are unchecked (fail fast). */
-public final class InputInjector {
+public final class InputInjector implements Session.Input {
     private static final int MOUSE_DEVICE_ID = 0;
     private static final int KEYBOARD_DEVICE_ID = -1; // KeyCharacterMap.VIRTUAL_KEYBOARD
     private static final int INJECT_MODE_ASYNC = 0;
@@ -21,6 +24,7 @@ public final class InputInjector {
     private int buttonState;
     private long downTime;
     private long keyDownTime;
+    private final Set<Integer> pressedKeys = new LinkedHashSet<>();
 
     public InputInjector() throws ReflectiveOperationException {
         Class<?> managerClass = Class.forName("android.hardware.input.InputManager");
@@ -32,15 +36,18 @@ public final class InputInjector {
     }
 
     /** Moves the pointer; a drag if a button is held, a hover otherwise. */
+    @Override
     public void hover(float x, float y) {
         motion(buttonState == 0 ? MotionEvent.ACTION_HOVER_MOVE : MotionEvent.ACTION_MOVE, x, y, 0, 0f, 0f);
     }
 
+    @Override
     public void hoverExit(float x, float y) {
         motion(MotionEvent.ACTION_HOVER_EXIT, x, y, 0, 0f, 0f);
     }
 
     /** button is an Android MotionEvent.BUTTON_* bit. */
+    @Override
     public void button(int button, boolean down, float x, float y) {
         if (down) {
             boolean first = buttonState == 0;
@@ -60,22 +67,31 @@ public final class InputInjector {
     }
 
     /** Wheel lines, Android axis sign (positive vertical = up). */
+    @Override
     public void scroll(float x, float y, float h, float v) {
         motion(MotionEvent.ACTION_SCROLL, x, y, 0, h, v);
     }
 
     /** action: KeyEvent.ACTION_DOWN (0) / ACTION_UP (1). */
+    @Override
     public void key(int keyCode, int action, int metaState) {
         long now = SystemClock.uptimeMillis();
         if (action == KeyEvent.ACTION_DOWN) {
             keyDownTime = now;
+            pressedKeys.add(keyCode);
+        } else {
+            pressedKeys.remove(keyCode);
         }
         inject(new KeyEvent(keyDownTime, now, action, keyCode, 0, metaState,
                 KEYBOARD_DEVICE_ID, 0, 0, InputDevice.SOURCE_KEYBOARD));
     }
 
-    /** Releases any held mouse buttons so nothing stays pressed after a session ends. */
+    /** Releases any held mouse buttons and keys so nothing stays pressed after a session ends. */
+    @Override
     public void releaseAll(float x, float y) {
+        for (Integer keyCode : new ArrayList<>(pressedKeys)) {
+            key(keyCode, KeyEvent.ACTION_UP, 0);
+        }
         for (int bit = 1; bit <= 0x10 && buttonState != 0; bit <<= 1) {
             if ((buttonState & bit) != 0) {
                 button(bit, false, x, y);

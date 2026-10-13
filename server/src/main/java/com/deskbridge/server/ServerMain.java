@@ -85,101 +85,23 @@ public final class ServerMain {
         System.out.println("[DeskBridge] host connected, display " + size.width + "x" + size.height);
 
         PointerState pointer = new PointerState();
-        try (CursorOverlay overlay = new CursorOverlay(size.width)) {
-            ProtocolDecoder decoder = new ProtocolDecoder(new Handler(injector, overlay, pointer, out));
+        try (CursorOverlay overlay = new CursorOverlay(Math.min(size.width, size.height))) {
+            Session session = new Session(injector, overlay, pointer, out, () -> {
+                try {
+                    DisplayHelper.Size now = DisplayHelper.query();
+                    return new int[] {now.width, now.height};
+                } catch (ReflectiveOperationException e) {
+                    throw new IllegalStateException("display query failed", e);
+                }
+            });
+            ProtocolDecoder decoder = new ProtocolDecoder(session);
             try {
                 while (decoder.processNext(in)) {
                     // loop until EOF
                 }
             } finally {
-                injector.releaseAll(pointer.x(), pointer.y());
+                session.streamEnded();
             }
-        }
-    }
-
-    /** Runs on the single session thread, so writes to `out` need no locking. */
-    private static final class Handler implements ProtocolDecoder.Listener {
-        private final InputInjector injector;
-        private final CursorOverlay overlay;
-        private final PointerState pointer;
-        private final DataOutputStream out;
-
-        Handler(InputInjector injector, CursorOverlay overlay, PointerState pointer, DataOutputStream out) {
-            this.injector = injector;
-            this.overlay = overlay;
-            this.pointer = pointer;
-            this.out = out;
-        }
-
-        @Override
-        public void onEnter(int edge, float along) {
-            try {
-                DisplayHelper.Size size = DisplayHelper.query(); // re-read: rotation may have changed
-                pointer.enter(size.width, size.height, edge, along);
-            } catch (ReflectiveOperationException e) {
-                throw new IllegalStateException("display query failed", e);
-            }
-            overlay.show(pointer.x(), pointer.y());
-            injector.hover(pointer.x(), pointer.y());
-        }
-
-        @Override
-        public void onLeave() {
-            if (pointer.isEntered()) {
-                endVisit();
-            }
-        }
-
-        @Override
-        public void onMouseMoveRel(float dx, float dy) throws IOException {
-            if (!pointer.isEntered()) {
-                return;
-            }
-            if (pointer.moveBy(dx, dy)) {
-                injector.releaseAll(pointer.x(), pointer.y());
-                injector.hoverExit(pointer.x(), pointer.y());
-                overlay.hide();
-                out.writeByte(PacketType.EXIT);
-                out.writeFloat(pointer.along());
-                out.flush();
-            } else {
-                overlay.moveTo(pointer.x(), pointer.y());
-                injector.hover(pointer.x(), pointer.y());
-            }
-        }
-
-        @Override
-        public void onMouseButton(int button, int action) {
-            if (pointer.isEntered()) {
-                injector.button(button, action == 0, pointer.x(), pointer.y());
-            }
-        }
-
-        @Override
-        public void onMouseScroll(float h, float v) {
-            if (pointer.isEntered()) {
-                injector.scroll(pointer.x(), pointer.y(), h, v);
-            }
-        }
-
-        @Override
-        public void onKeyEvent(int keyCode, int action, int metaState) {
-            if (pointer.isEntered()) {
-                injector.key(keyCode, action, metaState);
-            }
-        }
-
-        @Override
-        public void onPing() throws IOException {
-            out.writeByte(PacketType.PONG);
-            out.flush();
-        }
-
-        private void endVisit() {
-            injector.releaseAll(pointer.x(), pointer.y());
-            injector.hoverExit(pointer.x(), pointer.y());
-            overlay.hide();
-            pointer.leave();
         }
     }
 }

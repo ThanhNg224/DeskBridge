@@ -8,38 +8,41 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 
 public final class Tests {
-    private interface Case { void run() throws Exception; }
-
+    /** Runs every static no-arg method whose name starts with "test". */
     public static void main(String[] args) {
+        int total = 0;
         int failed = 0;
-        String[] names = {
-            "decodeEnterAndLeave", "decodeMoveButtonScrollKey", "decodePing", "unknownPacketThrows",
-            "eofReturnsFalse", "helloAccepted", "helloRejectsBadVersion", "helloRejectsWrongType",
-            "pointerEnterLeftPlacesAtEdge", "pointerClamps", "pointerExitsThroughEntryEdge", "pointerAlong",
-            "pointerTopBottomEntryAndExit", "pointerRejectsUnknownEdge", "pointerExitNeedsArmDistance"
-        };
-        Case[] cases = {
-            Tests::decodeEnterAndLeave, Tests::decodeMoveButtonScrollKey, Tests::decodePing, Tests::unknownPacketThrows,
-            Tests::eofReturnsFalse, Tests::helloAccepted, Tests::helloRejectsBadVersion, Tests::helloRejectsWrongType,
-            Tests::pointerEnterLeftPlacesAtEdge, Tests::pointerClamps, Tests::pointerExitsThroughEntryEdge, Tests::pointerAlong,
-            Tests::pointerTopBottomEntryAndExit, Tests::pointerRejectsUnknownEdge, Tests::pointerExitNeedsArmDistance
-        };
-        for (int i = 0; i < cases.length; i++) {
+        Method[] methods = Tests.class.getDeclaredMethods();
+        Arrays.sort(methods, Comparator.comparing(Method::getName));
+        for (Method m : methods) {
+            if (!m.getName().startsWith("test") || m.getParameterCount() != 0 || !Modifier.isStatic(m.getModifiers())) {
+                continue;
+            }
+            total++;
             try {
-                cases[i].run();
-                System.out.println("PASS " + names[i]);
-            } catch (Throwable t) {
+                m.setAccessible(true);
+                m.invoke(null);
+                System.out.println("PASS " + m.getName());
+            } catch (InvocationTargetException e) {
                 failed++;
-                System.out.println("FAIL " + names[i] + ": " + t);
+                System.out.println("FAIL " + m.getName() + ": " + e.getCause());
+            } catch (ReflectiveOperationException e) {
+                failed++;
+                System.out.println("FAIL " + m.getName() + ": " + e);
             }
         }
-        System.out.println(failed == 0 ? "OK " + cases.length + " tests" : failed + " FAILED");
-        System.exit(failed == 0 ? 0 : 1);
+        System.out.println(failed == 0 ? "OK " + total + " tests" : failed + " FAILED");
+        System.exit(failed == 0 && total > 0 ? 0 : 1);
     }
 
     // ---- helpers ----
@@ -83,7 +86,7 @@ public final class Tests {
 
     // ---- decoder ----
 
-    static void decodeEnterAndLeave() throws Exception {
+    static void testDecodeEnterAndLeave() throws Exception {
         byte[] bytes = build(o -> {
             o.writeByte(PacketType.ENTER); o.writeByte(1); o.writeFloat(0.25f);
             o.writeByte(PacketType.LEAVE);
@@ -97,7 +100,7 @@ public final class Tests {
         eq("leave", r.events.get(1));
     }
 
-    static void decodeMoveButtonScrollKey() throws Exception {
+    static void testDecodeMoveButtonScrollKey() throws Exception {
         byte[] bytes = build(o -> {
             o.writeByte(PacketType.MOUSE_MOVE_REL); o.writeFloat(-3.5f); o.writeFloat(7.25f);
             o.writeByte(PacketType.MOUSE_BUTTON); o.writeByte(2); o.writeByte(0);
@@ -115,13 +118,13 @@ public final class Tests {
         eq("key 29 1 4096", r.events.get(3));
     }
 
-    static void decodePing() throws Exception {
+    static void testDecodePing() throws Exception {
         Recorder r = new Recorder();
         new ProtocolDecoder(r).processNext(stream(new byte[]{PacketType.PING}));
         eq("ping", r.events.get(0));
     }
 
-    static void unknownPacketThrows() throws Exception {
+    static void testUnknownPacketThrows() throws Exception {
         try {
             new ProtocolDecoder(new Recorder()).processNext(stream(new byte[]{0x7E}));
         } catch (IOException expected) {
@@ -130,11 +133,11 @@ public final class Tests {
         throw new AssertionError("expected IOException");
     }
 
-    static void eofReturnsFalse() throws Exception {
+    static void testEofReturnsFalse() throws Exception {
         check(!new ProtocolDecoder(new Recorder()).processNext(stream(new byte[0])), "EOF must return false");
     }
 
-    static void helloAccepted() throws Exception {
+    static void testHelloAccepted() throws Exception {
         byte[] bytes = build(o -> {
             o.writeByte(PacketType.HELLO); o.writeByte(PacketType.VERSION);
             o.write(TOKEN.getBytes(StandardCharsets.US_ASCII));
@@ -142,7 +145,7 @@ public final class Tests {
         eq(TOKEN, ProtocolDecoder.readHello(stream(bytes)));
     }
 
-    static void helloRejectsBadVersion() throws Exception {
+    static void testHelloRejectsBadVersion() throws Exception {
         byte[] bytes = build(o -> {
             o.writeByte(PacketType.HELLO); o.writeByte(99);
             o.write(TOKEN.getBytes(StandardCharsets.US_ASCII));
@@ -155,7 +158,7 @@ public final class Tests {
         throw new AssertionError("expected IOException");
     }
 
-    static void helloRejectsWrongType() throws Exception {
+    static void testHelloRejectsWrongType() throws Exception {
         try {
             ProtocolDecoder.readHello(stream(new byte[]{PacketType.PING}));
         } catch (IOException expected) {
@@ -166,7 +169,7 @@ public final class Tests {
 
     // ---- pointer ----
 
-    static void pointerEnterLeftPlacesAtEdge() {
+    static void testPointerEnterLeftPlacesAtEdge() {
         PointerState p = new PointerState();
         p.enter(1080, 2400, PointerState.EDGE_LEFT, 0.5f);
         check(p.isEntered(), "entered");
@@ -177,7 +180,7 @@ public final class Tests {
         near(0f, p.y());
     }
 
-    static void pointerClamps() {
+    static void testPointerClamps() {
         PointerState p = new PointerState();
         p.enter(1080, 2400, PointerState.EDGE_LEFT, 0.5f);
         check(!p.moveBy(5000f, 99999f), "no exit moving inward");
@@ -188,7 +191,7 @@ public final class Tests {
         near(0f, p.y());
     }
 
-    static void pointerExitsThroughEntryEdge() {
+    static void testPointerExitsThroughEntryEdge() {
         PointerState left = new PointerState();
         left.enter(1080, 2400, PointerState.EDGE_LEFT, 0.5f);
         check(!left.moveBy(-1f, 0f), "jitter toward the edge right after entering must not exit");
@@ -204,7 +207,7 @@ public final class Tests {
         check(right.moveBy(5000f, 0f), "right entry exits past width once armed");
     }
 
-    static void pointerExitNeedsArmDistance() {
+    static void testPointerExitNeedsArmDistance() {
         PointerState p = new PointerState();
         p.enter(1080, 2400, PointerState.EDGE_LEFT, 0.5f);
         check(!p.moveBy(PointerState.ARM_DISTANCE - 1f, 0f), "just short of the arm distance");
@@ -213,13 +216,13 @@ public final class Tests {
         check(p.moveBy(-1000f, 0f), "now it exits");
     }
 
-    static void pointerAlong() {
+    static void testPointerAlong() {
         PointerState p = new PointerState();
         p.enter(1080, 2401, PointerState.EDGE_LEFT, 0.25f);
         near(0.25f, p.along());
     }
 
-    static void pointerTopBottomEntryAndExit() {
+    static void testPointerTopBottomEntryAndExit() {
         PointerState top = new PointerState();
         top.enter(1080, 2400, PointerState.EDGE_TOP, 0.5f);
         near(539.5f, top.x());
@@ -238,12 +241,125 @@ public final class Tests {
         check(bottom.moveBy(0f, 5000f), "pushing down exits");
     }
 
-    static void pointerRejectsUnknownEdge() {
+    static void testPointerRejectsUnknownEdge() {
         try {
             new PointerState().enter(1080, 2400, 9, 0.5f);
         } catch (IllegalArgumentException expected) {
             return;
         }
         throw new AssertionError("expected IllegalArgumentException");
+    }
+
+    // ---- session ----
+
+    private static final class Fake implements Session.Input, Session.Cursor {
+        final List<String> calls = new ArrayList<>();
+        @Override public void hover(float x, float y) { calls.add("hover " + x + " " + y); }
+        @Override public void hoverExit(float x, float y) { calls.add("hoverExit"); }
+        @Override public void button(int b, boolean down, float x, float y) { calls.add("button " + b + " " + down); }
+        @Override public void scroll(float x, float y, float h, float v) { calls.add("scroll"); }
+        @Override public void key(int k, int a, int m) { calls.add("key " + k + " " + a); }
+        @Override public void releaseAll(float x, float y) { calls.add("releaseAll"); }
+        @Override public void show(float x, float y) { calls.add("show " + x + " " + y); }
+        @Override public void moveTo(float x, float y) { calls.add("moveTo"); }
+        @Override public void hide() { calls.add("hide"); }
+        void count(String name, int expected) {
+            int n = 0;
+            for (String c : calls) if (c.startsWith(name)) n++;
+            eq(expected, n);
+        }
+    }
+
+    private static final class Rig {
+        final Fake fake = new Fake();
+        final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        final Session session = new Session(fake, fake, new PointerState(), new DataOutputStream(bytes),
+                () -> new int[] {1080, 2400});
+    }
+
+    /** Enters on the left edge and moves inward so the exit is armed. */
+    private static Rig enteredRig() throws Exception {
+        Rig r = new Rig();
+        r.session.onEnter(PointerState.EDGE_LEFT, 0.5f);
+        r.session.onMouseMoveRel(100f, 0f);
+        r.fake.calls.clear();
+        return r;
+    }
+
+    static void testSessionEnterShowsCursorAtEntryEdge() {
+        Rig r = new Rig();
+        r.session.onEnter(PointerState.EDGE_RIGHT, 0f);
+        eq("show 1079.0 0.0", r.fake.calls.get(0));
+        eq("hover 1079.0 0.0", r.fake.calls.get(1));
+    }
+
+    static void testSessionExitWritesPacketAndTearsDown() throws Exception {
+        Rig r = enteredRig();
+        r.session.onMouseMoveRel(-500f, 0f);
+        byte[] b = r.bytes.toByteArray();
+        eq(5, b.length);
+        eq((int) PacketType.EXIT, (int) b[0]);
+        eq(0x05, b[0] & 0xFF);
+        near(0.5f, new DataInputStream(new ByteArrayInputStream(b, 1, 4)).readFloat());
+        r.fake.count("hide", 1);
+        r.fake.count("releaseAll", 1);
+    }
+
+    static void testSessionIgnoresInputBeforeEnter() throws Exception {
+        Rig r = new Rig();
+        r.session.onMouseMoveRel(5f, 5f);
+        r.session.onMouseButton(1, 0);
+        r.session.onMouseScroll(0f, 1f);
+        r.session.onKeyEvent(29, 0, 0);
+        check(r.fake.calls.isEmpty(), "got " + r.fake.calls);
+    }
+
+    static void testSessionIgnoresInputAfterVisitEnded() throws Exception {
+        Rig r = enteredRig();
+        r.session.onMouseMoveRel(-500f, 0f);
+        r.fake.calls.clear();
+        r.session.onMouseMoveRel(5f, 5f);
+        r.session.onMouseButton(1, 0);
+        r.session.onMouseScroll(0f, 1f);
+        r.session.onKeyEvent(29, 0, 0);
+        check(r.fake.calls.isEmpty(), "got " + r.fake.calls);
+    }
+
+    static void testSessionForwardsInputWhileEntered() throws Exception {
+        Rig r = enteredRig();
+        r.session.onMouseButton(1, 0);
+        r.session.onKeyEvent(29, 0, 0);
+        r.session.onMouseScroll(0f, 1f);
+        eq("button 1 true", r.fake.calls.get(0));
+        eq("key 29 0", r.fake.calls.get(1));
+        eq("scroll", r.fake.calls.get(2));
+    }
+
+    static void testSessionPingWritesPong() throws Exception {
+        Rig r = new Rig();
+        r.session.onPing();
+        eq(1, r.bytes.size());
+        eq((int) PacketType.PONG, (int) r.bytes.toByteArray()[0]);
+        eq(0xFF, r.bytes.toByteArray()[0] & 0xFF);
+    }
+
+    static void testSessionLeaveEndsVisitWithoutExit() throws Exception {
+        Rig r = enteredRig();
+        r.session.onKeyEvent(29, 0, 0);
+        r.fake.calls.clear();
+        r.session.onLeave();
+        r.fake.count("releaseAll", 1);
+        r.fake.count("hide", 1);
+        eq(0, r.bytes.size());
+        r.session.onMouseMoveRel(5f, 5f);
+        r.fake.count("moveTo", 0);
+    }
+
+    static void testSessionStreamEndReleasesHeldInput() throws Exception {
+        Rig r = enteredRig();
+        r.session.onKeyEvent(29, 0, 0);
+        r.fake.calls.clear();
+        r.session.streamEnded();
+        eq("releaseAll", r.fake.calls.get(0));
     }
 }
