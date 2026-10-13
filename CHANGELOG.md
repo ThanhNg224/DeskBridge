@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.2 (2026-10-13)
+
+- The mouse now wakes a phone whose screen is off (injected events do not wake it by themselves, so the server sends a wake key first). Leaving the phone never wakes it.
+- The Settings window can be resized (400 to 700 pt wide); the header stays on top and the options scroll.
+
 ## 1.1.1 (2026-10-13)
 
 - Settings window shows the live status again: coloured dot, status text, on/off switch and the release shortcut.

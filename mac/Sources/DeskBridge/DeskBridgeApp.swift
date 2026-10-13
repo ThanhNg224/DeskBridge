@@ -11,7 +11,7 @@ struct DeskBridgeApp: App {
             SettingsView(model: model)
                 .modifier(RegisterWindowOpener())
         }
-        .windowResizability(.contentSize)
+        .windowResizability(.contentMinSize) // user can resize; the content sets the minimum
 
         MenuBarExtra {
             MenuBarView(model: model)

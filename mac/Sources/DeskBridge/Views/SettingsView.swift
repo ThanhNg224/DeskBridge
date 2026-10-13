@@ -9,7 +9,7 @@ struct SettingsView: View {
             StatusHeader(model: model)
             form
         }
-        .frame(width: 440, height: 680)
+        .frame(minWidth: 400, idealWidth: 440, maxWidth: 700, minHeight: 420, idealHeight: 680)
     }
 
     private var form: some View {

@@ -1,6 +1,7 @@
 package com.deskbridge.server;
 
 import android.os.Build;
+import android.os.IBinder;
 import android.os.SystemClock;
 import android.view.InputDevice;
 import android.view.InputEvent;
@@ -18,10 +19,15 @@ public final class InputInjector implements Session.Input {
     private static final int MOUSE_DEVICE_ID = 0;
     private static final int KEYBOARD_DEVICE_ID = -1; // KeyCharacterMap.VIRTUAL_KEYBOARD
     private static final int INJECT_MODE_ASYNC = 0;
+    private static final int KEYCODE_WAKEUP = 224;
+    private static final long WAKE_CHECK_INTERVAL_MS = 300;
 
     private final Object inputManager;
     private final Method injectMethod;
     private final Method setActionButtonMethod; // @hide in the SDK stubs, so reflected like the rest
+    private final Object powerManager; // IPowerManager: injected mouse events do not wake a sleeping screen
+    private final Method isInteractiveMethod;
+    private long lastWakeCheck;
     private int buttonState;
     private long downTime;
     private long keyDownTime;
@@ -37,11 +43,18 @@ public final class InputInjector implements Session.Input {
         inputManager = getInstance.invoke(null);
         injectMethod = managerClass.getMethod("injectInputEvent", InputEvent.class, int.class);
         setActionButtonMethod = MotionEvent.class.getMethod("setActionButton", int.class);
+
+        Object binder = Class.forName("android.os.ServiceManager").getMethod("getService", String.class)
+                .invoke(null, "power");
+        powerManager = Class.forName("android.os.IPowerManager$Stub").getMethod("asInterface", IBinder.class)
+                .invoke(null, binder);
+        isInteractiveMethod = Class.forName("android.os.IPowerManager").getMethod("isInteractive");
     }
 
     /** Moves the pointer; a drag if a button is held, a hover otherwise. */
     @Override
     public void hover(float x, float y) {
+        wakeIfAsleep();
         motion(buttonState == 0 ? MotionEvent.ACTION_HOVER_MOVE : MotionEvent.ACTION_MOVE, x, y, 0, 0f, 0f);
     }
 
@@ -54,6 +67,7 @@ public final class InputInjector implements Session.Input {
     @Override
     public void button(int button, boolean down, float x, float y) {
         if (down) {
+            wakeIfAsleep();
             boolean first = buttonState == 0;
             buttonState |= button;
             if (first) {
@@ -73,6 +87,7 @@ public final class InputInjector implements Session.Input {
     /** Wheel lines, Android axis sign (positive vertical = up). */
     @Override
     public void scroll(float x, float y, float h, float v) {
+        wakeIfAsleep();
         motion(MotionEvent.ACTION_SCROLL, x, y, 0, h, v);
     }
 
@@ -81,6 +96,7 @@ public final class InputInjector implements Session.Input {
     public void key(int keyCode, int action, int metaState) {
         long now = SystemClock.uptimeMillis();
         if (action == KeyEvent.ACTION_DOWN) {
+            wakeIfAsleep();
             keyDownTime = now;
             pressedKeys.add(keyCode);
         } else {
@@ -128,6 +144,29 @@ public final class InputInjector implements Session.Input {
             throw new IllegalStateException("setActionButton failed: " + e, e);
         } finally {
             event.recycle();
+        }
+    }
+
+    /**
+     * A real mouse wakes a sleeping phone, injected events do not: send KEYCODE_WAKEUP when the screen is off.
+     * Checked at most every WAKE_CHECK_INTERVAL_MS (a binder call). Not done on releases, so leaving never wakes it.
+     */
+    private void wakeIfAsleep() {
+        long now = SystemClock.uptimeMillis();
+        if (now - lastWakeCheck < WAKE_CHECK_INTERVAL_MS) {
+            return;
+        }
+        lastWakeCheck = now;
+        try {
+            if ((Boolean) isInteractiveMethod.invoke(powerManager)) {
+                return;
+            }
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("isInteractive failed: " + e, e);
+        }
+        for (int action : new int[] {KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP}) {
+            inject(new KeyEvent(now, now, action, KEYCODE_WAKEUP, 0, 0,
+                    KEYBOARD_DEVICE_ID, 0, 0, InputDevice.SOURCE_KEYBOARD));
         }
     }
 

@@ -78,6 +78,34 @@ struct DeviceSmokeTests {
         #expect(!log.contains("Untrusted touch due to occlusion by /2000"))
     }
 
+    /// A real mouse wakes a phone whose screen is off (Asleep, or Dozing on Samsung's always-on display); injected
+    /// events do not, so the server sends KEYCODE_WAKEUP.
+    @Test func mouseMoveWakesSleepingScreen() async throws {
+        let (adb, serial, jar) = try DeviceHarness.setup()
+        let server = try adb.launchServer(serial: serial, jar: jar)
+        defer { server.terminate() }
+
+        func wakefulness() throws -> String {
+            let power = try adb.run(["-s", serial, "shell", "dumpsys", "power"])
+            return power.split(separator: "\n").first { $0.contains("mWakefulness=") }
+                .map { $0.trimmingCharacters(in: .whitespaces) } ?? "unknown"
+        }
+
+        _ = try adb.run(["-s", serial, "shell", "input", "keyevent", "KEYCODE_SLEEP"])
+        try await Task.sleep(for: .seconds(2))
+        try #require(wakefulness() != "mWakefulness=Awake", "precondition: the screen must be off (Asleep or Dozing)")
+
+        let script = [
+            Step(ProtocolEncoder.enter(edge: .left, along: 0.5)),
+            Step(ProtocolEncoder.moveRel(dx: 40, dy: 0), delay: 0.5),
+            Step(ProtocolEncoder.ping(), delay: 1.0),
+        ]
+        _ = await DeviceHarness.run(port: server.port, token: server.token, within: 8,
+                                    afterHello: script) { $0.contains(where: \.isPong) }
+        try await Task.sleep(for: .seconds(1))
+        #expect(try wakefulness() == "mWakefulness=Awake")
+    }
+
     @Test func pingIsAnswered() async throws {
         let (adb, serial, jar) = try DeviceHarness.setup()
         let server = try adb.launchServer(serial: serial, jar: jar)
