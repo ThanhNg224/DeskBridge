@@ -228,8 +228,41 @@ public final class DeviceSession: @unchecked Sendable {
         ignoreMovesUntil = Date().addingTimeInterval(0.15)
         let associate = CGAssociateMouseAndMouseCursorPosition(0) // freeze the Mac cursor; deltas keep flowing
         let hide = CGDisplayHideCursor(CGMainDisplayID()) // best effort for a background app
-        Self.log.info("remote: associate=\(associate.rawValue) hide=\(hide.rawValue)")
+        let target = parkingPoint(for: location)
+        let edge = String(describing: detector.edge)
+        let width = Int(detector.bounds.width)
+        let height = Int(detector.bounds.height)
+        Self.log.info("""
+        remote: edge=\(edge, privacy: .public) from=(\(Int(location.x)),\(Int(location.y))) \
+        park=(\(Int(target.x)),\(Int(target.y))) bounds=\(width)x\(height) \
+        associate=\(associate.rawValue) hide=\(hide.rawValue)
+        """)
+        // Ground truth a moment later: where the cursor really is and which app's window is under it
+        // (e.g. the Dock owns the cursor image while the pointer is over it).
+        queue.asyncAfter(deadline: .now() + 0.2) { [log = Self.log] in
+            let now = CGEvent(source: nil)?.location ?? .zero
+            let owner = Self.windowOwner(at: now)
+            log.info("remote+200ms: cursor=(\(Int(now.x)),\(Int(now.y))) windowUnderCursor=\(owner, privacy: .public)")
+        }
         state = .remote
+    }
+
+    /// Owner of the front-most on-screen window containing `point` (diagnostics only).
+    private static func windowOwner(at point: CGPoint) -> String {
+        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+        guard let windows = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
+            return "?"
+        }
+        for window in windows {
+            guard let bounds = window[kCGWindowBounds as String] as? [String: CGFloat],
+                  let x = bounds["X"], let y = bounds["Y"], let w = bounds["Width"], let h = bounds["Height"],
+                  CGRect(x: x, y: y, width: w, height: h).contains(point)
+            else { continue }
+            let owner = window[kCGWindowOwnerName as String] as? String ?? "?"
+            let layer = window[kCGWindowLayer as String] as? Int ?? 0
+            return "\(owner)(layer \(layer))"
+        }
+        return "none"
     }
 
     private func parkingPoint(for location: CGPoint, inset: CGFloat = 120) -> CGPoint {
