@@ -44,6 +44,8 @@ public final class DeviceSession: @unchecked Sendable {
     private var detector = EdgeDetector(edge: .right, bounds: .zero)
     private var connectDeadline = Date()
     private var lastReceived = Date()
+    /// Our own cursor warp comes back through the event tap as a big mouse move; it must not reach Android.
+    private var ignoreMovesUntil = Date.distantPast
 
     public init(adb: ADBBridge, serial: String, jar: URL, settings: Settings) {
         self.adb = adb
@@ -176,6 +178,7 @@ public final class DeviceSession: @unchecked Sendable {
             }
 
         case let (.remote, .move(dx, dy, _)):
+            guard Date() >= ignoreMovesUntil else { return }
             let speed = settings.values.pointerSpeed
             if let delta = coalescer.add(dx: Float(dx * speed), dy: Float(dy * speed)) {
                 transmit(delta)
@@ -222,6 +225,7 @@ public final class DeviceSession: @unchecked Sendable {
         // Park the frozen cursor well inside the screen: at the very edge the Dock (bottom) or another
         // system UI owns the cursor image and ignores our hide request, leaving a sliver visible.
         CGWarpMouseCursorPosition(parkingPoint(for: location))
+        ignoreMovesUntil = Date().addingTimeInterval(0.15)
         let associate = CGAssociateMouseAndMouseCursorPosition(0) // freeze the Mac cursor; deltas keep flowing
         let hide = CGDisplayHideCursor(CGMainDisplayID()) // best effort for a background app
         Self.log.info("remote: associate=\(associate.rawValue) hide=\(hide.rawValue)")
