@@ -128,6 +128,7 @@ public final class DeviceSession: @unchecked Sendable {
         detector = EdgeDetector(edge: settings.values.edge, bounds: EdgeDetector.currentBounds())
         lastReceived = Date()
         CursorVisibility.allowHidingInBackground()
+        CGEventSource(stateID: .combinedSessionState)?.localEventsSuppressionInterval = 0 // no input freeze after warps
 
         let capturer = InputCapturer(
             isRemote: { [remoteFlag] in remoteFlag.withLock { $0 } },
@@ -171,7 +172,7 @@ public final class DeviceSession: @unchecked Sendable {
         switch (state, event) {
         case let (.local, .move(dx, dy, location)):
             if let along = detector.crossing(at: location, deltaX: dx, deltaY: dy) {
-                enterRemote(along: along)
+                enterRemote(along: along, from: location)
             }
 
         case let (.remote, .move(dx, dy, _)):
@@ -214,13 +215,28 @@ public final class DeviceSession: @unchecked Sendable {
         }
     }
 
-    private func enterRemote(along: Float) {
+    private func enterRemote(along: Float, from location: CGPoint) {
         coalescer = MoveCoalescer()
         send(ProtocolEncoder.enter(edge: detector.edge.androidEntryEdge, along: along))
         remoteFlag.withLock { $0 = true }
-        CGAssociateMouseAndMouseCursorPosition(0) // freeze the Mac cursor; deltas keep flowing
-        CGDisplayHideCursor(CGMainDisplayID()) // best effort for a background app
+        // Park the frozen cursor well inside the screen: at the very edge the Dock (bottom) or another
+        // system UI owns the cursor image and ignores our hide request, leaving a sliver visible.
+        CGWarpMouseCursorPosition(parkingPoint(for: location))
+        let associate = CGAssociateMouseAndMouseCursorPosition(0) // freeze the Mac cursor; deltas keep flowing
+        let hide = CGDisplayHideCursor(CGMainDisplayID()) // best effort for a background app
+        Self.log.info("remote: associate=\(associate.rawValue) hide=\(hide.rawValue)")
         state = .remote
+    }
+
+    private func parkingPoint(for location: CGPoint, inset: CGFloat = 120) -> CGPoint {
+        var point = location
+        switch detector.edge {
+        case .bottom: point.y -= inset
+        case .top: point.y += inset
+        case .left: point.x += inset
+        case .right: point.x -= inset
+        }
+        return point
     }
 
     private func returnToMac(along: Float?, notifyServer: Bool) {
