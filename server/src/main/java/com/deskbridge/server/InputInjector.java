@@ -1,5 +1,6 @@
 package com.deskbridge.server;
 
+import android.os.Build;
 import android.os.SystemClock;
 import android.view.InputDevice;
 import android.view.InputEvent;
@@ -27,7 +28,10 @@ public final class InputInjector implements Session.Input {
     private final Set<Integer> pressedKeys = new LinkedHashSet<>();
 
     public InputInjector() throws ReflectiveOperationException {
-        Class<?> managerClass = Class.forName("android.hardware.input.InputManager");
+        // Android 14 moved injection to InputManagerGlobal; InputManager.getInstance() throws NPE there.
+        Class<?> managerClass = Class.forName(Build.VERSION.SDK_INT >= 34
+                ? "android.hardware.input.InputManagerGlobal"
+                : "android.hardware.input.InputManager");
         Method getInstance = managerClass.getDeclaredMethod("getInstance");
         getInstance.setAccessible(true);
         inputManager = getInstance.invoke(null);

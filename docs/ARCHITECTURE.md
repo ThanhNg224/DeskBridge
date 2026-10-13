@@ -109,9 +109,21 @@ The server runs as shell UID with the power to inject arbitrary input, so access
 ## 7. Known Risks & Non-Goals
 
 **Risks (tracked by gates in the plan)**
-1. ~~System pointer may not render for injected events~~ confirmed on Android 13: it does not. Mitigated by the server-drawn cursor (see §2). Verified only on Android 13 (Android 10 was tried by hand); other versions and OEMs are untested.
-2. Hidden APIs (`InputManager.getInstance`, `DisplayManagerGlobal`) can change per Android release; the spike script is the per-device regression check.
+1. ~~System pointer may not render for injected events~~ confirmed on Android 13: it does not. Mitigated by the server-drawn cursor (see §2). See the verified table below; OEMs other than Samsung are untested.
+2. Hidden APIs (`InputManager.getInstance`, from Android 14 `InputManagerGlobal.getInstance`; `DisplayManagerGlobal`) can change per Android release; the spike script is the per-device regression check.
 3. Latency: measured PING/PONG round trip over adb USB on a Galaxy Note10 Lite: p50 0.74 ms, p95 1.33 ms (one way about 0.4 ms). End-to-end adds Mac event tap + Android injection; target p95 < 10 ms, re-measure with `pingRoundTripLatency` and a video capture.
 4. Hiding the cursor from a background (menu-bar) app is best effort.
+
+**Verified on** (`scripts/device_matrix.sh` runs the emulator rows: pointer drawn, no "Untrusted touch" log, click opens the Phone app, injected Back leaves it)
+
+| Android | Target | Result |
+|---|---|---|
+| 13 (API 33) | Samsung, real device | works (full MVP) |
+| 10 (API 29) | real device, by hand | works |
+| 14 (API 34) | emulator `google_apis` arm64 | works, needs `InputManagerGlobal` (`InputManager.getInstance()` throws NPE) |
+| 15 (API 35) | emulator `google_apis` arm64 | works |
+| 16 (API 36) | emulator `google_apis` arm64 | works |
+
+Emulators have no OEM layer, so Samsung/Xiaomi behaviour on 14+ is still unverified on real hardware.
 
 **Non-goals for MVP:** clipboard sync, Vietnamese/IME text input, multiple simultaneous devices, wireless ADB, rotation changes *during* a visit, display mirroring.

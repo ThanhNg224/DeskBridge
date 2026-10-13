@@ -2,11 +2,19 @@ package com.deskbridge.server;
 
 /**
  * Diagnostic. Run via scripts/run_on_device.sh and watch the phone: pointer, click, scroll, Back.
- * Modes: (none) full sweep; "click X Y" a single click; "hold" parks the pointer for 15 s.
+ * Modes: (none) full sweep; "click X Y" a single click; "hold" parks the pointer for 15 s;
+ * "key CODE" presses one key.
  */
 public final class PointerSpike {
     public static void main(String[] args) throws Exception {
         InputInjector injector = new InputInjector();
+        if (args.length == 2 && args[0].equals("key")) {
+            int keyCode = Integer.parseInt(args[1]);
+            injector.key(keyCode, 0, 0);
+            injector.key(keyCode, 1, 0);
+            System.out.println("key " + keyCode);
+            return;
+        }
         DisplayHelper.Size size = DisplayHelper.query();
         System.out.println("display " + size.width + "x" + size.height + " rotation " + size.rotation);
         float cx = size.width / 2f;
