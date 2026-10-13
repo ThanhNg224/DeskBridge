@@ -47,6 +47,27 @@ final class CursorShield: @unchecked Sendable {
         }
     }
 
+    /// True when the system cursor is our transparent one (the shield's cursor rect took effect).
+    func cursorIsBlank(_ result: @escaping @Sendable (Bool) -> Void) {
+        DispatchQueue.main.async {
+            result(NSCursor.currentSystem?.image.size == BlankCursorView.blankSize)
+        }
+    }
+
+    /// Asks again for the transparent cursor: re-applies the cursor rects, and with `reactivate` also takes key/active
+    /// status again.
+    func refreshCursor(reactivate: Bool) {
+        DispatchQueue.main.async {
+            guard let window = self.window, let view = window.contentView else { return }
+            window.invalidateCursorRects(for: view)
+            BlankCursorView.blank.set()
+            if reactivate {
+                window.makeKeyAndOrderFront(nil)
+                NSApplication.shared.activate(ignoringOtherApps: true)
+            }
+        }
+    }
+
     func hide() {
         DispatchQueue.main.async {
             self.window?.orderOut(nil)
@@ -72,10 +93,8 @@ private final class ShieldWindow: NSWindow {
 
 /// A view whose whole area shows a fully transparent cursor.
 private final class BlankCursorView: NSView {
-    private static let blank: NSCursor = {
-        let image = NSImage(size: NSSize(width: 16, height: 16))
-        return NSCursor(image: image, hotSpot: .zero)
-    }()
+    static let blankSize = NSSize(width: 16, height: 16)
+    static let blank = NSCursor(image: NSImage(size: blankSize), hotSpot: .zero)
 
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: Self.blank)

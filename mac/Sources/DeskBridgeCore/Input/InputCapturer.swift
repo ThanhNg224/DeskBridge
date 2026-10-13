@@ -23,6 +23,10 @@ public enum CaptureError: Error, CustomStringConvertible {
 /// Active event tap on a dedicated thread. The callback only classifies events and hands them to
 /// `onEvent`; it swallows them when `isRemote()` is true. Keep both closures cheap.
 public final class InputCapturer: @unchecked Sendable {
+    /// `eventSourceUserData` of the synthetic moves DeskBridge posts itself (see `RemoteCursor`): never forwarded,
+    /// never swallowed.
+    static let syntheticMarker: Int64 = 0x4453_4B42
+
     private let isRemote: @Sendable () -> Bool
     private let onEvent: @Sendable (CapturedEvent) -> Void
     private var tap: CFMachPort?
@@ -91,6 +95,9 @@ public final class InputCapturer: @unchecked Sendable {
             return pass
 
         case .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
+            if event.getIntegerValueField(.eventSourceUserData) == Self.syntheticMarker {
+                return pass
+            }
             onEvent(.move(
                 dx: event.getDoubleValueField(.mouseEventDeltaX),
                 dy: event.getDoubleValueField(.mouseEventDeltaY),

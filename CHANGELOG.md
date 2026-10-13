@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Bottom edge over the Dock: the Dock icon label no longer stays after the pointer moves to Android when the mouse is pushed down fast (the cursor was dragged back onto the icon before it froze).
+- The transparent cursor of the shield is verified after every hand-over and re-applied if the arrow is still showing (it was sometimes not applied after the Mac had been idle for a while).
+- Logs: one line per hand-over (`cursor frozen at ...`), with a notice when a retry was needed and an error if the arrow stayed.
+- Fixed a Swift concurrency warning in `RemoteCursor`.
+
 ## 1.1.2 (2026-10-13)
 
 - The mouse now wakes a phone whose screen is off (injected events do not wake it by themselves, so the server sends a wake key first). Leaving the phone never wakes it.
