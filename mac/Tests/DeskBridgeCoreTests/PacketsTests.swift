@@ -54,6 +54,10 @@ struct PacketsTests {
         #expect(packets == [.exit(along: 0.5), .pong])
     }
 
+    @Test func encodesText() {
+        #expect(Array(ProtocolEncoder.text("ế")) == [0x21, 0, 0, 0, 3, 0xE1, 0xBA, 0xBF])
+    }
+
     @Test func encodesClipboard() {
         #expect(Array(ProtocolEncoder.clipboard("")) == [0x30, 0, 0, 0, 0])
         #expect(Array(ProtocolEncoder.clipboard("é")) == [0x30, 0, 0, 0, 2, 0xC3, 0xA9])

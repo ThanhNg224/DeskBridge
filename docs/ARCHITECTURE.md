@@ -96,6 +96,7 @@ Stream over the forwarded socket. Big-endian. Each packet is `type:u8` + payload
 | `0x12` | `MOUSE_BUTTON` | Mac→Android | `button:u8` (Android `BUTTON_*` bit: 1 primary, 2 secondary, 4 tertiary), `action:u8` |
 | `0x13` | `MOUSE_SCROLL` | Mac→Android | `h:f32`, `v:f32` (wheel lines; Android axis sign) |
 | `0x20` | `KEY_EVENT` | Mac→Android | `keyCode:i32` (Android), `action:u8`, `metaState:i32` (Android) |
+| `0x21` | `TEXT` | Mac→Android | `length:i32` (0..4096), `text:UTF-8 bytes` composed by a Mac input method; typed on the phone (ASCII as key events, anything else pasted through the clipboard with the previous text clip restored) |
 | `0x30` | `CLIPBOARD` | both | `length:i32` (0..1 MiB), `text:UTF-8 bytes`. Mac→Android before `ENTER` (empty = share the clipboard this visit, nothing new to set); Android→Mac before `EXIT` or after `LEAVE`, only when the phone's clip differs from the one it had at `ENTER` |
 | `0xFE` | `PING` | Mac→Android | none (every 2 s) |
 | `0xFF` | `PONG` | Android→Mac | none |
@@ -148,4 +149,4 @@ The server runs as shell UID with the power to inject arbitrary input, so access
 
 Emulators have no OEM layer, so Samsung/Xiaomi behaviour on 14+ is still unverified on real hardware.
 
-**Non-goals for MVP:** Vietnamese/IME text input, multiple simultaneous devices, wireless ADB, rotation changes *during* a visit, display mirroring.
+**Non-goals for MVP:** multiple simultaneous devices, wireless ADB, rotation changes *during* a visit, display mirroring.

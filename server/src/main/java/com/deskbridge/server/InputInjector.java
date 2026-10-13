@@ -5,6 +5,7 @@ import android.os.IBinder;
 import android.os.SystemClock;
 import android.view.InputDevice;
 import android.view.InputEvent;
+import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 
@@ -21,12 +22,19 @@ public final class InputInjector implements Session.Input {
     private static final int INJECT_MODE_ASYNC = 0;
     private static final int KEYCODE_WAKEUP = 224;
     private static final long WAKE_CHECK_INTERVAL_MS = 300;
+    private static final int KEYCODE_V = 50;
+    private static final int KEYCODE_CTRL_LEFT = 113;
+    private static final int META_CTRL = 0x1000 | 0x2000; // META_CTRL_ON | META_CTRL_LEFT_ON
+    /** The pasted text is read by the app asynchronously: the old clip may only come back after this. */
+    private static final long PASTE_SETTLE_MS = 200;
 
     private final Object inputManager;
     private final Method injectMethod;
     private final Method setActionButtonMethod; // @hide in the SDK stubs, so reflected like the rest
     private final Object powerManager; // IPowerManager: injected mouse events do not wake a sleeping screen
     private final Method isInteractiveMethod;
+    private final ClipboardAccess clipboard; // text with accents is pasted: key events cannot carry it
+    private final KeyCharacterMap keyCharacterMap = KeyCharacterMap.load(KeyCharacterMap.VIRTUAL_KEYBOARD);
     private long lastWakeCheck;
     private int buttonState;
     private long downTime;
@@ -49,6 +57,7 @@ public final class InputInjector implements Session.Input {
         powerManager = Class.forName("android.os.IPowerManager$Stub").getMethod("asInterface", IBinder.class)
                 .invoke(null, binder);
         isInteractiveMethod = Class.forName("android.os.IPowerManager").getMethod("isInteractive");
+        clipboard = new ClipboardAccess();
     }
 
     /** Moves the pointer; a drag if a button is held, a hover otherwise. */
@@ -106,12 +115,39 @@ public final class InputInjector implements Session.Input {
                 KEYBOARD_DEVICE_ID, 0, 0, InputDevice.SOURCE_KEYBOARD));
     }
 
-    /** Types text that was already composed on the Mac (an input method such as Vietnamese Telex), in one event. */
+    /**
+     * Types text that a Mac input method already composed (Vietnamese Telex, ...). Plain ASCII goes in as key presses.
+     * Anything else (accents) cannot be a key press, so it is pasted: the clipboard is set, Ctrl+V pressed and the
+     * previous clip put back (a non-text clip is lost: it cannot be restored).
+     */
+    @Override
     public void text(String characters) {
         wakeIfAsleep();
-        KeyEvent event = new KeyEvent(SystemClock.uptimeMillis(), characters, KEYBOARD_DEVICE_ID, 0);
-        event.setSource(InputDevice.SOURCE_KEYBOARD);
-        inject(event);
+        KeyEvent[] events = keyCharacterMap.getEvents(characters.toCharArray());
+        if (events != null) {
+            long now = SystemClock.uptimeMillis();
+            for (KeyEvent event : events) {
+                inject(new KeyEvent(now, now, event.getAction(), event.getKeyCode(), 0, event.getMetaState(),
+                        KEYBOARD_DEVICE_ID, 0, 0, InputDevice.SOURCE_KEYBOARD));
+            }
+            return;
+        }
+        String previous = clipboard.get();
+        clipboard.set(characters);
+        key(KEYCODE_CTRL_LEFT, KeyEvent.ACTION_DOWN, META_CTRL);
+        key(KEYCODE_V, KeyEvent.ACTION_DOWN, META_CTRL);
+        key(KEYCODE_V, KeyEvent.ACTION_UP, META_CTRL);
+        key(KEYCODE_CTRL_LEFT, KeyEvent.ACTION_UP, 0);
+        try {
+            Thread.sleep(PASTE_SETTLE_MS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        if (previous != null) {
+            clipboard.set(previous);
+        } else {
+            clipboard.clear();
+        }
     }
 
     /** Releases any held mouse buttons and keys so nothing stays pressed after a session ends. */

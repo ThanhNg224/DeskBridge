@@ -125,8 +125,19 @@ public final class DeviceSession: @unchecked Sendable {
         lastReceived = Date()
         cursor.prepare()
 
+        cursor.setKeyboardHandlers(
+            text: { [weak self] text in
+                guard let self else { return }
+                queue.async { self.sendText(text) }
+            },
+            command: { [weak self] code, flags in
+                guard let self else { return }
+                queue.async { self.sendKeyPress(code: code, flags: flags) }
+            }
+        )
         let capturer = InputCapturer(
             isRemote: cursor.swallowingProbe(),
+            deliversKeyToMac: cursor.keyRouter(),
             onEvent: { [weak self] event in
                 guard let self else { return }
                 queue.async { self.handle(event) }
@@ -251,6 +262,31 @@ public final class DeviceSession: @unchecked Sendable {
         cursor.release(returnTo: along.map { detector.returnPoint(along: $0, in: entryDisplay) })
         state = .local
         refreshDetector()
+    }
+
+    // MARK: - Text from a Mac input method
+
+    /// Text a Mac input method composed (Vietnamese Telex, ...), typed on the phone; split to fit a packet.
+    private func sendText(_ text: String) {
+        guard state == .remote else { return }
+        flushMoves()
+        var chunk = ""
+        for character in text {
+            if chunk.utf8.count + character.utf8.count > ProtocolEncoder.maxTextBytes {
+                send(ProtocolEncoder.text(chunk))
+                chunk = ""
+            }
+            chunk.append(character)
+        }
+        send(ProtocolEncoder.text(chunk))
+    }
+
+    /// A key the input method handed back unhandled (Return, Backspace, an arrow, ...): a plain key press.
+    private func sendKeyPress(code: UInt16, flags: UInt64) {
+        guard state == .remote else { return }
+        for down in [true, false] {
+            perform(RemoteInput.action(for: .key(code: code, down: down, flags: flags), prefs: settings.values))
+        }
     }
 
     // MARK: - Sending

@@ -28,12 +28,21 @@ public final class InputCapturer: @unchecked Sendable {
     static let syntheticMarker: Int64 = 0x4453_4B42
 
     private let isRemote: @Sendable () -> Bool
+    private let deliversKeyToMac: @Sendable (UInt16, CGEventFlags) -> Bool
     private let onEvent: @Sendable (CapturedEvent) -> Void
+    private var passedKeys = Set<UInt16>() // tap thread only: keys whose down went to the Mac, their up must too
     private var tap: CFMachPort?
     private var runLoop: CFRunLoop?
 
-    public init(isRemote: @escaping @Sendable () -> Bool, onEvent: @escaping @Sendable (CapturedEvent) -> Void) {
+    /// `deliversKeyToMac` decides, while remote, which key presses go to the Mac input method (see `KeyRouting`)
+    /// instead of being swallowed and sent to the phone.
+    public init(
+        isRemote: @escaping @Sendable () -> Bool,
+        deliversKeyToMac: @escaping @Sendable (UInt16, CGEventFlags) -> Bool = { _, _ in false },
+        onEvent: @escaping @Sendable (CapturedEvent) -> Void
+    ) {
         self.isRemote = isRemote
+        self.deliversKeyToMac = deliversKeyToMac
         self.onEvent = onEvent
     }
 
@@ -130,8 +139,17 @@ public final class InputCapturer: @unchecked Sendable {
 
         case .keyDown, .keyUp:
             guard remote else { return pass }
+            let code = UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode))
+            if type == .keyDown {
+                if deliversKeyToMac(code, event.flags) {
+                    passedKeys.insert(code)
+                    return pass
+                }
+            } else if passedKeys.remove(code) != nil {
+                return pass
+            }
             onEvent(.key(
-                code: UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode)),
+                code: code,
                 down: type == .keyDown,
                 flags: event.flags.rawValue
             ))

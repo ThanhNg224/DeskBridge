@@ -22,6 +22,7 @@ Push the pointer off the edge of the screen and it appears on the phone. Push it
 - **Fast.** Typically about 1 ms of delay, so it feels like a normal mouse.
 - **Copy and paste shortcuts just work.** `Cmd+C`, `Cmd+V` and `Cmd+A` become their Android equivalents, and copied text follows the pointer: copy on the Mac, paste on the phone, and the other way round.
 - **Right click goes Back**, like on a phone (you can switch it to a real right click).
+- **Type Vietnamese** with your Mac's input method (Telex, VNI): compose the word on the Mac, it appears on the phone when you press space.
 - **Always a way out.** Press **⌃⌥⌘⎋** (Control+Option+Command+Esc) to get the pointer back on the Mac instantly.
 
 ## What you need
@@ -50,7 +51,7 @@ The DeskBridge window shows what is still missing and turns green when everythin
 
 ## Known limits
 
-- **Typing:** plain keys and shortcuts work. Input methods (Vietnamese Telex/VNI, Japanese, ...) do not, because DeskBridge sends key presses, not text.
+- **Typing with an input method** (Vietnamese Telex/VNI, ...): the word is composed on the Mac, where a small preview appears at the bottom of the screen, and goes to the phone when you commit it (space, punctuation). Words with accents reach the phone by pasting: the phone's clipboard is used for a moment and then put back (an image on the clipboard is lost), and Samsung may show its "Copied to clipboard" toast. Other input methods (Japanese, Chinese) are untested.
 - **Clipboard:** text only (no images or files). It is shared when the pointer crosses, so something you copy by touching the phone while the pointer is on the Mac reaches the Mac the next time the pointer comes back from the phone. Samsung shows a "Copied to clipboard" toast when text arrives on the phone.
 - **One phone at a time.** With several plugged in, DeskBridge lets you choose which one.
 - **USB only.** No wireless mode.

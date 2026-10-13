@@ -17,6 +17,7 @@ public final class ClipboardAccess implements Session.Clipboard {
     private final Object service;
     private final Method setPrimaryClip;
     private final Method getPrimaryClip;
+    private final Method clearPrimaryClip;
 
     public ClipboardAccess() throws ReflectiveOperationException {
         IBinder binder = (IBinder) Class.forName("android.os.ServiceManager").getMethod("getService", String.class)
@@ -28,11 +29,16 @@ public final class ClipboardAccess implements Session.Clipboard {
                 .invoke(null, binder);
         setPrimaryClip = find("setPrimaryClip");
         getPrimaryClip = find("getPrimaryClip");
+        clearPrimaryClip = find("clearPrimaryClip");
     }
 
     @Override
     public void set(String text) {
         call(setPrimaryClip, ClipData.newPlainText("DeskBridge", text));
+    }
+
+    public void clear() {
+        call(clearPrimaryClip, null);
     }
 
     @Override

@@ -3,6 +3,7 @@
 ## Unreleased (1.1.4)
 
 - Less polling: while connected the Mac checks for phones every 10 s (was 2 s), 4 s with no phone plugged in, 5 s while paused. Plugging, unplugging, switching on and coming back from System Settings are still picked up at once. Idle wake-ups dropped from about 0.5 to about 0.1 per second.
+- Typing with a Mac input method (Vietnamese Telex/VNI, ...): while one is selected, letters, digits and punctuation go to an invisible text field in the shield window, macOS composes the word there (a preview label shows it at the bottom of the screen) and the committed text goes to the phone in a new `TEXT` packet. ASCII is typed as key presses, accented text is pasted (clipboard set, Ctrl+V, previous text clip restored after 200 ms). Cmd/Ctrl shortcuts, the release chord and keys outside a word still go straight to the phone, and nothing is routed to the Mac unless the shield window really is the key window.
 - Shared clipboard (text): what you copied on the Mac is on the phone when the pointer crosses over, and what you copied on the phone is on the Mac when it comes back. Off switch in Settings. Nothing is polled (the clipboard is looked at once per hand-over), copies marked concealed by password managers are skipped, texts over 1 MiB are not sent, contents are never logged. Samsung shows its "Copied to clipboard" toast when the Mac's text arrives.
 
 ## 1.1.3 (2026-10-13)

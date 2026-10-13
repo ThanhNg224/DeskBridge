@@ -16,7 +16,8 @@ final class RemoteCursor: @unchecked Sendable {
     private static let maxRetries = 12
 
     private let queue: DispatchQueue
-    private let shield = CursorShield()
+    private let keyboard = KeyboardStateBox()
+    private let shield: CursorShield
     private let swallowing = OSAllocatedUnfairLock(initialState: false)
     private var warpFilter = WarpFilter()
     private var engaged = false
@@ -26,6 +27,7 @@ final class RemoteCursor: @unchecked Sendable {
 
     init(queue: DispatchQueue) {
         self.queue = queue
+        shield = CursorShield(keyboard: keyboard)
     }
 
     /// One-time setup when a session starts.
@@ -38,6 +40,21 @@ final class RemoteCursor: @unchecked Sendable {
     func swallowingProbe() -> @Sendable () -> Bool {
         let swallowing = swallowing
         return { swallowing.withLock { $0 } }
+    }
+
+    /// For the event tap thread: true when a key press should go to the Mac input method (our shield window) instead of
+    /// the phone as a key press.
+    func keyRouter() -> @Sendable (UInt16, CGEventFlags) -> Bool {
+        let keyboard = keyboard
+        return { code, flags in KeyRouting.deliversToMac(keyCode: code, flags: flags, state: keyboard.read()) }
+    }
+
+    /// Where the Mac input method's output goes (called on the main thread).
+    func setKeyboardHandlers(
+        text: @escaping @Sendable (String) -> Void,
+        command: @escaping @Sendable (UInt16, UInt64) -> Void
+    ) {
+        shield.setKeyboardHandlers(text: text, command: command)
     }
 
     /// True for the synthetic big move our own warp causes (see `WarpFilter`).

@@ -14,6 +14,7 @@ public final class ProtocolDecoder {
         void onMouseButton(int button, int action) throws IOException;
         void onMouseScroll(float hScroll, float vScroll) throws IOException;
         void onKeyEvent(int keyCode, int action, int metaState) throws IOException;
+        void onText(String text) throws IOException;
         void onClipboard(String text) throws IOException;
         void onPing() throws IOException;
     }
@@ -78,6 +79,16 @@ public final class ProtocolDecoder {
                 int action = in.readUnsignedByte();
                 int metaState = in.readInt();
                 listener.onKeyEvent(keyCode, action, metaState);
+                return true;
+            }
+            case PacketType.TEXT: {
+                int length = in.readInt();
+                if (length < 0 || length > PacketType.MAX_TEXT_BYTES) {
+                    throw new IOException("Bad text length " + length);
+                }
+                byte[] bytes = new byte[length];
+                in.readFully(bytes);
+                listener.onText(new String(bytes, StandardCharsets.UTF_8));
                 return true;
             }
             case PacketType.CLIPBOARD: {

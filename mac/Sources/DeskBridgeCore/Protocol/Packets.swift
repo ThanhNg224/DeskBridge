@@ -10,6 +10,7 @@ public enum PacketType: UInt8, Sendable {
     case mouseButton = 0x12
     case mouseScroll = 0x13
     case keyEvent = 0x20
+    case text = 0x21
     case clipboard = 0x30
     case ping = 0xFE
     case pong = 0xFF
@@ -26,6 +27,8 @@ public enum AndroidEdge: UInt8, Sendable {
 public enum ProtocolEncoder {
     public static let version: UInt8 = 1
     public static let tokenLength = 32
+    /// Largest `text` payload (UTF-8 bytes): one word or phrase committed by a Mac input method.
+    public static let maxTextBytes = 4096
     /// Largest clipboard text (UTF-8 bytes) either side sends.
     public static let maxClipboardBytes = 1 << 20
 
@@ -78,6 +81,15 @@ public enum ProtocolEncoder {
         data.appendBE(code)
         data.append(down ? 0 : 1)
         data.appendBE(meta)
+        return data
+    }
+
+    /// Text of at most `maxTextBytes` UTF-8 bytes that a Mac input method composed (it cannot be key presses).
+    public static func text(_ text: String) -> Data {
+        var data = Data([PacketType.text.rawValue])
+        let bytes = Array(text.utf8)
+        data.appendBE(Int32(bytes.count))
+        data.append(contentsOf: bytes)
         return data
     }
 

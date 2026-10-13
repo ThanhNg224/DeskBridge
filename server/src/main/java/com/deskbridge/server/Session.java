@@ -19,6 +19,8 @@ final class Session implements ProtocolDecoder.Listener {
         void button(int button, boolean down, float x, float y);
         void scroll(float x, float y, float h, float v);
         void key(int keyCode, int action, int metaState);
+        /** Types text that a Mac input method already composed (it cannot be sent as key presses). */
+        void text(String characters);
         /** Releases held mouse buttons and keys. */
         void releaseAll(float x, float y);
     }
@@ -111,6 +113,14 @@ final class Session implements ProtocolDecoder.Listener {
     public void onKeyEvent(int keyCode, int action, int metaState) {
         if (pointer.isEntered()) {
             input.key(keyCode, action, metaState);
+        }
+    }
+
+    /** Contents are never logged. */
+    @Override
+    public void onText(String text) {
+        if (pointer.isEntered()) {
+            input.text(text);
         }
     }
 

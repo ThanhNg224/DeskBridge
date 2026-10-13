@@ -55,6 +55,7 @@ public final class Tests {
         @Override public void onMouseButton(int button, int action) { events.add("button " + button + " " + action); }
         @Override public void onMouseScroll(float h, float v) { events.add("scroll " + h + " " + v); }
         @Override public void onKeyEvent(int keyCode, int action, int metaState) { events.add("key " + keyCode + " " + action + " " + metaState); }
+        @Override public void onText(String text) { events.add("text " + text); }
         @Override public void onClipboard(String text) { events.add("clipboard " + text); }
         @Override public void onPing() { events.add("ping"); }
     }
@@ -131,6 +132,26 @@ public final class Tests {
         while (d.processNext(in)) { /* drain */ }
         eq("clipboard tiếng Việt", r.events.get(0));
         eq("clipboard ", r.events.get(1));
+    }
+
+    static void testDecodeText() throws Exception {
+        byte[] text = "tiếng".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] bytes = build(o -> { o.writeByte(PacketType.TEXT); o.writeInt(text.length); o.write(text); });
+        Recorder r = new Recorder();
+        new ProtocolDecoder(r).processNext(stream(bytes));
+        eq("text tiếng", r.events.get(0));
+    }
+
+    static void testTextTooLargeIsRejected() throws Exception {
+        for (int length : new int[] {PacketType.MAX_TEXT_BYTES + 1, -1}) {
+            byte[] bytes = build(o -> { o.writeByte(PacketType.TEXT); o.writeInt(length); });
+            try {
+                new ProtocolDecoder(new Recorder()).processNext(stream(bytes));
+            } catch (IOException expected) {
+                continue;
+            }
+            throw new AssertionError("expected IOException for length " + length);
+        }
     }
 
     static void testClipboardTooLargeIsRejected() throws Exception {
@@ -289,6 +310,7 @@ public final class Tests {
         @Override public void button(int b, boolean down, float x, float y) { calls.add("button " + b + " " + down); }
         @Override public void scroll(float x, float y, float h, float v) { calls.add("scroll"); }
         @Override public void key(int k, int a, int m) { calls.add("key " + k + " " + a); }
+        @Override public void text(String characters) { calls.add("text " + characters); }
         @Override public void releaseAll(float x, float y) { calls.add("releaseAll"); }
         @Override public void show(float x, float y) { calls.add("show " + x + " " + y); }
         @Override public void moveTo(float x, float y) { calls.add("moveTo"); }
@@ -337,6 +359,7 @@ public final class Tests {
 
     static void testSessionIgnoresInputBeforeEnter() throws Exception {
         Rig r = new Rig();
+        r.session.onText("x");
         r.session.onMouseMoveRel(5f, 5f);
         r.session.onMouseButton(1, 0);
         r.session.onMouseScroll(0f, 1f);
@@ -360,9 +383,11 @@ public final class Tests {
         r.session.onMouseButton(1, 0);
         r.session.onKeyEvent(29, 0, 0);
         r.session.onMouseScroll(0f, 1f);
+        r.session.onText("tiếng");
         eq("button 1 true", r.fake.calls.get(0));
         eq("key 29 0", r.fake.calls.get(1));
         eq("scroll", r.fake.calls.get(2));
+        eq("text tiếng", r.fake.calls.get(3));
     }
 
     static void testSessionPingWritesPong() throws Exception {
