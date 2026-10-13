@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased (1.1.5)
+
+- Fixed a CPU burn that started whenever a session ended (phone unplugged, `adb` restarted, app switched off and on): the reader of the phone server's error output kept firing on the closed pipe and used a whole core until DeskBridge was quit. Present since 1.0.0.
+- Phones are now detected through the adb server's own change notifications (`host:track-devices` over its TCP port, no child process) instead of polling: plugging or unplugging is noticed at once, and an idle app wakes up only for its 2 s ping. The old polling stays as a slow safety net (30 s, 60 s while connected) and as the retry clock after a failed start; it falls back to the faster intervals if the watcher cannot reach adb.
+
 ## 1.1.4 (2026-10-13)
 
 - Less polling: while connected the Mac checks for phones every 10 s (was 2 s), 4 s with no phone plugged in, 5 s while paused. Plugging, unplugging, switching on and coming back from System Settings are still picked up at once. Idle wake-ups dropped from about 0.5 to about 0.1 per second.

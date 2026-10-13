@@ -53,6 +53,7 @@ final class AppModel {
     @ObservationIgnored private var retryNotBefore = Date.distantPast
     @ObservationIgnored private var syncingLoginItem = false
     @ObservationIgnored private var discoveryTask: Task<Void, Never>?
+    @ObservationIgnored private var watcher: DeviceWatcher?
 
     init() {
         prefs = settings.values
@@ -66,7 +67,10 @@ final class AppModel {
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.session?.stopAndWait() }
+            MainActor.assumeIsolated {
+                self?.watcher?.stop()
+                self?.session?.stopAndWait()
+            }
         }
         NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
@@ -122,6 +126,7 @@ final class AppModel {
 
     private func discoveryLoop() async {
         while !Task.isCancelled {
+            startWatcherIfNeeded()
             if session != nil {
                 await refreshPhones() // so a second phone plugged in meanwhile shows up in the picker
             } else {
@@ -130,22 +135,38 @@ final class AppModel {
                     await tryStartSession()
                 }
             }
-            try? await Task.sleep(for: pollInterval)
+            try? await Task.sleep(for: .seconds(pollSeconds))
         }
     }
 
-    /// Each pass without a session spawns `adb`, so poll slowly when nothing is expected to change soon.
-    private var pollInterval: Duration {
-        if session != nil {
-            return .seconds(10) // the session reports its own end (wakeDiscovery)
+    /// `adb track-devices` tells when a phone is plugged in or out, so no polling is needed for that.
+    private func startWatcherIfNeeded() {
+        guard watcher == nil, let path = ADBBridge.locate() else { return }
+        let watcher = DeviceWatcher(adbPath: path)
+        self.watcher = watcher
+        watcher.start { [weak self] in
+            Task { @MainActor in self?.wakeDiscovery() }
         }
-        if !isEnabled {
-            return .seconds(5)
+    }
+
+    /// While the watcher runs the loop is only a safety net (and the retry clock after a failed start); without it
+    /// (adb missing, or not started yet) each pass spawns `adb`, so poll gently.
+    private var pollSeconds: Double {
+        var seconds: Double = if watcher?.isAlive == true {
+            session != nil ? 60 : 30
+        } else if session != nil {
+            10
+        } else if !isEnabled {
+            5
+        } else if case .none = setup.device {
+            4 // no phone plugged in
+        } else {
+            2
         }
-        if case .none = setup.device {
-            return .seconds(4) // no phone plugged in
+        if session == nil, isEnabled, retryNotBefore > Date() {
+            seconds = min(seconds, max(1, retryNotBefore.timeIntervalSinceNow)) // the back-off ends sooner
         }
-        return .seconds(2)
+        return seconds
     }
 
     private func refreshPhones() async {
