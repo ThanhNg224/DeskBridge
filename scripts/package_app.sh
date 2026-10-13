@@ -45,6 +45,8 @@ fi
 if [ "$IDENTITY" = "-" ]; then
   # Ad-hoc: bind the signature to the bundle id instead of the binary hash so grants survive rebuilds.
   codesign --force --sign - --requirements '=designated => identifier "com.deskbridge.app"' "$APP"
+elif [[ "$IDENTITY" == "Developer ID Application"* ]]; then
+  codesign --force --sign "$IDENTITY" --options runtime --timestamp "$APP" # what notarization requires
 else
   codesign --force --sign "$IDENTITY" "$APP"
 fi

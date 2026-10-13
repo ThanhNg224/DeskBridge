@@ -7,6 +7,7 @@ Read first: `docs/ARCHITECTURE.md` (decisions, protocol, security).
 ## Verify
 
 - `scripts/check.sh` runs everything (shellcheck, swiftformat lint, server tests, jar build, `swift build`, `swift test`) and prints one line per stage. Use it as the default verification; run it through the `runner` agent.
+- Release zip: `scripts/release.sh` (ad-hoc signed; `DEVELOPER_ID` + `NOTARY_PROFILE` env vars add signing and notarization), then `gh release upload vX.Y.Z build/DeskBridge.zip --clobber`.
 - Individual: `scripts/test_server.sh`, `scripts/build_server.sh`, `cd mac && swift test`.
 - `scripts/device_matrix.sh` boots the API 34/35/36 emulators and checks each (`MATRIX_SWIFT=1` adds the Swift smoke tests per emulator). `ANDROID_SERIAL=<serial>` selects the device for the smoke tests (default: first ready device); `DESKBRIDGE_MAX_P95_MS` overrides the ping p95 limit (25).
 - Device-only (needs an authorized phone): `scripts/run_on_device.sh com.deskbridge.server.PointerSpike`, `DESKBRIDGE_DEVICE=1 swift test --filter DeviceSmokeTests`. Look at the result yourself with `adb exec-out screencap -p > shot.png` and read the image.
