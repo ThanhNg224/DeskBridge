@@ -20,7 +20,7 @@ Push the pointer off the edge of the screen and it appears on the phone. Push it
 - **One mouse and keyboard for both.** Click, scroll, drag and type on the phone without touching it.
 - **Over a USB cable.** Nothing to install on the phone, no Wi-Fi, no account, nothing leaves your desk.
 - **Fast.** Typically about 1 ms of delay, so it feels like a normal mouse.
-- **Copy and paste shortcuts just work.** `Cmd+C`, `Cmd+V` and `Cmd+A` become their Android equivalents.
+- **Copy and paste shortcuts just work.** `Cmd+C`, `Cmd+V` and `Cmd+A` become their Android equivalents, and copied text follows the pointer: copy on the Mac, paste on the phone, and the other way round.
 - **Right click goes Back**, like on a phone (you can switch it to a real right click).
 - **Always a way out.** Press **⌃⌥⌘⎋** (Control+Option+Command+Esc) to get the pointer back on the Mac instantly.
 
@@ -51,7 +51,7 @@ The DeskBridge window shows what is still missing and turns green when everythin
 ## Known limits
 
 - **Typing:** plain keys and shortcuts work. Input methods (Vietnamese Telex/VNI, Japanese, ...) do not, because DeskBridge sends key presses, not text.
-- **Clipboard:** copying on the Mac does not paste on the phone, and the other way round.
+- **Clipboard:** text only (no images or files). It is shared when the pointer crosses, so something you copy by touching the phone while the pointer is on the Mac reaches the Mac the next time the pointer comes back from the phone. Samsung shows a "Copied to clipboard" toast when text arrives on the phone.
 - **One phone at a time.** With several plugged in, DeskBridge lets you choose which one.
 - **USB only.** No wireless mode.
 - **Rotating the phone** while the pointer is on it takes effect the next time the pointer enters.

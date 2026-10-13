@@ -41,6 +41,7 @@ public final class ServerMain {
 
     private static void run(String socketName, String token) throws Exception {
         InputInjector injector = new InputInjector();
+        ClipboardAccess clipboard = new ClipboardAccess();
         AtomicBoolean accepted = new AtomicBoolean(false);
 
         try (LocalServerSocket server = new LocalServerSocket(socketName)) {
@@ -60,12 +61,13 @@ public final class ServerMain {
 
             try (LocalSocket socket = server.accept()) {
                 accepted.set(true);
-                serve(socket, token, injector);
+                serve(socket, token, injector, clipboard);
             }
         }
     }
 
-    private static void serve(LocalSocket socket, String token, InputInjector injector) throws Exception {
+    private static void serve(LocalSocket socket, String token, InputInjector injector, ClipboardAccess clipboard)
+            throws Exception {
         socket.setSoTimeout(READ_TIMEOUT_MS);
         DataInputStream in = new DataInputStream(new BufferedInputStream(socket.getInputStream(), 4096));
         DataOutputStream out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream(), 256));
@@ -86,7 +88,7 @@ public final class ServerMain {
 
         PointerState pointer = new PointerState();
         try (CursorOverlay overlay = new CursorOverlay(Math.min(size.width, size.height))) {
-            Session session = new Session(injector, overlay, pointer, out, () -> {
+            Session session = new Session(injector, overlay, clipboard, pointer, out, () -> {
                 try {
                     DisplayHelper.Size now = DisplayHelper.query();
                     return new int[] {now.width, now.height};

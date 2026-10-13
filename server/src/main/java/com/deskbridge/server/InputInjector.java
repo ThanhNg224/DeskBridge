@@ -106,6 +106,14 @@ public final class InputInjector implements Session.Input {
                 KEYBOARD_DEVICE_ID, 0, 0, InputDevice.SOURCE_KEYBOARD));
     }
 
+    /** Types text that was already composed on the Mac (an input method such as Vietnamese Telex), in one event. */
+    public void text(String characters) {
+        wakeIfAsleep();
+        KeyEvent event = new KeyEvent(SystemClock.uptimeMillis(), characters, KEYBOARD_DEVICE_ID, 0);
+        event.setSource(InputDevice.SOURCE_KEYBOARD);
+        inject(event);
+    }
+
     /** Releases any held mouse buttons and keys so nothing stays pressed after a session ends. */
     @Override
     public void releaseAll(float x, float y) {

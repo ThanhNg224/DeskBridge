@@ -5,6 +5,7 @@ import com.deskbridge.server.protocol.ProtocolDecoder;
 
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.function.Supplier;
 
 /**
@@ -28,15 +29,26 @@ final class Session implements ProtocolDecoder.Listener {
         void hide();
     }
 
+    interface Clipboard {
+        void set(String text);
+        /** Text of the current clip; null when empty or not text. */
+        String get();
+    }
+
     private final Input input;
     private final Cursor cursor;
+    private final Clipboard clipboard;
     private final PointerState pointer;
     private final DataOutputStream out;
     private final Supplier<int[]> displaySize; // {width, height}, re-read on every ENTER (rotation may change)
+    private boolean clipboardShared; // the host sent CLIPBOARD before this visit: it wants the clipboard shared
+    private String clipboardBaseline; // the phone's clip when the visit began; only a different one goes back
 
-    Session(Input input, Cursor cursor, PointerState pointer, DataOutputStream out, Supplier<int[]> displaySize) {
+    Session(Input input, Cursor cursor, Clipboard clipboard, PointerState pointer, DataOutputStream out,
+            Supplier<int[]> displaySize) {
         this.input = input;
         this.cursor = cursor;
+        this.clipboard = clipboard;
         this.pointer = pointer;
         this.out = out;
         this.displaySize = displaySize;
@@ -51,12 +63,15 @@ final class Session implements ProtocolDecoder.Listener {
     public void onEnter(int edge, float along) {
         int[] size = displaySize.get();
         pointer.enter(size[0], size[1], edge, along);
+        if (clipboardShared) {
+            clipboardBaseline = clipboard.get();
+        }
         cursor.show(pointer.x(), pointer.y());
         input.hover(pointer.x(), pointer.y());
     }
 
     @Override
-    public void onLeave() {
+    public void onLeave() throws IOException {
         if (pointer.isEntered()) {
             endVisit();
         }
@@ -99,13 +114,43 @@ final class Session implements ProtocolDecoder.Listener {
         }
     }
 
+    /** Contents are never logged. An empty text only says "share the clipboard this visit". */
+    @Override
+    public void onClipboard(String text) {
+        clipboardShared = true;
+        if (!text.isEmpty()) {
+            clipboard.set(text);
+        }
+    }
+
     @Override
     public void onPing() throws IOException {
         out.writeByte(PacketType.PONG);
         out.flush();
     }
 
-    private void endVisit() {
+    /** Sends the phone's clip to the Mac if it changed during the visit (texts over the limit stay on the phone). */
+    private void sendClipboardIfChanged() throws IOException {
+        if (!clipboardShared) {
+            return;
+        }
+        clipboardShared = false;
+        String text = clipboard.get();
+        if (text == null || text.equals(clipboardBaseline)) {
+            return;
+        }
+        byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
+        if (bytes.length > PacketType.MAX_CLIPBOARD_BYTES) {
+            return;
+        }
+        out.writeByte(PacketType.CLIPBOARD);
+        out.writeInt(bytes.length);
+        out.write(bytes);
+        out.flush();
+    }
+
+    private void endVisit() throws IOException {
+        sendClipboardIfChanged();
         input.releaseAll(pointer.x(), pointer.y());
         input.hoverExit(pointer.x(), pointer.y());
         cursor.hide();

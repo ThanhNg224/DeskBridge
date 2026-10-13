@@ -55,6 +55,7 @@ public final class Tests {
         @Override public void onMouseButton(int button, int action) { events.add("button " + button + " " + action); }
         @Override public void onMouseScroll(float h, float v) { events.add("scroll " + h + " " + v); }
         @Override public void onKeyEvent(int keyCode, int action, int metaState) { events.add("key " + keyCode + " " + action + " " + metaState); }
+        @Override public void onClipboard(String text) { events.add("clipboard " + text); }
         @Override public void onPing() { events.add("ping"); }
     }
 
@@ -116,6 +117,32 @@ public final class Tests {
         eq("button 2 0", r.events.get(1));
         eq("scroll 0.0 -1.5", r.events.get(2));
         eq("key 29 1 4096", r.events.get(3));
+    }
+
+    static void testDecodeClipboardMultibyteText() throws Exception {
+        byte[] text = "tiếng Việt".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] bytes = build(o -> {
+            o.writeByte(PacketType.CLIPBOARD); o.writeInt(text.length); o.write(text);
+            o.writeByte(PacketType.CLIPBOARD); o.writeInt(0);
+        });
+        Recorder r = new Recorder();
+        ProtocolDecoder d = new ProtocolDecoder(r);
+        DataInputStream in = stream(bytes);
+        while (d.processNext(in)) { /* drain */ }
+        eq("clipboard tiếng Việt", r.events.get(0));
+        eq("clipboard ", r.events.get(1));
+    }
+
+    static void testClipboardTooLargeIsRejected() throws Exception {
+        for (int length : new int[] {PacketType.MAX_CLIPBOARD_BYTES + 1, -1}) {
+            byte[] bytes = build(o -> { o.writeByte(PacketType.CLIPBOARD); o.writeInt(length); });
+            try {
+                new ProtocolDecoder(new Recorder()).processNext(stream(bytes));
+            } catch (IOException expected) {
+                continue;
+            }
+            throw new AssertionError("expected IOException for length " + length);
+        }
     }
 
     static void testDecodePing() throws Exception {
@@ -252,8 +279,11 @@ public final class Tests {
 
     // ---- session ----
 
-    private static final class Fake implements Session.Input, Session.Cursor {
+    private static final class Fake implements Session.Input, Session.Cursor, Session.Clipboard {
         final List<String> calls = new ArrayList<>();
+        String clip; // the phone's clipboard
+        @Override public void set(String text) { calls.add("clipSet"); clip = text; }
+        @Override public String get() { calls.add("clipGet"); return clip; }
         @Override public void hover(float x, float y) { calls.add("hover " + x + " " + y); }
         @Override public void hoverExit(float x, float y) { calls.add("hoverExit"); }
         @Override public void button(int b, boolean down, float x, float y) { calls.add("button " + b + " " + down); }
@@ -273,7 +303,7 @@ public final class Tests {
     private static final class Rig {
         final Fake fake = new Fake();
         final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-        final Session session = new Session(fake, fake, new PointerState(), new DataOutputStream(bytes),
+        final Session session = new Session(fake, fake, fake, new PointerState(), new DataOutputStream(bytes),
                 () -> new int[] {1080, 2400});
     }
 
@@ -361,5 +391,71 @@ public final class Tests {
         r.fake.calls.clear();
         r.session.streamEnded();
         eq("releaseAll", r.fake.calls.get(0));
+    }
+
+    // ---- clipboard ----
+
+    /** What the session wrote to `bytes` as a CLIPBOARD packet followed by anything else, as text. */
+    private static String clipboardWritten(Rig r) throws IOException {
+        DataInputStream in = stream(r.bytes.toByteArray());
+        eq(0x30, in.readUnsignedByte());
+        byte[] text = new byte[in.readInt()];
+        in.readFully(text);
+        return new String(text, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    static void testClipboardFromMacIsSetOnThePhone() throws Exception {
+        Rig r = new Rig();
+        r.session.onClipboard("xin chào");
+        eq("xin chào", r.fake.clip);
+        r.fake.calls.clear();
+        r.session.onClipboard(""); // "share, nothing new": must not clear the phone's clip
+        eq("xin chào", r.fake.clip);
+        r.fake.count("clipSet", 0);
+    }
+
+    static void testChangedPhoneClipGoesBackBeforeExit() throws Exception {
+        Rig r = new Rig();
+        r.session.onClipboard("from mac");
+        r.session.onEnter(PointerState.EDGE_LEFT, 0.5f);
+        r.session.onMouseMoveRel(100f, 0f);
+        r.fake.clip = "từ điện thoại";
+        r.session.onMouseMoveRel(-500f, 0f);
+        eq("từ điện thoại", clipboardWritten(r));
+        byte[] b = r.bytes.toByteArray();
+        int exitAt = b.length - 5;
+        eq(0x05, b[exitAt] & 0xFF); // CLIPBOARD comes first, EXIT last
+    }
+
+    static void testUnchangedPhoneClipIsNotSent() throws Exception {
+        Rig r = new Rig();
+        r.fake.clip = "old";
+        r.session.onClipboard(""); // sharing on, nothing from the Mac
+        r.session.onEnter(PointerState.EDGE_LEFT, 0.5f);
+        r.session.onMouseMoveRel(100f, 0f);
+        r.session.onMouseMoveRel(-500f, 0f);
+        eq(5, r.bytes.size()); // EXIT only
+    }
+
+    static void testClipboardUntouchedWithoutOptIn() throws Exception {
+        Rig r = new Rig();
+        r.fake.clip = "secret";
+        r.session.onEnter(PointerState.EDGE_LEFT, 0.5f);
+        r.session.onMouseMoveRel(100f, 0f);
+        r.fake.clip = "changed";
+        r.session.onLeave();
+        r.fake.count("clipGet", 0);
+        eq(0, r.bytes.size());
+    }
+
+    static void testClipboardSharingEndsWithTheVisit() throws Exception {
+        Rig r = new Rig();
+        r.session.onClipboard("");
+        r.session.onEnter(PointerState.EDGE_LEFT, 0.5f);
+        r.session.onLeave();
+        r.fake.calls.clear();
+        r.session.onEnter(PointerState.EDGE_LEFT, 0.5f); // second visit, Mac did not opt in again
+        r.session.onLeave();
+        r.fake.count("clipGet", 0);
     }
 }

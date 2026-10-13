@@ -10,6 +10,7 @@ public enum PacketType: UInt8, Sendable {
     case mouseButton = 0x12
     case mouseScroll = 0x13
     case keyEvent = 0x20
+    case clipboard = 0x30
     case ping = 0xFE
     case pong = 0xFF
 }
@@ -25,6 +26,8 @@ public enum AndroidEdge: UInt8, Sendable {
 public enum ProtocolEncoder {
     public static let version: UInt8 = 1
     public static let tokenLength = 32
+    /// Largest clipboard text (UTF-8 bytes) either side sends.
+    public static let maxClipboardBytes = 1 << 20
 
     /// 16 random bytes as 32 lowercase hex characters.
     public static func makeToken() -> String {
@@ -78,6 +81,15 @@ public enum ProtocolEncoder {
         return data
     }
 
+    /// Text of at most `maxClipboardBytes` UTF-8 bytes. Empty means "share the clipboard this visit, nothing new".
+    public static func clipboard(_ text: String) -> Data {
+        let bytes = Array(text.utf8)
+        var data = Data([PacketType.clipboard.rawValue])
+        data.appendBE(Int32(bytes.count))
+        data.append(contentsOf: bytes)
+        return data
+    }
+
     public static func ping() -> Data {
         Data([PacketType.ping.rawValue])
     }
@@ -86,11 +98,13 @@ public enum ProtocolEncoder {
 public enum ServerPacket: Equatable, Sendable {
     case helloOK(width: Int32, height: Int32, rotation: Int32)
     case exit(along: Float)
+    case clipboard(String)
     case pong
 }
 
 public enum ProtocolError: Error, Equatable {
     case unknownPacket(UInt8)
+    case clipboardTooLarge(Int)
 }
 
 /// Incremental parser for the Android→Mac stream; tolerates packets split across reads.
@@ -116,6 +130,15 @@ public struct ServerPacketParser: Sendable {
                 guard buffer.count >= 5 else { return packets }
                 packets.append(.exit(along: Float(bitPattern: word(at: 1))))
                 buffer.removeFirst(5)
+            case .clipboard:
+                guard buffer.count >= 5 else { return packets }
+                let length = Int(Int32(bitPattern: word(at: 1)))
+                guard length >= 0, length <= ProtocolEncoder.maxClipboardBytes else {
+                    throw ProtocolError.clipboardTooLarge(length)
+                }
+                guard buffer.count >= 5 + length else { return packets }
+                packets.append(.clipboard(String(decoding: buffer[5 ..< 5 + length], as: UTF8.self)))
+                buffer.removeFirst(5 + length)
             case .pong:
                 packets.append(.pong)
                 buffer.removeFirst(1)

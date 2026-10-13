@@ -5,6 +5,8 @@ public final class PacketType {
 
     public static final int VERSION = 1;
     public static final int TOKEN_LENGTH = 32;
+    /** Largest clipboard text (UTF-8 bytes) either side sends. */
+    public static final int MAX_CLIPBOARD_BYTES = 1 << 20;
 
     public static final byte HELLO          = 0x01;
     public static final byte HELLO_OK       = 0x02;
@@ -15,6 +17,7 @@ public final class PacketType {
     public static final byte MOUSE_BUTTON   = 0x12;
     public static final byte MOUSE_SCROLL   = 0x13;
     public static final byte KEY_EVENT      = 0x20;
+    public static final byte CLIPBOARD      = 0x30;
     public static final byte PING           = (byte) 0xFE;
     public static final byte PONG           = (byte) 0xFF;
 }

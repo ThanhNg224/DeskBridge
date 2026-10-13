@@ -54,6 +54,29 @@ struct PacketsTests {
         #expect(packets == [.exit(along: 0.5), .pong])
     }
 
+    @Test func encodesClipboard() {
+        #expect(Array(ProtocolEncoder.clipboard("")) == [0x30, 0, 0, 0, 0])
+        #expect(Array(ProtocolEncoder.clipboard("é")) == [0x30, 0, 0, 0, 2, 0xC3, 0xA9])
+    }
+
+    @Test func parsesClipboardSplitAcrossReads() throws {
+        var parser = ServerPacketParser()
+        let bytes = Array(ProtocolEncoder.clipboard("tiếng Việt")) + [0xFF]
+        #expect(try parser.feed(Data(bytes[0 ..< 3])).isEmpty)
+        #expect(try parser.feed(Data(bytes[3 ..< 9])).isEmpty)
+        let packets = try parser.feed(Data(bytes[9...]))
+        #expect(packets == [.clipboard("tiếng Việt"), .pong])
+    }
+
+    @Test func oversizedClipboardThrows() {
+        var parser = ServerPacketParser()
+        let length = Int32(ProtocolEncoder.maxClipboardBytes + 1)
+        let header: [UInt8] = [0x30] + withUnsafeBytes(of: length.bigEndian, Array.init)
+        #expect(throws: ProtocolError.clipboardTooLarge(Int(length))) {
+            try parser.feed(Data(header))
+        }
+    }
+
     @Test func unknownPacketThrows() {
         var parser = ServerPacketParser()
         #expect(throws: ProtocolError.unknownPacket(0x7E)) {

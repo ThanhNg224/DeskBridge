@@ -51,6 +51,7 @@ struct SettingsView: View {
 
             Section("Keyboard") {
                 Toggle("⌘ acts as Ctrl (⌘C, ⌘V, ⌘A)", isOn: $model.prefs.commandIsControl)
+                Toggle("Share the clipboard (text)", isOn: $model.prefs.shareClipboard)
             }
 
             Section("General") {

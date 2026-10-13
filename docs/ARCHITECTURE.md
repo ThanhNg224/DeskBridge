@@ -83,7 +83,7 @@ Pure units (everything marked "pure") have unit tests; the session itself and th
 
 ## 4. Communication Protocol
 
-Stream over the forwarded socket. Big-endian. Each packet is `type:u8` + fixed payload. Action codes everywhere: `0 = DOWN`, `1 = UP`.
+Stream over the forwarded socket. Big-endian. Each packet is `type:u8` + payload (fixed size, except `CLIPBOARD`). Action codes everywhere: `0 = DOWN`, `1 = UP`.
 
 | Type | Name | Direction | Payload |
 | :--- | :--- | :--- | :--- |
@@ -96,6 +96,7 @@ Stream over the forwarded socket. Big-endian. Each packet is `type:u8` + fixed p
 | `0x12` | `MOUSE_BUTTON` | Mac→Android | `button:u8` (Android `BUTTON_*` bit: 1 primary, 2 secondary, 4 tertiary), `action:u8` |
 | `0x13` | `MOUSE_SCROLL` | Mac→Android | `h:f32`, `v:f32` (wheel lines; Android axis sign) |
 | `0x20` | `KEY_EVENT` | Mac→Android | `keyCode:i32` (Android), `action:u8`, `metaState:i32` (Android) |
+| `0x30` | `CLIPBOARD` | both | `length:i32` (0..1 MiB), `text:UTF-8 bytes`. Mac→Android before `ENTER` (empty = share the clipboard this visit, nothing new to set); Android→Mac before `EXIT` or after `LEAVE`, only when the phone's clip differs from the one it had at `ENTER` |
 | `0xFE` | `PING` | Mac→Android | none (every 2 s) |
 | `0xFF` | `PONG` | Android→Mac | none |
 
@@ -103,7 +104,7 @@ Rules:
 - The server accepts exactly one connection, requires `HELLO` first, and exits on a bad token, a bad version, an unknown packet type, 6 s without data, or EOF.
 - The server ignores move/button/scroll/key packets while the pointer is not "entered".
 - `EXIT` is only sent after the pointer has been at least 48 Android px away from the entry edge once ("armed"); the pointer starts exactly on that edge, so without this any jitter toward it hands control straight back.
-- `CLIPBOARD_SYNC` is not part of the MVP.
+- Clipboard sharing is opt-in per visit: the server reads or writes the phone's clipboard only after the Mac sent `CLIPBOARD` before `ENTER`. Text only; contents are never logged. The server reaches the clipboard as the shell user through the hidden `IClipboard` service (`ClipboardAccess`, arguments filled by type because the signature differs between Android versions).
 
 ---
 
@@ -147,4 +148,4 @@ The server runs as shell UID with the power to inject arbitrary input, so access
 
 Emulators have no OEM layer, so Samsung/Xiaomi behaviour on 14+ is still unverified on real hardware.
 
-**Non-goals for MVP:** clipboard sync, Vietnamese/IME text input, multiple simultaneous devices, wireless ADB, rotation changes *during* a visit, display mirroring.
+**Non-goals for MVP:** Vietnamese/IME text input, multiple simultaneous devices, wireless ADB, rotation changes *during* a visit, display mirroring.

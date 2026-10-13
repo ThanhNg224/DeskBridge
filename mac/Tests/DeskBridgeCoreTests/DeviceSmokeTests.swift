@@ -106,6 +106,47 @@ struct DeviceSmokeTests {
         #expect(try wakefulness() == "mWakefulness=Awake")
     }
 
+    /// Clipboard both ways: the Mac's text is on the phone after ENTER, and a clip changed on the phone during the
+    /// visit comes back before EXIT. The phone's clipboard is read and written with the diagnostic `TextSpike`.
+    @Test func clipboardTravelsBothWays() async throws {
+        let (adb, serial, jar) = try DeviceHarness.setup()
+        let server = try adb.launchServer(serial: serial, jar: jar)
+        defer { server.terminate() }
+
+        func spike(_ mode: String, _ text: String = "") throws -> String {
+            try adb.run(["-s", serial, "shell",
+                         "CLASSPATH=/data/local/tmp/deskbridge-server.jar app_process / "
+                             + "com.deskbridge.server.TextSpike \(mode) \(text)"])
+        }
+
+        let fromMac = "mac_đến_điện_thoại"
+        let fromPhone = "điện_thoại_về_mac"
+        let script = [
+            Step(ProtocolEncoder.clipboard(fromMac)),
+            Step(ProtocolEncoder.enter(edge: .left, along: 0.5)),
+            Step(ProtocolEncoder.moveRel(dx: 80, dy: 0), delay: 0.2),
+            Step(ProtocolEncoder.ping(), delay: 2), // the host pings every 2 s; the server drops a silent host after 6
+            Step(ProtocolEncoder.ping(), delay: 4),
+            Step(ProtocolEncoder.moveRel(dx: -200, dy: 0), delay: 6),
+        ]
+        async let packets = DeviceHarness.run(port: server.port, token: server.token, within: 14,
+                                              afterHello: script) { $0.contains { $0.exitAlong != nil } }
+        try await Task.sleep(for: .seconds(2))
+        #expect(try spike("get").contains(fromMac))
+        _ = try spike("set", fromPhone)
+
+        let received = await packets ?? []
+        let clip = received.compactMap { packet -> String? in
+            if case let .clipboard(text) = packet {
+                text
+            } else {
+                nil
+            }
+        }
+        #expect(clip == [fromPhone], "server stderr: \(server.lastError)")
+        #expect(received.last?.exitAlong != nil)
+    }
+
     @Test func pingIsAnswered() async throws {
         let (adb, serial, jar) = try DeviceHarness.setup()
         let server = try adb.launchServer(serial: serial, jar: jar)

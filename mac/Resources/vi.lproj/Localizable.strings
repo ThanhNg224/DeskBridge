@@ -53,6 +53,7 @@
 "Invert scroll direction" = "Đảo chiều cuộn";
 "Keyboard" = "Bàn phím";
 "⌘ acts as Ctrl (⌘C, ⌘V, ⌘A)" = "⌘ hoạt động như Ctrl (⌘C, ⌘V, ⌘A)";
+"Share the clipboard (text)" = "Chia sẻ clipboard (văn bản)";
 "General" = "Chung";
 "Launch at login" = "Mở khi đăng nhập";
 "Show icon in the Dock" = "Hiện biểu tượng trên Dock";

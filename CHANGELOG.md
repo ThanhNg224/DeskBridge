@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased (1.1.4)
+
+- Less polling: while connected the Mac checks for phones every 10 s (was 2 s), 4 s with no phone plugged in, 5 s while paused. Plugging, unplugging, switching on and coming back from System Settings are still picked up at once. Idle wake-ups dropped from about 0.5 to about 0.1 per second.
+- Shared clipboard (text): what you copied on the Mac is on the phone when the pointer crosses over, and what you copied on the phone is on the Mac when it comes back. Off switch in Settings. Nothing is polled (the clipboard is looked at once per hand-over), copies marked concealed by password managers are skipped, texts over 1 MiB are not sent, contents are never logged. Samsung shows its "Copied to clipboard" toast when the Mac's text arrives.
+
 ## 1.1.3 (2026-10-13)
 
 - Bottom edge over the Dock: the Dock icon label no longer stays after the pointer moves to Android when the mouse is pushed down fast (the cursor was dragged back onto the icon before it froze).
@@ -8,7 +13,7 @@
 - Logs: one line per hand-over (`cursor frozen at ..., blank after N ms`), with a notice when a retry was needed and an error if the arrow stayed.
 - Fixed a Swift concurrency warning in `RemoteCursor`.
 
-Known limits: input methods (Vietnamese/IME) and clipboard sync are not supported; one phone at a time; USB only; rotating the phone during a visit applies at the next visit; the mouse wakes a sleeping screen but does not unlock it; at the bottom edge over the Dock the pointer can flash for about 0.1 s (more noticeable with the DeskBridge window on a second display) and DeskBridge comes to the front on each hand-over; Xiaomi/HyperOS and other vendor skins untested; the download is not notarized (first launch needs Open Anyway).
+Known limits: input methods (Vietnamese/IME) are not supported; one phone at a time; USB only; rotating the phone during a visit applies at the next visit; the mouse wakes a sleeping screen but does not unlock it; at the bottom edge over the Dock the pointer can flash for about 0.1 s (more noticeable with the DeskBridge window on a second display) and DeskBridge comes to the front on each hand-over; Xiaomi/HyperOS and other vendor skins untested; the download is not notarized (first launch needs Open Anyway).
 
 ## 1.1.2 (2026-10-13)
 

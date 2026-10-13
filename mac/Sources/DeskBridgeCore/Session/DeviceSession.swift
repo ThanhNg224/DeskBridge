@@ -28,6 +28,7 @@ public final class DeviceSession: @unchecked Sendable {
     private let settings: Settings
     private let queue = DispatchQueue(label: "deskbridge.session", qos: .userInteractive)
     private let cursor: RemoteCursor
+    private let clipboard = MacClipboard()
 
     private var state: State = .starting {
         didSet {
@@ -181,11 +182,19 @@ public final class DeviceSession: @unchecked Sendable {
                 switch packet {
                 case .helloOK: startRunning()
                 case let .exit(along): returnToMac(along: along, notifyServer: false)
+                case let .clipboard(text): receivedClipboard(text)
                 case .pong: break
                 }
             }
         } catch {
             end(.protocolError("\(error)"))
+        }
+    }
+
+    /// The phone's new clip arrives just before it hands control back (or after our LEAVE).
+    private func receivedClipboard(_ text: String) {
+        if settings.values.shareClipboard {
+            clipboard.apply(text)
         }
     }
 
@@ -226,6 +235,9 @@ public final class DeviceSession: @unchecked Sendable {
     private func enterRemote(_ crossing: EdgeDetector.Crossing, from location: CGPoint) {
         entryDisplay = crossing.display
         coalescer = MoveCoalescer()
+        if settings.values.shareClipboard {
+            send(ProtocolEncoder.clipboard(clipboard.textToSend() ?? "")) // also tells the phone to share this visit
+        }
         send(ProtocolEncoder.enter(edge: detector.edge.androidEntryEdge, along: crossing.along))
         state = .remote
         cursor.engage(from: location, on: crossing.display, edge: detector.edge)

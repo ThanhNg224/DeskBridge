@@ -19,6 +19,8 @@ public final class Settings: @unchecked Sendable {
         public var enabled = true
         /// Show the app in the Dock (otherwise it only lives in the menu bar).
         public var showDockIcon = true
+        /// Share the clipboard (text) when the pointer crosses between Mac and phone.
+        public var shareClipboard = true
         /// Serial of the phone to use when several are attached.
         public var preferredSerial: String?
     }
@@ -53,6 +55,9 @@ public final class Settings: @unchecked Sendable {
         if let dock = defaults.object(forKey: "showDockIcon") as? Bool {
             values.showDockIcon = dock
         }
+        if let share = defaults.object(forKey: "shareClipboard") as? Bool {
+            values.shareClipboard = share
+        }
         values.preferredSerial = defaults.string(forKey: "preferredSerial")
         lock = OSAllocatedUnfairLock(initialState: values)
     }
@@ -69,6 +74,7 @@ public final class Settings: @unchecked Sendable {
             defaults.set(newValue.commandIsControl, forKey: "commandIsControl")
             defaults.set(newValue.enabled, forKey: "enabled")
             defaults.set(newValue.showDockIcon, forKey: "showDockIcon")
+            defaults.set(newValue.shareClipboard, forKey: "shareClipboard")
             defaults.set(newValue.preferredSerial, forKey: "preferredSerial")
         }
     }
