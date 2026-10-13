@@ -60,6 +60,11 @@ public final class DeviceSession: @unchecked Sendable {
         queue.async { self.end("Stopped") }
     }
 
+    /// For app termination: finishes teardown (cursor, forward, server) before returning.
+    public func stopAndWait() {
+        queue.sync { self.end("Stopped") }
+    }
+
     // MARK: - Startup
 
     private func launch() {
@@ -122,6 +127,7 @@ public final class DeviceSession: @unchecked Sendable {
         guard state == .starting else { return }
         detector = EdgeDetector(edge: settings.values.edge, bounds: EdgeDetector.currentBounds())
         lastReceived = Date()
+        CursorVisibility.allowHidingInBackground()
 
         let capturer = InputCapturer(
             isRemote: { [remoteFlag] in remoteFlag.withLock { $0 } },

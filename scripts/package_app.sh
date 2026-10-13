@@ -15,7 +15,7 @@ BIN="$(swift build -c release --package-path "$ROOT/mac" --show-bin-path)/DeskBr
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/DeskBridge"
-cp "$ROOT/server/build/deskbridge-server.jar" "$APP/Contents/Resources/"
+cp "$ROOT/server/build/deskbridge-server.jar" "$ROOT/mac/Resources/AppIcon.icns" "$APP/Contents/Resources/"
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -25,6 +25,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleIdentifier</key><string>com.deskbridge.app</string>
   <key>CFBundleName</key><string>DeskBridge</string>
   <key>CFBundleExecutable</key><string>DeskBridge</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>CFBundleVersion</key><string>1</string>

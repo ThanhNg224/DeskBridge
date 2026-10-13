@@ -91,6 +91,13 @@ public struct ADBBridge: Sendable {
         try Self.parseForwardPort(run(["-s", serial, "forward", "tcp:0", "localabstract:\(abstractSocket)"]))
     }
 
+    /// Marketing model name (e.g. "SM-N770F"), falling back to the serial.
+    public func deviceName(serial: String) -> String {
+        let model = (try? run(["-s", serial, "shell", "getprop", "ro.product.model"]))?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return model.isEmpty ? serial : model
+    }
+
     public func removeStaleForwards(serial: String) {
         guard let list = try? run(["forward", "--list"]) else { return }
         for port in Self.staleForwardPorts(in: list, serial: serial) {
