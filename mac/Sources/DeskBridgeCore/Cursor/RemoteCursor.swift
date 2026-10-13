@@ -6,10 +6,9 @@ import os
 /// hide it, and give it back. Used from the session queue only (except `swallowingProbe`).
 ///
 /// The call order is the result of many rounds of real-world testing, see the cursor notes in CLAUDE.md:
-/// hide the cursor at once (so nothing visibly jumps), move it off whatever it hovers while events still pass
-/// (so the Dock clears its icon label), cover the display with our own foreground window, warp again under
-/// it, then freeze. Where the system ignores the hide (over the Dock), the shield's transparent cursor image
-/// makes it invisible a moment later.
+/// hide the cursor at once, cover the display with our own foreground window (it shows a transparent cursor,
+/// which also works where the system ignores the hide, i.e. over the Dock), warp the cursor off whatever it
+/// hovers while events still pass (so the Dock clears its icon label), then swallow input and freeze.
 final class RemoteCursor: @unchecked Sendable {
     private static let log = Logger(subsystem: "com.deskbridge.app", category: "cursor")
     private static let beginSwallowingDelay = 0.05
@@ -46,19 +45,15 @@ final class RemoteCursor: @unchecked Sendable {
     func engage(from location: CGPoint, on display: CGRect, edge: ScreenEdge) {
         engaged = true
         frozen = false
-        hidden = CGDisplayHideCursor(CGMainDisplayID()) == .success // before it jumps: nothing visible
+        hidden = CGDisplayHideCursor(CGMainDisplayID()) == .success // before anything moves: nothing visible
         let parkDisplay = Displays.bounds(containing: location) ?? display
         let target = ParkingPoint.find(
             from: location, edge: edge, display: parkDisplay, isOccupied: Displays.isOccupiedByAnotherApp
         )
-        CGWarpMouseCursorPosition(target)
-        warpFilter.noteWarp()
-        queue.asyncAfter(deadline: .now() + Self.beginSwallowingDelay) { [weak self] in
-            guard let self, engaged else { return }
-            swallowing.withLock { $0 = true }
-            shield.show(covering: display) { [weak self] in
-                self?.queue.async { self?.freeze(at: target) }
-            }
+        // The shield goes up first so the cursor is already transparent when it is moved (over the Dock the
+        // system ignores `hide`, so the move would otherwise be visible).
+        shield.show(covering: display) { [weak self] in
+            self?.queue.async { self?.park(at: target) }
         }
     }
 
@@ -78,11 +73,18 @@ final class RemoteCursor: @unchecked Sendable {
         }
     }
 
+    /// Moves the cursor off whatever it hovers (so the Dock clears its icon label) while events still pass.
+    private func park(at target: CGPoint) {
+        guard engaged else { return }
+        CGWarpMouseCursorPosition(target)
+        warpFilter.noteWarp()
+        queue.asyncAfter(deadline: .now() + Self.beginSwallowingDelay) { [weak self] in self?.freeze(at: target) }
+    }
+
     private func freeze(at target: CGPoint) {
         guard engaged, !frozen else { return }
         frozen = true
-        CGWarpMouseCursorPosition(target)
-        warpFilter.noteWarp()
+        swallowing.withLock { $0 = true }
         CGAssociateMouseAndMouseCursorPosition(0) // freeze the Mac cursor; deltas keep flowing
         let wasHidden = hidden
         Self.log.info("cursor frozen at (\(Int(target.x)),\(Int(target.y))) hidden=\(wasHidden)")
