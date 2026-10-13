@@ -45,7 +45,7 @@ When the Mac cursor pushes through the configured screen edge (left, right, top 
 - **`DeskBridgeCore` (library):** protocol codec, `ADBBridge`/`ServerLauncher`, `Connection`, `MoveCoalescer`, `KeyMapper`, `EdgeDetector`, `InputCapturer`, `DeviceSession`, `Settings`. Unit-testable without UI.
 - **`DeskBridge` (executable):** SwiftUI `MenuBarExtra` + `AppModel` (device discovery loop, permission check).
 - **Event tap:** `CGEvent.tapCreate` at `.cghidEventTap`, active filter. Captures mouse move/drag (all buttons), buttons, scroll, key down/up. In local mode events pass through; in remote mode they are swallowed. Re-enables itself on `tapDisabledByTimeout`.
-- **Edges:** computed per display (`EdgeDetector`): an edge counts only where no other display sits right behind it, so a short display next to a tall one keeps its own exposed edges. Control returns to the display it left from.
+- **Edges:** computed per display (`EdgeDetector`): an edge counts only where no other display sits right behind it. Top and bottom only count on the **main display**, so a tall or rotated secondary display never blocks the way. Left and right use every exposed edge. Control returns to the display it left from.
 - **Remote mode:** park the frozen cursor, cover that display with a near-invisible `CursorShield` window (so this app owns the cursor image) and hide it; read `mouseEventDeltaX/Y`. The warp's own synthetic move is ignored for 150 ms.
 - **Fail-safes:** release chord **⌃⌥⌘⎋**; control returns to the Mac automatically on disconnect, server exit, or 6 s without a packet.
 - **Device lifecycle:** poll `adb devices` while no session is active; push jar, `forward`, spawn server, connect with retry until the server listens (≤ 8 s).

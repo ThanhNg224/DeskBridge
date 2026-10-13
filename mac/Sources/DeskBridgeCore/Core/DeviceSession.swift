@@ -131,7 +131,9 @@ public final class DeviceSession: @unchecked Sendable {
 
     private func startRunning() {
         guard state == .starting else { return }
-        detector = EdgeDetector(edge: settings.values.edge, displays: EdgeDetector.currentDisplays())
+        detector = EdgeDetector(
+            edge: settings.values.edge, displays: EdgeDetector.currentDisplays(), primary: EdgeDetector.primaryDisplay()
+        )
         lastReceived = Date()
         CursorVisibility.allowHidingInBackground()
         CGEventSource(stateID: .combinedSessionState)?.localEventsSuppressionInterval = 0 // no input freeze after warps
@@ -168,7 +170,10 @@ public final class DeviceSession: @unchecked Sendable {
         }
         connection?.send(ProtocolEncoder.ping())
         if state == .local {
-            detector = EdgeDetector(edge: settings.values.edge, displays: EdgeDetector.currentDisplays())
+            detector = EdgeDetector(
+                edge: settings.values.edge, displays: EdgeDetector.currentDisplays(),
+                primary: EdgeDetector.primaryDisplay()
+            )
         }
     }
 

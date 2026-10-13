@@ -37,11 +37,16 @@ public struct EdgeDetector: Sendable {
     /// still has its own exposed edges.
     public let displays: [CGRect]
 
+    /// When set, top and bottom edges only count on this display (the main display), so a taller or
+    /// rotated secondary display never gets in the way. Left and right use every exposed edge.
+    public let primary: CGRect?
+
     private static let tolerance: CGFloat = 1.5
 
-    public init(edge: ScreenEdge, displays: [CGRect]) {
+    public init(edge: ScreenEdge, displays: [CGRect], primary: CGRect? = nil) {
         self.edge = edge
         self.displays = displays
+        self.primary = primary
     }
 
     /// Union of all displays.
@@ -52,6 +57,9 @@ public struct EdgeDetector: Sendable {
     /// If the cursor sits on an exposed edge of its display and pushes outward, returns where.
     public func crossing(at point: CGPoint, deltaX: Double, deltaY: Double) -> Crossing? {
         guard let display = displays.first(where: { $0.contains(point) }) else { return nil }
+        if !edge.isHorizontal, let primary, display != primary {
+            return nil
+        }
         let outside: CGPoint
         switch edge {
         case .right:
@@ -86,6 +94,10 @@ public struct EdgeDetector: Sendable {
         case .bottom: return CGPoint(x: display.minX + t * (display.width - 1), y: display.maxY - inset)
         case .top: return CGPoint(x: display.minX + t * (display.width - 1), y: display.minY + inset)
         }
+    }
+
+    public static func primaryDisplay() -> CGRect {
+        CGDisplayBounds(CGMainDisplayID())
     }
 
     public static func currentDisplays() -> [CGRect] {

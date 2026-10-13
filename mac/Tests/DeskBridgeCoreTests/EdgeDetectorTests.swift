@@ -55,6 +55,18 @@ struct EdgeDetectorTests {
         #expect(d.crossing(at: CGPoint(x: 960, y: 0), deltaX: 0, deltaY: -2)?.display == main)
     }
 
+    @Test func topAndBottomOnlyCountOnThePrimaryDisplay() {
+        let bottom = EdgeDetector(edge: .bottom, displays: [main, portrait], primary: main)
+        #expect(bottom.crossing(at: CGPoint(x: -540, y: 1594), deltaX: 0, deltaY: 2) == nil) // portrait: ignored
+        #expect(bottom.crossing(at: CGPoint(x: 960, y: 1079), deltaX: 0, deltaY: 2)?.display == main)
+        let top = EdgeDetector(edge: .top, displays: [main, portrait], primary: main)
+        #expect(top.crossing(at: CGPoint(x: -540, y: -325), deltaX: 0, deltaY: -2) == nil)
+        #expect(top.crossing(at: CGPoint(x: 960, y: 0), deltaX: 0, deltaY: -2)?.display == main)
+        // Left and right keep using every exposed edge.
+        let left = EdgeDetector(edge: .left, displays: [main, portrait], primary: main)
+        #expect(left.crossing(at: CGPoint(x: -1080, y: 500), deltaX: -3, deltaY: 0)?.display == portrait)
+    }
+
     @Test func edgeBetweenTwoDisplaysIsNotAnEdge() {
         // Main's left edge touches the portrait display (y 0...1079 is inside its range).
         #expect(detector(.left, [main, portrait]).crossing(at: CGPoint(x: 0, y: 500), deltaX: -3, deltaY: 0) == nil)
