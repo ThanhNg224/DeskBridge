@@ -22,6 +22,7 @@ Read first: `docs/ARCHITECTURE.md` (decisions, protocol, security) and `docs/IMP
 
 ## Gotchas already hit
 
+- The cursor sprite must not cover the injected click point: Android 12+ drops touches under an untrusted overlay layer ("Untrusted touch due to occlusion by /2000", Samsung toast "isn't optimised for the latest version of Android"). `CursorOverlay` offsets the sprite 1 px; `cursorOverlayDoesNotBlockClicks` guards it.
 - `SurfaceControl.Transaction` has `setVisibility`, not `show/hide`, in the public stubs. `MotionEvent.setActionButton` is `@hide`: call it by reflection (not in `android.jar`).
 - Event tap callback must return `Unmanaged.passUnretained(event)` (not `passRetained`) and respond to `tapDisabledByTimeout`; keep the callback cheap and off the main thread.
 - While Android has control the Mac cursor is frozen: use `mouseEventDeltaX/Y`, never `event.location`, for movement.

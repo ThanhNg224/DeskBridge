@@ -17,6 +17,7 @@ public final class PointerSpike {
                 float x = Float.parseFloat(args[1]);
                 float y = Float.parseFloat(args[2]);
                 overlay.show(x, y);
+                Thread.sleep(1500); // let the overlay layer register with the input dispatcher first
                 injector.hover(x, y);
                 Thread.sleep(100);
                 injector.button(1, true, x, y);

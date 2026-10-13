@@ -12,10 +12,14 @@ import android.view.SurfaceControl;
 /**
  * Mouse pointer drawn by the server itself: injected events do not move Android's system pointer,
  * but a shell-owned SurfaceControl layer can be drawn above everything (verified on Android 13).
+ *
+ * The layer must never cover the exact click point: Android 12+ treats an untrusted layer over a touch
+ * as an occluding overlay and drops the touch ("Untrusted touch due to occlusion"). So the sprite is
+ * placed one pixel right/below the hotspot; the arrow tip is drawn at (TIP, TIP) inside the sprite.
  */
 final class CursorOverlay implements AutoCloseable {
     private static final float BASE_WIDTH = 1080f;
-    private static final float TIP = 2f; // arrow tip offset inside the 48x72 sprite (hotspot)
+    private static final float TIP = 1.5f; // arrow tip offset inside the 48x72 sprite
 
     private final SurfaceControl layer;
     private final SurfaceControl.Transaction transaction = new SurfaceControl.Transaction();
@@ -62,11 +66,19 @@ final class CursorOverlay implements AutoCloseable {
     }
 
     void show(float x, float y) {
-        transaction.setPosition(layer, x - TIP * scale, y - TIP * scale).setVisibility(layer, true).apply();
+        transaction.setPosition(layer, spriteX(x), spriteY(y)).setVisibility(layer, true).apply();
     }
 
     void moveTo(float x, float y) {
-        transaction.setPosition(layer, x - TIP * scale, y - TIP * scale).apply();
+        transaction.setPosition(layer, spriteX(x), spriteY(y)).apply();
+    }
+
+    private static float spriteX(float x) {
+        return Math.round(x) + 1; // strictly right of the hotspot pixel
+    }
+
+    private static float spriteY(float y) {
+        return Math.round(y) + 1; // strictly below the hotspot pixel
     }
 
     void hide() {

@@ -38,7 +38,9 @@ struct DeviceSmokeTests {
             ProtocolEncoder.moveRel(dx: 80, dy: 0),
             ProtocolEncoder.moveRel(dx: -200, dy: 0),
         ]
-        let packets = await run(port: server.port, token: server.token, afterHello: script) { packets in
+        let packets = await run(port: server.port, token: server.token,
+                                afterHello: script.map { Step($0) })
+        { packets in
             packets.contains {
                 if case .exit = $0 {
                     true
@@ -60,12 +62,38 @@ struct DeviceSmokeTests {
         #expect(abs(exit - 0.5) < 0.01)
     }
 
+    /// Regression: the drawn cursor must never cover the click point, or Android drops the touch
+    /// ("Untrusted touch due to occlusion by /2000") and Samsung shows a "not optimised" toast.
+    @Test func cursorOverlayDoesNotBlockClicks() async throws {
+        let (adb, serial, jar) = try setup()
+        let server = try adb.launchServer(serial: serial, jar: jar)
+        defer { server.terminate() }
+        _ = try adb.run(["-s", serial, "logcat", "-c"])
+
+        // ENTER on the left edge, wait for the overlay layer to register, then click and ping.
+        let script = [
+            Step(ProtocolEncoder.enter(edge: .left, along: 0.5)),
+            Step(ProtocolEncoder.moveRel(dx: 300, dy: 0), delay: 0.3),
+            Step(ProtocolEncoder.button(1, down: true), delay: 1.5),
+            Step(ProtocolEncoder.button(1, down: false), delay: 1.6),
+            Step(ProtocolEncoder.leave(), delay: 2.2),
+            Step(ProtocolEncoder.ping(), delay: 2.4),
+        ]
+        let packets = await run(port: server.port, token: server.token, within: 12, afterHello: script) {
+            $0.contains(.pong)
+        }
+        #expect(packets?.contains(.pong) == true)
+
+        let log = try adb.run(["-s", serial, "logcat", "-d"])
+        #expect(!log.contains("Untrusted touch due to occlusion by /2000"))
+    }
+
     @Test func pingIsAnswered() async throws {
         let (adb, serial, jar) = try setup()
         let server = try adb.launchServer(serial: serial, jar: jar)
         defer { server.terminate() }
 
-        let packets = await run(port: server.port, token: server.token, afterHello: [ProtocolEncoder.ping()]) {
+        let packets = await run(port: server.port, token: server.token, afterHello: [Step(ProtocolEncoder.ping())]) {
             $0.contains(.pong)
         }
         #expect(packets?.contains(.pong) == true)
@@ -88,6 +116,16 @@ struct DeviceSmokeTests {
 
     // MARK: - helpers
 
+    /// A packet sent `delay` seconds after HELLO_OK.
+    struct Step {
+        let data: Data
+        let delay: TimeInterval
+        init(_ data: Data, delay: TimeInterval = 0) {
+            self.data = data
+            self.delay = delay
+        }
+    }
+
     private func setup() throws -> (ADBBridge, String, URL) {
         let adb = try ADBBridge()
         let serial = try #require(try adb.devices().first(where: \.isReady)?.serial)
@@ -106,7 +144,7 @@ struct DeviceSmokeTests {
         port: Int,
         token: String,
         within seconds: Double = 8,
-        afterHello: [Data],
+        afterHello: [Step],
         until: @escaping @Sendable ([ServerPacket]) -> Bool
     ) async -> [ServerPacket]? {
         let deadline = Date().addingTimeInterval(seconds)
@@ -122,11 +160,12 @@ struct DeviceSmokeTests {
     private func attempt(
         port: Int,
         token: String,
-        afterHello: [Data],
+        afterHello: [Step],
         until: @escaping @Sendable ([ServerPacket]) -> Bool
     ) async -> [ServerPacket]? {
         await withCheckedContinuation { continuation in
-            let connection = Connection(port: UInt16(port), queue: DispatchQueue(label: "smoke"))
+            let queue = DispatchQueue(label: "smoke")
+            let connection = Connection(port: UInt16(port), queue: queue)
             let finished = OSAllocatedUnfairLock(initialState: false)
             let state = OSAllocatedUnfairLock(initialState: (parser: ServerPacketParser(), packets: [ServerPacket]()))
             @Sendable func finish(_ packets: [ServerPacket]?) {
@@ -155,7 +194,9 @@ struct DeviceSmokeTests {
                     return (state.packets, !hadHello && hasHello)
                 }
                 if sawHello {
-                    afterHello.forEach { connection.send($0) }
+                    for step in afterHello {
+                        queue.asyncAfter(deadline: .now() + step.delay) { connection.send(step.data) }
+                    }
                 }
                 if !packets.isEmpty, until(packets) {
                     finish(packets)
