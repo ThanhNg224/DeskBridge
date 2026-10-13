@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 import os
@@ -272,7 +273,11 @@ public final class DeviceSession: @unchecked Sendable {
         queue.asyncAfter(deadline: .now() + 0.2) { [log = Self.log] in
             let now = CGEvent(source: nil)?.location ?? .zero
             let owner = Self.windowOwner(at: now)
-            log.info("remote+200ms: cursor=(\(Int(now.x)),\(Int(now.y))) windowUnderCursor=\(owner, privacy: .public)")
+            let front = NSWorkspace.shared.frontmostApplication?.localizedName ?? "?"
+            log.info("""
+            remote+200ms: cursor=(\(Int(now.x)),\(Int(now.y))) windowUnderCursor=\(owner, privacy: .public) \
+            frontmost=\(front, privacy: .public)
+            """)
         }
     }
 
