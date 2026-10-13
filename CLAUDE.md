@@ -2,7 +2,7 @@
 
 Share a Mac mouse/keyboard with an Android device over USB/ADB. Mac menu-bar app (Swift 6) + plain-Java server run on the phone via `app_process`.
 
-Read first: `docs/ARCHITECTURE.md` (decisions, protocol, security) and `docs/IMPLEMENTATION_PLAN.md` (ordered tasks with code).
+Read first: `docs/ARCHITECTURE.md` (decisions, protocol, security).
 
 ## Verify
 

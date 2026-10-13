@@ -19,7 +19,6 @@ A spiritual successor to DeskDock built with modern tooling:
 ## Documentation
 
 - **[System Architecture](docs/ARCHITECTURE.md)**: decisions, protocol, security model, risks and non-goals.
-- **[Implementation Plan](docs/IMPLEMENTATION_PLAN.md)**: ordered, testable tasks (Task 2 is a feasibility gate).
 
 ---
 
@@ -28,7 +27,7 @@ A spiritual successor to DeskDock built with modern tooling:
 ### Prerequisites
 - macOS 14+ on Apple Silicon, Xcode 16+ (Swift 6)
 - JDK 17+, Android SDK with `build-tools` (`d8`) and any `platforms/android-*`, `adb`
-- Android 8.0+ device with **USB debugging** enabled (Xiaomi/HyperOS: also "USB debugging (Security settings)")
+- Android 13+ device with **USB debugging** enabled (Xiaomi/HyperOS: also "USB debugging (Security settings)")
 
 ### Build, test, run
 ```bash

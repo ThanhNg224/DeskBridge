@@ -46,7 +46,7 @@ When the Mac cursor pushes through the configured screen edge (left, right, top 
 - **`DeskBridge` (executable):** SwiftUI `MenuBarExtra` + `AppModel` (device discovery loop, permission check).
 - **Event tap:** `CGEvent.tapCreate` at `.cghidEventTap`, active filter. Captures mouse move/drag (all buttons), buttons, scroll, key down/up. In local mode events pass through; in remote mode they are swallowed. Re-enables itself on `tapDisabledByTimeout`.
 - **Edges:** computed per display (`EdgeDetector`): an edge counts only where no other display sits right behind it. Top and bottom only count on the **main display**, so a tall or rotated secondary display never blocks the way. Left and right use every exposed edge. Control returns to the display it left from.
-- **Remote mode:** park the frozen cursor, cover that display with a near-invisible `CursorShield` window (so this app owns the cursor image) and hide it; read `mouseEventDeltaX/Y`. The warp's own synthetic move is ignored for 150 ms.
+- **Remote mode:** park the frozen cursor, cover that display with a near-invisible `CursorShield` window (so this app owns the cursor image) and hide it; read `mouseEventDeltaX/Y`. After each cursor warp, moves of 60 px or more are ignored for 0.3 s (smaller moves still reach Android).
 - **Fail-safes:** release chord **⌃⌥⌘⎋**; control returns to the Mac automatically on disconnect, server exit, or 6 s without a packet.
 - **Device lifecycle:** poll `adb devices` while no session is active; push jar, `forward`, spawn server, connect with retry until the server listens (≤ 8 s).
 - **Packaging:** `scripts/package_app.sh` builds `DeskBridge.app` (window + menu bar item, jar in Resources, codesigned) because Accessibility/Input Monitoring permissions attach to a signed bundle.
@@ -101,7 +101,7 @@ The server runs as shell UID with the power to inject arbitrary input, so access
 ## 6. Requirements
 
 - **macOS:** 14+ on Apple Silicon. Accessibility permission (Input Monitoring if prompted). Build with Xcode 16+/Swift 6 toolchain.
-- **Android:** 8.0 (API 26) and up, including Android 16 (API 36). USB debugging enabled. Xiaomi/HyperOS and some other OEMs also need "USB debugging (Security settings)" for injection to work.
+- **Android:** 13 (API 33) and newer is the supported range (verified on a Samsung running Android 13). Android 10 was also tried by hand and worked, older versions are not supported but may work. USB debugging enabled. Xiaomi/HyperOS and some other OEMs also need "USB debugging (Security settings)" for injection to work.
 - **Dev tools:** JDK 17+ (`javac`, `jar`), Android SDK (`build-tools` for `d8`, any `platforms/android-*`), `adb`.
 
 ---
@@ -109,7 +109,7 @@ The server runs as shell UID with the power to inject arbitrary input, so access
 ## 7. Known Risks & Non-Goals
 
 **Risks (tracked by gates in the plan)**
-1. ~~System pointer may not render for injected events~~ confirmed on Android 13: it does not. Mitigated by the server-drawn cursor (see §2). Untested on other Android versions/OEMs.
+1. ~~System pointer may not render for injected events~~ confirmed on Android 13: it does not. Mitigated by the server-drawn cursor (see §2). Verified only on Android 13 (Android 10 was tried by hand); other versions and OEMs are untested.
 2. Hidden APIs (`InputManager.getInstance`, `DisplayManagerGlobal`) can change per Android release; the spike script is the per-device regression check.
 3. Latency: measured PING/PONG round trip over adb USB on a Galaxy Note10 Lite: p50 0.74 ms, p95 1.33 ms (one way about 0.4 ms). End-to-end adds Mac event tap + Android injection; target p95 < 10 ms, re-measure with `pingRoundTripLatency` and a video capture.
 4. Hiding the cursor from a background (menu-bar) app is best effort.
