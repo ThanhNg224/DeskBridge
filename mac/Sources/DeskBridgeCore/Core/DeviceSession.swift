@@ -46,6 +46,8 @@ public final class DeviceSession: @unchecked Sendable {
     private var lastReceived = Date()
     /// Our own cursor warp comes back through the event tap as a big mouse move; it must not reach Android.
     private var ignoreMovesUntil = Date.distantPast
+    private let shield = CursorShield()
+    private var cursorHidden = false
 
     public init(adb: ADBBridge, serial: String, jar: URL, settings: Settings) {
         self.adb = adb
@@ -228,14 +230,22 @@ public final class DeviceSession: @unchecked Sendable {
         CGWarpMouseCursorPosition(target)
         ignoreMovesUntil = Date().addingTimeInterval(0.15)
         let associate = CGAssociateMouseAndMouseCursorPosition(0) // freeze the Mac cursor; deltas keep flowing
-        let hide = CGDisplayHideCursor(CGMainDisplayID()) // best effort for a background app
+        // Cover that display first so this app owns the cursor image, then hide it (best effort).
+        shield.show(covering: displayBounds(containing: target)) { [weak self] in
+            self?.queue.async {
+                guard let self, self.state == .remote, !self.cursorHidden else { return }
+                let hide = CGDisplayHideCursor(CGMainDisplayID())
+                self.cursorHidden = hide == .success
+                Self.log.info("remote: hide=\(hide.rawValue)")
+            }
+        }
         let edge = String(describing: detector.edge)
         let width = Int(detector.bounds.width)
         let height = Int(detector.bounds.height)
         Self.log.info("""
         remote: edge=\(edge, privacy: .public) from=(\(Int(location.x)),\(Int(location.y))) \
         park=(\(Int(target.x)),\(Int(target.y))) bounds=\(width)x\(height) \
-        associate=\(associate.rawValue) hide=\(hide.rawValue)
+        associate=\(associate.rawValue)
         """)
         // Ground truth a moment later: where the cursor really is and which app's window is under it
         // (e.g. the Dock owns the cursor image while the pointer is over it).
@@ -312,7 +322,11 @@ public final class DeviceSession: @unchecked Sendable {
         guard state == .remote else { return }
         remoteFlag.withLock { $0 = false }
         CGAssociateMouseAndMouseCursorPosition(1)
-        CGDisplayShowCursor(CGMainDisplayID())
+        if cursorHidden {
+            CGDisplayShowCursor(CGMainDisplayID())
+            cursorHidden = false
+        }
+        shield.hide()
         if notifyServer {
             send(ProtocolEncoder.leave())
         }
