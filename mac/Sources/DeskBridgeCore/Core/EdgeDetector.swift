@@ -4,10 +4,21 @@ import CoreGraphics
 public enum ScreenEdge: Int, Sendable, CaseIterable {
     case left = 0
     case right = 1
+    case bottom = 2
+    case top = 3
 
     /// The Android edge the pointer appears on is the opposite one.
     public var androidEntryEdge: AndroidEdge {
-        self == .right ? .left : .right
+        switch self {
+        case .left: .right
+        case .right: .left
+        case .top: .bottom
+        case .bottom: .top
+        }
+    }
+
+    var isHorizontal: Bool {
+        self == .left || self == .right
     }
 }
 
@@ -24,22 +35,30 @@ public struct EdgeDetector: Sendable {
     }
 
     /// If the cursor sits on the configured edge and pushes outward, returns the normalized
-    /// position (0...1) along that edge; otherwise nil.
-    public func crossing(at point: CGPoint, deltaX: Double) -> Float? {
+    /// position (0...1) along that edge (vertical for left/right, horizontal for top/bottom); otherwise nil.
+    public func crossing(at point: CGPoint, deltaX: Double, deltaY: Double) -> Float? {
         switch edge {
         case .right: guard point.x >= bounds.maxX - Self.tolerance, deltaX > 0 else { return nil }
         case .left: guard point.x <= bounds.minX + Self.tolerance, deltaX < 0 else { return nil }
+        case .bottom: guard point.y >= bounds.maxY - Self.tolerance, deltaY > 0 else { return nil }
+        case .top: guard point.y <= bounds.minY + Self.tolerance, deltaY < 0 else { return nil }
         }
-        guard bounds.height > 0 else { return 0.5 }
-        return Float(min(max((point.y - bounds.minY) / bounds.height, 0), 1))
+        let (position, origin, length) = edge.isHorizontal
+            ? (point.y, bounds.minY, bounds.height)
+            : (point.x, bounds.minX, bounds.width)
+        guard length > 0 else { return 0.5 }
+        return Float(min(max((position - origin) / length, 0), 1))
     }
 
     /// Where to put the Mac cursor when control returns (slightly inside, so it does not re-trigger).
     public func returnPoint(along: Float, inset: CGFloat = 12) -> CGPoint {
-        CGPoint(
-            x: edge == .right ? bounds.maxX - inset : bounds.minX + inset,
-            y: bounds.minY + CGFloat(along) * (bounds.height - 1)
-        )
+        let t = CGFloat(along)
+        switch edge {
+        case .right: return CGPoint(x: bounds.maxX - inset, y: bounds.minY + t * (bounds.height - 1))
+        case .left: return CGPoint(x: bounds.minX + inset, y: bounds.minY + t * (bounds.height - 1))
+        case .bottom: return CGPoint(x: bounds.minX + t * (bounds.width - 1), y: bounds.maxY - inset)
+        case .top: return CGPoint(x: bounds.minX + t * (bounds.width - 1), y: bounds.minY + inset)
+        }
     }
 
     public static func currentBounds() -> CGRect {

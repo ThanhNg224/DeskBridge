@@ -28,6 +28,8 @@ struct MenuBarView: View {
             Picker("Android is on the", selection: $model.prefs.edge) {
                 Text("Left").tag(ScreenEdge.left)
                 Text("Right").tag(ScreenEdge.right)
+                Text("Top").tag(ScreenEdge.top)
+                Text("Bottom").tag(ScreenEdge.bottom)
             }
             .pickerStyle(.segmented)
 

@@ -20,12 +20,14 @@ public final class Tests {
         String[] names = {
             "decodeEnterAndLeave", "decodeMoveButtonScrollKey", "decodePing", "unknownPacketThrows",
             "eofReturnsFalse", "helloAccepted", "helloRejectsBadVersion", "helloRejectsWrongType",
-            "pointerEnterLeftPlacesAtEdge", "pointerClamps", "pointerExitsThroughEntryEdge", "pointerAlong"
+            "pointerEnterLeftPlacesAtEdge", "pointerClamps", "pointerExitsThroughEntryEdge", "pointerAlong",
+            "pointerTopBottomEntryAndExit", "pointerRejectsUnknownEdge"
         };
         Case[] cases = {
             Tests::decodeEnterAndLeave, Tests::decodeMoveButtonScrollKey, Tests::decodePing, Tests::unknownPacketThrows,
             Tests::eofReturnsFalse, Tests::helloAccepted, Tests::helloRejectsBadVersion, Tests::helloRejectsWrongType,
-            Tests::pointerEnterLeftPlacesAtEdge, Tests::pointerClamps, Tests::pointerExitsThroughEntryEdge, Tests::pointerAlong
+            Tests::pointerEnterLeftPlacesAtEdge, Tests::pointerClamps, Tests::pointerExitsThroughEntryEdge, Tests::pointerAlong,
+            Tests::pointerTopBottomEntryAndExit, Tests::pointerRejectsUnknownEdge
         };
         for (int i = 0; i < cases.length; i++) {
             try {
@@ -202,5 +204,33 @@ public final class Tests {
         PointerState p = new PointerState();
         p.enter(1080, 2401, PointerState.EDGE_LEFT, 0.25f);
         near(0.25f, p.along());
+    }
+
+    static void pointerTopBottomEntryAndExit() {
+        PointerState top = new PointerState();
+        top.enter(1080, 2400, PointerState.EDGE_TOP, 0.5f);
+        near(539.5f, top.x());
+        near(0f, top.y());
+        check(!top.moveBy(0f, 100f), "moving down is inside");
+        near(100f, top.y());
+        near(539.5f / 1079f, top.along());
+        check(top.moveBy(0f, -500f), "pushing up exits");
+        check(!top.isEntered(), "visit over");
+
+        PointerState bottom = new PointerState();
+        bottom.enter(1080, 2400, PointerState.EDGE_BOTTOM, 1f);
+        near(1079f, bottom.x());
+        near(2399f, bottom.y());
+        check(!bottom.moveBy(0f, -300f), "moving up is inside");
+        check(bottom.moveBy(0f, 5000f), "pushing down exits");
+    }
+
+    static void pointerRejectsUnknownEdge() {
+        try {
+            new PointerState().enter(1080, 2400, 9, 0.5f);
+        } catch (IllegalArgumentException expected) {
+            return;
+        }
+        throw new AssertionError("expected IllegalArgumentException");
     }
 }

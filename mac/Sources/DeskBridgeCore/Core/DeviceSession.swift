@@ -163,8 +163,8 @@ public final class DeviceSession: @unchecked Sendable {
 
     private func handle(_ event: CapturedEvent) {
         switch (state, event) {
-        case let (.local, .move(dx, _, location)):
-            if let along = detector.crossing(at: location, deltaX: dx) {
+        case let (.local, .move(dx, dy, location)):
+            if let along = detector.crossing(at: location, deltaX: dx, deltaY: dy) {
                 enterRemote(along: along)
             }
 

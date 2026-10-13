@@ -15,6 +15,8 @@ struct PacketsTests {
         let data = ProtocolEncoder.enter(edge: .right, along: 0.5)
         #expect(Array(data) == [0x04, 0x01, 0x3F, 0x00, 0x00, 0x00])
         #expect(Array(ProtocolEncoder.leave()) == [0x06])
+        #expect(Array(ProtocolEncoder.enter(edge: .top, along: 0)) == [0x04, 0x02, 0, 0, 0, 0])
+        #expect(Array(ProtocolEncoder.enter(edge: .bottom, along: 0)) == [0x04, 0x03, 0, 0, 0, 0])
     }
 
     @Test func encodesMoveRelBigEndian() {

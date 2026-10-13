@@ -3,7 +3,7 @@ import Foundation
 import os
 import Testing
 
-@Suite(.enabled(if: ProcessInfo.processInfo.environment["DESKBRIDGE_DEVICE"] != nil))
+@Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["DESKBRIDGE_DEVICE"] != nil))
 struct DeviceSmokeTests {
     @Test func handshakeSucceedsWithToken() async throws {
         let (adb, serial, jar) = try setup()

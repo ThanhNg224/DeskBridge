@@ -18,6 +18,8 @@ public enum PacketType: UInt8, Sendable {
 public enum AndroidEdge: UInt8, Sendable {
     case left = 0
     case right = 1
+    case top = 2
+    case bottom = 3
 }
 
 public enum ProtocolEncoder {

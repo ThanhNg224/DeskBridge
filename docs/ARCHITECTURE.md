@@ -4,7 +4,7 @@
 
 **DeskBridge** shares one Mac mouse and keyboard with a physical **Android** phone/tablet over a USB cable (similar to DeskDock, Synergy, or Logitech Flow).
 
-When the Mac cursor pushes through the configured screen edge (left or right), control moves to the Android device. The cursor pushing back through the same edge returns control to the Mac. Keystrokes go to whichever device currently has control.
+When the Mac cursor pushes through the configured screen edge (left, right, top or bottom), control moves to the Android device. The cursor pushing back through the same edge returns control to the Mac. Keystrokes go to whichever device currently has control.
 
 ```
  +------------------------+                     +--------------------------+
@@ -31,7 +31,7 @@ When the Mac cursor pushes through the configured screen edge (left or right), c
 | **Android server** | Standalone DEX jar run via `app_process` as shell UID (2000) | No APK install; shell holds `INJECT_EVENTS`. Needs USB debugging. Plain Java (no Kotlin stdlib) for fast start. **One server process per session**: it exits when the host disconnects, so there are no stale daemons. |
 | **Input injection** | `InputManager.injectInputEvent` via reflection (absolute hover/click/scroll/keys) + a **server-drawn cursor** (`SurfaceControl` overlay) | Verified on a Galaxy Note10 Lite (Android 13): injected events do **not** move or draw Android's system pointer (its sprite layer stays hidden at its old position), but they act exactly (a click opens the app under it). A shell-owned `SurfaceControl` layer can be drawn above everything, so the server paints its own arrow and keeps it in sync with the injected position: exact tracking, no pointer acceleration drift, no `/dev/uhid` dependency. Trade-off: the arrow does not change shape (text/hand), and layer/hidden-API behavior must be re-checked per Android version with `PointerSpike`. Fallback if a device blocks the layer: UHID relative mouse. |
 | **Mouse model** | Relative deltas from the Mac, pointer position owned by the server | The Mac cursor is frozen while Android has control, so absolute Mac coordinates are meaningless. Deltas are coalesced under backpressure (`MoveCoalescer`). Pointer speed is a Mac-side multiplier (Mac points to Android pixels). |
-| **Transition** | Mac sends `ENTER{edge, along}`, server owns the pointer and sends `EXIT{along}` when pushed back through the entry edge | `along` is the normalized position along the shared edge, so the cursor lines up on both sides. Only left/right edges in MVP. |
+| **Transition** | Mac sends `ENTER{edge, along}`, server owns the pointer and sends `EXIT{along}` when pushed back through the entry edge | `along` is the normalized position along the shared edge, so the cursor lines up on both sides. All four edges are supported (Android left/right/above/below the Mac). |
 | **Keyboard** | Full Mac virtual keycode → Android keycode table; unmapped keys are dropped; Cmd/Ctrl → `META_CTRL` | Shortcuts like Cmd+C work. Text is not translated, so IME-composed text (Vietnamese Telex/VNI) is **out of MVP**. |
 | **Right click** | Mac sends `KEYCODE_BACK` by default (toggle: real secondary button) | scrcpy does the same; the Android framework does not turn an injected secondary click into Back. |
 | **Transport** | `adb forward tcp:0 localabstract:<random>` + per-session random token | adb allocates a free local port (multi-device safe). Abstract socket, not a TCP port on the phone, so nothing is exposed to the Wi-Fi network. See §5. |
@@ -67,7 +67,7 @@ Stream over the forwarded socket. Big-endian. Each packet is `type:u8` + fixed p
 | :--- | :--- | :--- | :--- |
 | `0x01` | `HELLO` | Mac→Android | `version:u8` (=1), `token:32 ASCII bytes` |
 | `0x02` | `HELLO_OK` | Android→Mac | `width:i32`, `height:i32`, `rotation:i32` |
-| `0x04` | `ENTER` | Mac→Android | `edge:u8` (Android edge the pointer appears on: 0 left, 1 right), `along:f32` (0..1) |
+| `0x04` | `ENTER` | Mac→Android | `edge:u8` (Android edge the pointer appears on: 0 left, 1 right, 2 top, 3 bottom), `along:f32` (0..1, vertical position for left/right, horizontal for top/bottom) |
 | `0x05` | `EXIT` | Android→Mac | `along:f32` (0..1) |
 | `0x06` | `LEAVE` | Mac→Android | none (Mac took control back, e.g. release chord) |
 | `0x11` | `MOUSE_MOVE_REL` | Mac→Android | `dx:f32`, `dy:f32` (Android pixels) |
@@ -112,4 +112,4 @@ The server runs as shell UID with the power to inject arbitrary input, so access
 3. Latency: measured PING/PONG round trip over adb USB on a Galaxy Note10 Lite: p50 0.74 ms, p95 1.33 ms (one way about 0.4 ms). End-to-end adds Mac event tap + Android injection; target p95 < 10 ms, re-measure with `pingRoundTripLatency` and a video capture.
 4. Hiding the cursor from a background (menu-bar) app is best effort.
 
-**Non-goals for MVP:** clipboard sync, Vietnamese/IME text input, top/bottom edges, multiple simultaneous devices, wireless ADB, rotation changes *during* a visit, display mirroring.
+**Non-goals for MVP:** clipboard sync, Vietnamese/IME text input, multiple simultaneous devices, wireless ADB, rotation changes *during* a visit, display mirroring.
