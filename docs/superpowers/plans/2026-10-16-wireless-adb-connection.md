@@ -1,6 +1,6 @@
 # Wireless ADB Connection Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Enable wireless ADB connection features in DeskBridge, including 1-click "Switch to Wi-Fi", manual IP/Port connection, wireless device status badges, and updated onboarding/documentation.
 
@@ -30,7 +30,7 @@
   - `ADBError.wirelessConnectionFailed(String)`
   - `ADBBridge.parseIP(from: String) -> String?`
 
-- [ ] **Step 1: Write failing tests for `isWireless` and `parseIP`**
+- [x] **Step 1: Write failing tests for `isWireless` and `parseIP`**
 
 Add tests to `mac/Tests/DeskBridgeCoreTests/ADBBridgeTests.swift`:
 
@@ -60,12 +60,12 @@ Add tests to `mac/Tests/DeskBridgeCoreTests/ADBBridgeTests.swift`:
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd mac && swift test --filter ADBBridgeTests`
 Expected: FAIL (missing `isWireless`, `parseIP`)
 
-- [ ] **Step 3: Implement `isWireless`, error cases, and `parseIP` in `ADBBridge.swift`**
+- [x] **Step 3: Implement `isWireless`, error cases, and `parseIP` in `ADBBridge.swift`**
 
 Update `mac/Sources/DeskBridgeCore/Network/ADBBridge.swift`:
 ```swift
@@ -110,12 +110,12 @@ public static func parseIP(from output: String) -> String? {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd mac && swift test --filter ADBBridgeTests`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add mac/Sources/DeskBridgeCore/Network/ADBBridge.swift mac/Tests/DeskBridgeCoreTests/ADBBridgeTests.swift
@@ -139,7 +139,7 @@ git commit -m "feat(core): add AdbDevice.isWireless and ADBBridge.parseIP"
   - `ADBBridge.connectWireless(ip: String, port: Int) async throws -> String`
   - `ADBBridge.disconnectWireless(serial: String) async throws -> String`
 
-- [ ] **Step 1: Write tests for wireless connection validation**
+- [x] **Step 1: Write tests for wireless connection validation**
 
 Add unit test in `mac/Tests/DeskBridgeCoreTests/ADBBridgeTests.swift` testing success vs failure output parsing for `adb connect`:
 
@@ -155,12 +155,12 @@ Add unit test in `mac/Tests/DeskBridgeCoreTests/ADBBridgeTests.swift` testing su
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd mac && swift test --filter ADBBridgeTests`
 Expected: FAIL (`isConnectSuccessful` not defined)
 
-- [ ] **Step 3: Implement `isConnectSuccessful` and wireless methods in `ADBBridge.swift`**
+- [x] **Step 3: Implement `isConnectSuccessful` and wireless methods in `ADBBridge.swift`**
 
 In `ADBBridge.swift`:
 ```swift
@@ -206,12 +206,12 @@ public func disconnectWireless(serial: String) async throws -> String {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd mac && swift test --filter ADBBridgeTests`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add mac/Sources/DeskBridgeCore/Network/ADBBridge.swift mac/Tests/DeskBridgeCoreTests/ADBBridgeTests.swift
@@ -238,11 +238,11 @@ git commit -m "feat(core): implement switchToWireless, connectWireless, and disc
   - `AppModel.connectWireless()`
   - `AppModel.disconnectWireless(serial: String)`
 
-- [ ] **Step 1: Inspect `AppModel.swift` to identify state & concurrency patterns**
+- [x] **Step 1: Inspect `AppModel.swift` to identify state & concurrency patterns**
 
 Read `mac/Sources/DeskBridge/AppModel.swift`. Note the `@MainActor` isolation and how `adb` is accessed.
 
-- [ ] **Step 2: Add wireless state properties and action methods to `AppModel.swift`**
+- [x] **Step 2: Add wireless state properties and action methods to `AppModel.swift`**
 
 Add properties:
 ```swift
@@ -305,12 +305,12 @@ func disconnectWireless(serial: String) {
 }
 ```
 
-- [ ] **Step 3: Run build and tests to verify compiling**
+- [x] **Step 3: Run build and tests to verify compiling**
 
 Run: `cd mac && swift test`
 Expected: PASS
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add mac/Sources/DeskBridge/AppModel.swift
@@ -333,7 +333,7 @@ git commit -m "feat(app): add wireless connection actions to AppModel"
   - `AppModel.switchToWireless`, `connectWireless`, `disconnectWireless`
   - `AppModel.wirelessIP`, `wirelessPort`, etc.
 
-- [ ] **Step 1: Update `StatusText.swift` and `SetupChecklist.swift`**
+- [x] **Step 1: Update `StatusText.swift` and `SetupChecklist.swift`**
 
 In `mac/Sources/DeskBridge/StatusText.swift`:
 ```swift
@@ -346,7 +346,7 @@ case .none:
     row(ok: false, title: "No phone found", hint: "Connect via USB cable or Wi-Fi (wireless debugging).") { EmptyView() }
 ```
 
-- [ ] **Step 2: Update `SettingsView.swift` Phone section**
+- [x] **Step 2: Update `SettingsView.swift` Phone section**
 
 Enhance the Phone section in `SettingsView.swift`:
 - Show Phone section always or when phones exist / for wireless connection.
@@ -362,7 +362,7 @@ Enhance the Phone section in `SettingsView.swift`:
   - "Connect" button (disabled if `model.wirelessIP.isEmpty` or `model.isConnectingWireless`).
   - Error banner if `model.wirelessErrorMessage != nil`.
 
-- [ ] **Step 3: Update `Localizable.strings` (vi)**
+- [x] **Step 3: Update `Localizable.strings` (vi)**
 
 Add Vietnamese translations for:
 - "Connect an Android phone via USB or Wi-Fi with debugging enabled" = "Kết nối điện thoại Android qua USB hoặc Wi-Fi và bật gỡ lỗi";
@@ -374,12 +374,12 @@ Add Vietnamese translations for:
 - "Port" = "Cổng";
 - "Connect" = "Kết nối";
 
-- [ ] **Step 4: Format and run tests**
+- [x] **Step 4: Format and run tests**
 
 Run: `swiftformat mac && cd mac && swift test`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add mac/Sources/DeskBridge/Views/SettingsView.swift mac/Sources/DeskBridge/Views/SetupChecklist.swift mac/Sources/DeskBridge/StatusText.swift mac/Resources/vi.lproj/Localizable.strings
@@ -394,24 +394,24 @@ git commit -m "feat(ui): add wireless connection controls and update setup texts
 - Modify: `README.md`
 - Modify: `docs/ARCHITECTURE.md`
 
-- [ ] **Step 1: Update `README.md`**
+- [x] **Step 1: Update `README.md`**
 
 Replace "USB only" restrictions with accurate descriptions:
 - Clarify that DeskBridge connects over USB (for ~1ms ultra-low latency) or Wi-Fi (for wireless convenience).
 - Update the FAQ section answering "Can I use it without a cable?": Explain that Wi-Fi connection is supported via the in-app "Switch to Wi-Fi" or "Connect via Wi-Fi" features.
 
-- [ ] **Step 2: Update `docs/ARCHITECTURE.md`**
+- [x] **Step 2: Update `docs/ARCHITECTURE.md`**
 
 Update the architecture document:
 - Note that `DeviceSession` communicates with the local abstract socket over an ADB forward, which transparently works over both USB and TCP/IP (Wi-Fi) ADB connections.
 - Document measured latency difference (USB ~1ms vs Wi-Fi ~2-5ms depending on router).
 
-- [ ] **Step 3: Run full verification script**
+- [x] **Step 3: Run full verification script**
 
 Run: `./scripts/check.sh`
 Expected: All stages PASS (shellcheck, swiftformat lint, server tests, build jar, swift build, swift test).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add README.md docs/ARCHITECTURE.md
