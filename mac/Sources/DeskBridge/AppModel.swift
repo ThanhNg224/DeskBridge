@@ -1,11 +1,16 @@
 import AppKit
 import DeskBridgeCore
 import Observation
+import os
 
 @MainActor @Observable
 final class AppModel {
     enum Phase {
         case paused, searching, connected, controlling
+    }
+
+    enum WirelessOperation {
+        case idle, connecting, switching, disconnecting
     }
 
     var phase = Phase.searching
@@ -14,9 +19,33 @@ final class AppModel {
 
     var wirelessIP = ""
     var wirelessPort = "5555"
-    var isConnectingWireless = false
-    var isSwitchingToWireless = false
+    private(set) var wirelessOperation = WirelessOperation.idle
     var wirelessErrorMessage: String?
+
+    var isOperatingWireless: Bool {
+        wirelessOperation != .idle
+    }
+
+    var selectedPhone: AdbDevice? {
+        if case let .ready(phone) = DevicePicker.pick(from: setup.phones, preferredSerial: prefs.preferredSerial) {
+            return phone
+        }
+        return nil
+    }
+
+    var canConnectWireless: Bool {
+        !isOperatingWireless && (try? wirelessInput()) != nil
+    }
+
+    var wirelessInputError: String? {
+        guard !wirelessIP.isEmpty || wirelessPort != "5555" else { return nil }
+        do {
+            _ = try wirelessInput()
+            return nil
+        } catch {
+            return wirelessMessage(for: error)
+        }
+    }
 
     var prefs: Settings.Values {
         didSet {
@@ -137,7 +166,9 @@ final class AppModel {
                 await refreshPhones() // so a second phone plugged in meanwhile shows up in the picker
             } else {
                 refreshSetup()
-                if isEnabled, Date() >= retryNotBefore {
+                if !isEnabled {
+                    await refreshPhones()
+                } else if Date() >= retryNotBefore {
                     await tryStartSession()
                 }
             }
@@ -178,7 +209,20 @@ final class AppModel {
     private func refreshPhones() async {
         guard let adb = try? ADBBridge(), let devices = try? await Task.detached(operation: { try adb.devices() }).value
         else { return }
+        _ = updateDevices(devices)
+    }
+
+    @discardableResult
+    private func updateDevices(_ devices: [AdbDevice]) -> DevicePick {
         setup.phones = devices.filter(\.isReady)
+        let pick = DevicePicker.pick(from: devices, preferredSerial: prefs.preferredSerial)
+        switch pick {
+        case let .ready(device): setup.device = .ready(device.displayName)
+        case let .choose(devices): setup.device = .choose(devices.count)
+        case let .notReady(device): setup.device = .notAuthorized(device.state)
+        case .none: setup.device = .none
+        }
+        return pick
     }
 
     private func refreshSetup() {
@@ -201,21 +245,16 @@ final class AppModel {
         }
         do {
             let devices = try await Task.detached { try adb.devices() }.value
-            let pick = DevicePicker.pick(from: devices, preferredSerial: prefs.preferredSerial)
-            setup.phones = devices.filter(\.isReady)
+            let pick = updateDevices(devices)
             switch pick {
             case let .choose(candidates):
-                setup.device = .choose(candidates.count)
                 status = StatusText.choosePhone(count: candidates.count)
             case .none:
-                setup.device = .none
                 status = StatusText.noDevice
             case let .notReady(device):
-                setup.device = .notAuthorized(device.state)
                 status = StatusText.notAuthorized(device.state)
             case let .ready(device):
                 let name = device.displayName
-                setup.device = .ready(name)
                 guard isEnabled, session == nil else { return }
                 startSession(adb: adb, serial: device.serial, name: name, jar: jar)
             }
@@ -279,56 +318,68 @@ final class AppModel {
     // MARK: - Wireless ADB
 
     func switchToWireless(serial: String) {
+        guard !isOperatingWireless, selectedPhone?.serial == serial, selectedPhone?.isWireless == false else { return }
         guard let adb = try? ADBBridge() else {
-            wirelessErrorMessage = ADBError.adbNotFound.description
+            wirelessErrorMessage = wirelessMessage(for: ADBError.adbNotFound)
             return
         }
-        isSwitchingToWireless = true
+        wirelessOperation = .switching
         wirelessErrorMessage = nil
         Task {
+            defer { wirelessOperation = .idle }
             do {
                 let target = try await Task.detached {
                     try await adb.switchToWireless(serial: serial)
                 }.value
                 prefs.preferredSerial = target
-                isSwitchingToWireless = false
                 wakeDiscovery()
             } catch {
-                wirelessErrorMessage = "\(error)"
-                isSwitchingToWireless = false
+                wirelessErrorMessage = wirelessMessage(for: error)
             }
         }
     }
 
     func connectWireless() {
-        guard let adb = try? ADBBridge() else {
-            wirelessErrorMessage = ADBError.adbNotFound.description
+        guard !isOperatingWireless else { return }
+        let input: (ip: String, port: Int)
+        do {
+            input = try wirelessInput()
+        } catch {
+            wirelessErrorMessage = wirelessMessage(for: error)
             return
         }
-        let ip = wirelessIP.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !ip.isEmpty else { return }
-        let port = Int(wirelessPort.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 5555
-        isConnectingWireless = true
+        guard let adb = try? ADBBridge() else {
+            wirelessErrorMessage = wirelessMessage(for: ADBError.adbNotFound)
+            return
+        }
+        wirelessOperation = .connecting
         wirelessErrorMessage = nil
         Task {
+            defer { wirelessOperation = .idle }
             do {
                 let target = try await Task.detached {
-                    try await adb.connectWireless(ip: ip, port: port)
+                    try await adb.connectWireless(ip: input.ip, port: input.port)
                 }.value
                 prefs.preferredSerial = target
                 wirelessIP = ""
-                isConnectingWireless = false
+                wirelessPort = "5555"
                 wakeDiscovery()
             } catch {
-                wirelessErrorMessage = "\(error)"
-                isConnectingWireless = false
+                wirelessErrorMessage = wirelessMessage(for: error)
             }
         }
     }
 
     func disconnectWireless(serial: String) {
-        guard let adb = try? ADBBridge() else { return }
+        guard !isOperatingWireless, selectedPhone?.serial == serial, selectedPhone?.isWireless == true else { return }
+        guard let adb = try? ADBBridge() else {
+            wirelessErrorMessage = wirelessMessage(for: ADBError.adbNotFound)
+            return
+        }
+        wirelessOperation = .disconnecting
+        wirelessErrorMessage = nil
         Task {
+            defer { wirelessOperation = .idle }
             do {
                 _ = try await Task.detached {
                     try adb.disconnectWireless(serial: serial)
@@ -338,8 +389,33 @@ final class AppModel {
                 }
                 wakeDiscovery()
             } catch {
-                wirelessErrorMessage = "\(error)"
+                wirelessErrorMessage = wirelessMessage(for: error)
             }
+        }
+    }
+
+    private func wirelessInput() throws -> (ip: String, port: Int) {
+        guard let port = Int(wirelessPort.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            throw ADBError.invalidWirelessPort
+        }
+        _ = try ADBBridge.wirelessTarget(ip: wirelessIP, port: port)
+        return (wirelessIP, port)
+    }
+
+    private func wirelessMessage(for error: Error) -> String {
+        switch error as? ADBError {
+        case .invalidWirelessIP:
+            return String(localized: "Enter a valid IPv4 address, such as 192.168.1.75.")
+        case .invalidWirelessPort:
+            return String(localized: "Enter a port between 1 and 65535.")
+        case .noWifiIPFound:
+            return String(localized: "No Wi-Fi address found. Connect the phone to Wi-Fi, then try again.")
+        case .adbNotFound:
+            return String(localized: "Android tools (adb) are missing. Install them to connect.")
+        default:
+            Logger(subsystem: "com.deskbridge.app", category: "Wireless")
+                .error("Wireless ADB failed: \(String(describing: error))")
+            return String(localized: "The Wi-Fi action failed. Check the phone and your network, then try again.")
         }
     }
 }

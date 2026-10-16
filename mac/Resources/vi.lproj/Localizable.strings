@@ -70,3 +70,12 @@
 "IP Address" = "Địa chỉ IP";
 "Port" = "Cổng";
 "Connect" = "Kết nối";
+"Connecting…" = "Đang kết nối…";
+"Switching to Wi-Fi…" = "Đang chuyển sang Wi-Fi…";
+"Disconnecting…" = "Đang ngắt kết nối…";
+"Use the same Wi-Fi network. First use Switch to Wi-Fi over USB, or pair the phone outside DeskBridge." = "Dùng cùng mạng Wi-Fi. Trước tiên, chọn Chuyển sang Wi-Fi khi cắm USB, hoặc ghép đôi điện thoại bên ngoài DeskBridge.";
+"Enter a valid IPv4 address, such as 192.168.1.75." = "Nhập địa chỉ IPv4 hợp lệ, ví dụ 192.168.1.75.";
+"Enter a port between 1 and 65535." = "Nhập cổng từ 1 đến 65535.";
+"No Wi-Fi address found. Connect the phone to Wi-Fi, then try again." = "Không tìm thấy địa chỉ Wi-Fi. Kết nối điện thoại với Wi-Fi rồi thử lại.";
+"Android tools (adb) are missing. Install them to connect." = "Thiếu công cụ Android (adb). Hãy cài đặt để kết nối.";
+"The Wi-Fi action failed. Check the phone and your network, then try again." = "Thao tác Wi-Fi thất bại. Kiểm tra điện thoại và mạng rồi thử lại.";

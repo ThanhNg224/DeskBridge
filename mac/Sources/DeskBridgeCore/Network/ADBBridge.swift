@@ -17,7 +17,7 @@ public struct AdbDevice: Equatable, Sendable {
     }
 
     public var isWireless: Bool {
-        serial.contains(":")
+        serial.contains(":") || serial.hasSuffix("._adb-tls-connect._tcp") || serial.hasSuffix("._adb._tcp")
     }
 
     /// Short name for the UI.
@@ -31,6 +31,8 @@ public enum ADBError: Error, CustomStringConvertible {
     case commandFailed(String)
     case badForwardOutput(String)
     case noWifiIPFound
+    case invalidWirelessIP
+    case invalidWirelessPort
     case wirelessConnectionFailed(String)
 
     public var description: String {
@@ -39,6 +41,8 @@ public enum ADBError: Error, CustomStringConvertible {
         case let .commandFailed(output): "adb failed: \(output.trimmingCharacters(in: .whitespacesAndNewlines))"
         case let .badForwardOutput(output): "Unexpected adb forward output: \(output)"
         case .noWifiIPFound: "Could not find a Wi-Fi IP address on the phone."
+        case .invalidWirelessIP: "Enter a valid IPv4 address."
+        case .invalidWirelessPort: "Enter a port between 1 and 65535."
         case let .wirelessConnectionFailed(output): "Failed to connect to phone over Wi-Fi: \(output.trimmingCharacters(in: .whitespacesAndNewlines))"
         }
     }
@@ -91,23 +95,44 @@ public struct ADBBridge: Sendable {
     }
 
     public static func parseIP(from output: String) -> String? {
-        // Check "src <ip>" from `ip route`
-        if let srcRange = output.range(of: "src ") {
-            let remainder = output[srcRange.upperBound...]
-            let token = remainder.split(whereSeparator: \.isWhitespace).first
-            if let ip = token.map(String.init), ip.split(separator: ".").count == 4 {
+        for line in output.split(whereSeparator: \.isNewline) {
+            let parts = line.split(whereSeparator: \.isWhitespace)
+            if let device = parts.firstIndex(of: "dev"), parts.indices.contains(device + 1),
+               parts[device + 1] == "wlan0",
+               let source = parts.firstIndex(of: "src"), parts.indices.contains(source + 1),
+               let ip = normalizedIPv4(String(parts[source + 1]))
+            {
                 return ip
             }
-        }
-        // Check "inet <ip>/" from `ip addr`
-        if let inetRange = output.range(of: "inet ") {
-            let remainder = output[inetRange.upperBound...]
-            let token = remainder.split(separator: "/").first?.trimmingCharacters(in: .whitespaces)
-            if let ip = token, ip.split(separator: ".").count == 4 {
+            if parts.first == "inet", parts.count > 1, parts.contains("wlan0"),
+               let address = parts[1].split(separator: "/").first,
+               let ip = normalizedIPv4(String(address))
+            {
                 return ip
             }
         }
         return nil
+    }
+
+    public static func wirelessTarget(ip: String, port: Int) throws -> String {
+        guard let address = normalizedIPv4(ip.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            throw ADBError.invalidWirelessIP
+        }
+        guard (1 ... 65535).contains(port) else { throw ADBError.invalidWirelessPort }
+        return "\(address):\(port)"
+    }
+
+    private static func normalizedIPv4(_ ip: String) -> String? {
+        let octets = ip.split(separator: ".", omittingEmptySubsequences: false)
+        guard octets.count == 4 else { return nil }
+        var normalized: [String] = []
+        for octet in octets {
+            guard !octet.isEmpty, octet.utf8.allSatisfy({ (48 ... 57).contains($0) }),
+                  let value = Int(octet), (0 ... 255).contains(value)
+            else { return nil }
+            normalized.append(String(value))
+        }
+        return normalized.joined(separator: ".")
     }
 
     public static func isConnectSuccessful(output: String) -> Bool {
@@ -162,10 +187,11 @@ public struct ADBBridge: Sendable {
     }
 
     public func switchToWireless(serial: String, port: Int = 5555) async throws -> String {
+        guard (1 ... 65535).contains(port) else { throw ADBError.invalidWirelessPort }
         let ip = try deviceIP(serial: serial)
+        let target = try Self.wirelessTarget(ip: ip, port: port)
         _ = try run(["-s", serial, "tcpip", "\(port)"])
         try await Task.sleep(nanoseconds: 1_000_000_000)
-        let target = "\(ip):\(port)"
         let output = try run(["connect", target])
         guard Self.isConnectSuccessful(output: output) else {
             throw ADBError.wirelessConnectionFailed(output)
@@ -174,9 +200,7 @@ public struct ADBBridge: Sendable {
     }
 
     public func connectWireless(ip: String, port: Int = 5555) async throws -> String {
-        let trimmedIP = ip.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedIP.isEmpty else { throw ADBError.commandFailed("IP address cannot be empty") }
-        let target = "\(trimmedIP):\(port)"
+        let target = try Self.wirelessTarget(ip: ip, port: port)
         let output = try run(["connect", target])
         guard Self.isConnectSuccessful(output: output) else {
             throw ADBError.wirelessConnectionFailed(output)

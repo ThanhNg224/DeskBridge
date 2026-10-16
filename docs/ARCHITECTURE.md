@@ -113,10 +113,11 @@ Rules:
 
 The server runs as shell UID with the power to inject arbitrary input, so access to its socket is access to the phone.
 
-- **No network exposure:** the server listens on an Android *abstract unix socket*, never a TCP port. Nothing is reachable from Wi-Fi.
+- **ADB transport boundary:** the DeskBridge server listens on an Android *abstract unix socket*, never its own TCP port. However, **Switch to Wi-Fi** runs `adb tcpip 5555`, exposing the phone's ADB daemon over the network. Legacy ADB TCP/IP does not encrypt the session's input or clipboard traffic; use a trusted network. Paired Android Wireless Debugging uses TLS, but pairing must be performed outside DeskBridge. See [AOSP's ADB Wi-Fi architecture](https://android.googlesource.com/platform/packages/modules/adb/+/refs/heads/main/docs/dev/adb_wifi.md).
 - **Unguessable endpoint:** the socket name is `deskbridge-<8 random hex>`, chosen per session by the Mac and passed as an argument.
 - **Token:** a 32-hex-char random token (generated per session by the Mac, passed as an argument) must be the first thing sent (`HELLO`); compared in constant time. This also stops other local processes on the Mac that find the forwarded port.
 - **Short life:** the server exits if nobody connects within 15 s and ends with the session.
+- **Disconnect scope:** Disconnect Wi-Fi calls `adb disconnect <serial>`. It disconnects this Mac's transport; it does not disable the phone's network debugging listener. Turn off network debugging on the phone when finished.
 - Process arguments are not visible to other Android apps (per-UID process isolation).
 
 ---
@@ -134,7 +135,7 @@ The server runs as shell UID with the power to inject arbitrary input, so access
 **Risks (tracked by gates in the plan)**
 1. ~~System pointer may not render for injected events~~ confirmed on Android 13: it does not. Mitigated by the server-drawn cursor (see §2). See the verified table below; OEMs other than Samsung are untested.
 2. Hidden APIs (`InputManager.getInstance`, from Android 14 `InputManagerGlobal.getInstance`; `DisplayManagerGlobal`) can change per Android release; the spike script is the per-device regression check.
-3. Latency: measured PING/PONG round trip over adb USB on a Galaxy Note10 Lite: p50 0.74 ms, p95 1.33 ms (one way about 0.4 ms). End-to-end adds Mac event tap + Android injection; target p95 < 10 ms, re-measure with `pingRoundTripLatency` and a video capture.
+3. Latency: an earlier PING/PONG measurement over adb USB on a Galaxy Note10 Lite was p50 0.74 ms, p95 1.33 ms. The [2026-10-16 USB/Wi-Fi verification](WIRELESS_VERIFICATION.md) records the latest measurements; Wi-Fi exceeded the existing 25 ms transport p95 gate on that network. PING/PONG does not measure the Mac event tap, Android input injection, or display response; the end-to-end p95 < 10 ms target requires separate input/display measurement.
 4. Hiding the cursor from a background (menu-bar) app is best effort.
 
 **Verified on** (`scripts/device_matrix.sh` runs the emulator rows: pointer drawn, no "Untrusted touch" log, click opens the Phone app, injected Back leaves it)

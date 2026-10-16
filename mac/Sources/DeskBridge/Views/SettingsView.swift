@@ -18,65 +18,8 @@ struct SettingsView: View {
                 SetupChecklist(setup: model.setup)
             }
 
-            if !model.setup.phones.isEmpty {
-                Section("Phone") {
-                    if model.setup.phones.count > 1 {
-                        Picker("Use this phone", selection: $model.prefs.preferredSerial) {
-                            Text("Choose…").tag(String?.none)
-                            ForEach(model.setup.phones, id: \.serial) { phone in
-                                Text("\(phone.displayName) [\(phone.isWireless ? "Wi-Fi" : "USB")]")
-                                    .tag(String?.some(phone.serial))
-                            }
-                        }
-                    } else if let phone = model.setup.phones.first {
-                        LabeledContent(
-                            "Connected phone",
-                            value: "\(phone.displayName) [\(phone.isWireless ? "Wi-Fi" : "USB")]"
-                        )
-                    }
-
-                    if let active = activePhone {
-                        if !active.isWireless {
-                            HStack {
-                                Button("Switch to Wi-Fi") {
-                                    model.switchToWireless(serial: active.serial)
-                                }
-                                .disabled(model.isSwitchingToWireless)
-                                if model.isSwitchingToWireless {
-                                    ProgressView().controlSize(.small)
-                                }
-                            }
-                        } else {
-                            Button("Disconnect Wi-Fi", role: .destructive) {
-                                model.disconnectWireless(serial: active.serial)
-                            }
-                        }
-                    }
-                }
-            }
-
-            Section("Connect via Wi-Fi") {
-                HStack {
-                    TextField("IP Address", text: $model.wirelessIP)
-                        .textFieldStyle(.roundedBorder)
-                    TextField("Port", text: $model.wirelessPort)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 70)
-                    Button("Connect") {
-                        model.connectWireless()
-                    }
-                    .disabled(model.wirelessIP.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model
-                        .isConnectingWireless)
-                    if model.isConnectingWireless {
-                        ProgressView().controlSize(.small)
-                    }
-                }
-                if let error = model.wirelessErrorMessage {
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                }
-            }
+            phoneSection
+            wirelessSection
 
             Section("Layout") {
                 Picker("Android is on the", selection: $model.prefs.edge) {
@@ -111,11 +54,114 @@ struct SettingsView: View {
         .formStyle(.grouped)
     }
 
-    private var activePhone: AdbDevice? {
-        if let preferred = model.prefs.preferredSerial {
-            return model.setup.phones.first(where: { $0.serial == preferred })
+    @ViewBuilder
+    private var phoneSection: some View {
+        if !model.setup.phones.isEmpty {
+            Section("Phone") {
+                if model.setup.phones.count > 1 {
+                    Picker("Use this phone", selection: $model.prefs.preferredSerial) {
+                        Text("Choose…").tag(String?.none)
+                        ForEach(model.setup.phones, id: \.serial) { phone in
+                            Label("\(phone.displayName) · \(phone.isWireless ? "Wi-Fi" : "USB")",
+                                  systemImage: phone.isWireless ? "wifi" : "cable.connector")
+                                .tag(String?.some(phone.serial))
+                        }
+                    }
+                    .disabled(model.isOperatingWireless)
+                } else if let phone = model.setup.phones.first {
+                    LabeledContent("Connected phone", value: phone.displayName)
+                }
+
+                if let phone = model.selectedPhone {
+                    HStack(spacing: 8) {
+                        Label(phone.isWireless ? "Wi-Fi" : "USB",
+                              systemImage: phone.isWireless ? "wifi" : "cable.connector")
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 8)
+                        if phone.isWireless {
+                            Button("Disconnect Wi-Fi", role: .destructive) {
+                                model.disconnectWireless(serial: phone.serial)
+                            }
+                        } else {
+                            Button("Switch to Wi-Fi") {
+                                model.switchToWireless(serial: phone.serial)
+                            }
+                        }
+                    }
+                    .disabled(model.isOperatingWireless)
+                }
+            }
         }
-        return model.setup.phones.first
+    }
+
+    private var wirelessSection: some View {
+        Section("Connect via Wi-Fi") {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .top, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("IP Address").font(.callout)
+                        TextField("IP Address", text: $model.wirelessIP, prompt: Text(verbatim: "192.168.1.75"))
+                            .labelsHidden()
+                            .accessibilityLabel("IP Address")
+                    }
+                    .frame(maxWidth: .infinity)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Port").font(.callout)
+                        TextField("Port", text: $model.wirelessPort)
+                            .labelsHidden()
+                            .accessibilityLabel("Port")
+                    }
+                    .frame(width: 80)
+                }
+                .textFieldStyle(.roundedBorder)
+                .disabled(model.isOperatingWireless)
+                .onSubmit {
+                    if model.canConnectWireless {
+                        model.connectWireless()
+                    }
+                }
+
+                Text(
+                    "Use the same Wi-Fi network. First use Switch to Wi-Fi over USB, or pair the phone outside DeskBridge."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+                if let error = model.wirelessErrorMessage ?? model.wirelessInputError {
+                    Label(error, systemImage: "exclamationmark.circle")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .opacity(model.isOperatingWireless ? 1 : 0)
+                        .accessibilityHidden(!model.isOperatingWireless)
+                    wirelessProgress
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 8)
+                    Button("Connect") { model.connectWireless() }
+                        .disabled(!model.canConnectWireless)
+                }
+            }
+            .padding(.vertical, 8)
+            .onChange(of: model.wirelessIP) { model.wirelessErrorMessage = nil }
+            .onChange(of: model.wirelessPort) { model.wirelessErrorMessage = nil }
+        }
+    }
+
+    @ViewBuilder
+    private var wirelessProgress: some View {
+        switch model.wirelessOperation {
+        case .idle: EmptyView()
+        case .connecting: Text("Connecting…")
+        case .switching: Text("Switching to Wi-Fi…")
+        case .disconnecting: Text("Disconnecting…")
+        }
     }
 }
 
