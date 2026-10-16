@@ -2,8 +2,9 @@ name: Windows
 
 on:
   push:
-    branches: [main]
+    branches: [windows]
   pull_request:
+    branches: [windows]
   workflow_dispatch:
 
 permissions:
@@ -19,6 +20,8 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
       - name: Install Android build dependencies
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
       - name: Server tests and DEX jar

@@ -65,7 +65,7 @@ Device smoke checks handshake, enter/move/leave and a local heartbeat interval. 
 
 ## Progress and GitHub tracking
 
-Windows work is developed on the temporary `codex/windows-host` branch and reviewed through a draft pull request into `main`. After integration, `main` will contain both host folders; it is not a permanent macOS-only branch. The Mac runtime stays unchanged while Windows acceptance is pending. Separate permanent OS branches are not used.
+The repository keeps permanent platform branches: `main` is the source of truth for the macOS ARM64 app, and `windows` is the source of truth for the Windows 11 x64 host. Develop Windows work on `windows` and push it there. Do not merge the whole Windows branch into `main`. Port shared server or protocol fixes selectively between branches and test them on both branches. Keep platform versions and tags independent (`vX.Y.Z` for Mac and `windows-vX.Y.Z` for Windows). The inherited `mac/` snapshot on `windows` is not the supported Mac source; use `main` for Mac changes.
 
 | Milestone | Progress | GitHub tracking |
 | --- | --- | --- |
@@ -73,7 +73,7 @@ Windows work is developed on the temporary `codex/windows-host` branch and revie
 | [P2: Implementation & Automated Tests](https://github.com/ThanhNg224/DeskBridge/milestone/2) | Implementation, 43 Mac core tests, 32 Java tests and a cross-build with 0 warnings/errors are complete locally. Windows native tests are pending CI. | Issues #4–#10 |
 | [P3: Windows Acceptance](https://github.com/ThanhNg224/DeskBridge/milestone/3) | Actual Windows and Android acceptance is pending. | Issues #11–#14; label: `blocked:windows-device` |
 
-Use the GitHub labels `platform:windows`, `platform:macos`, `area:shared` and `blocked:windows-device` to identify platform, shared-area and device-blocked work.
+Use the GitHub labels `platform:windows`, `platform:macos`, `area:shared` and `blocked:windows-device` to identify platform, shared-area and device-blocked work. Record remote CI evidence here when available; no Windows CI success is claimed while it is pending.
 
 ## Release boundary
 

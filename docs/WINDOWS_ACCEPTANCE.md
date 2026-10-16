@@ -1,10 +1,10 @@
 # Windows acceptance record
 
-Status: **P3 pending Windows and Android acceptance**. Host implementation and automation are present. Local verification on 2026-10-16 is the baseline recorded below; remote CI evidence will be added when a workflow run is available. Native adapter tests and packaging on Windows remain unverified, and no hardware acceptance is implied by local checks.
+Status: **P3 pending Windows and Android acceptance**. This record covers Windows code developed on the permanent `windows` branch; `main` remains the macOS ARM64 source of truth. Local verification on 2026-10-16 is the baseline recorded below. Remote CI evidence will be recorded when available; no Windows CI success is claimed here. Native adapter tests and packaging on Windows remain unverified, and no hardware acceptance is implied by local checks.
 
 Local checks on 2026-10-16 (macOS): 43 core tests and 32 existing Java tests passed; the server JAR built; locked NuGet restore passed; the complete Windows solution cross-built with 0 warnings/errors; self-contained `win-x64` cross-publish passed. The local ZIP is a macOS cross-build artifact, not Windows packaging evidence. None of these checks completes a Windows-runtime gate.
 
-The Windows host targets Windows 11 x64. The existing macOS ARM64 host and Android protocol v1 are separate compatibility boundaries. No server or Mac runtime change is needed for this implementation.
+The Windows host targets Windows 11 x64. The inherited `mac/` snapshot on this branch is not the supported Mac source; use `main` for macOS changes. The Android protocol v1 is a shared compatibility boundary, so shared server or protocol fixes must be ported selectively and tested on both branches.
 
 ## Evidence boundaries
 
