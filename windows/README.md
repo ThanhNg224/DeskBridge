@@ -2,7 +2,7 @@
 
 Independent Windows 11 x64 host, built with C#/.NET 10 and WPF. The macOS ARM64 application remains in `mac/`. Both hosts speak the same protocol to the Java server in `server/`.
 
-**Windows runtime and physical-device acceptance are pending.** A successful cross-build or unit test does not establish that global hooks, cursor hiding, mixed-DPI displays, Microsoft IME or UniKey work correctly on a user's PC. Follow the [acceptance checklist](../docs/WINDOWS_ACCEPTANCE.md) before treating this build as supported.
+**Automated Windows CI and packaging have passed; interactive Windows and physical-device acceptance are pending.** CI ran the Windows-native automated tests and produced a self-contained x64 package. These checks do not establish that real global hooks, cursor hiding, mixed-DPI displays, Microsoft IME or UniKey work correctly on a user's PC. Follow the [acceptance checklist](../docs/WINDOWS_ACCEPTANCE.md) before treating this build as supported.
 
 ## Run a packaged build
 
@@ -69,11 +69,13 @@ The repository keeps permanent platform branches: `main` is the source of truth 
 
 | Milestone | Progress | GitHub tracking |
 | --- | --- | --- |
-| [P1: Foundation](https://github.com/ThanhNg224/DeskBridge/milestone/1) | Implementation is present; remote CI and package verification are pending. | Issues #1–#3 |
-| [P2: Implementation & Automated Tests](https://github.com/ThanhNg224/DeskBridge/milestone/2) | Implementation, 43 Mac core tests, 32 Java tests and a cross-build with 0 warnings/errors are complete locally. Windows native tests are pending CI. | Issues #4–#10 |
+| [P1: Foundation](https://github.com/ThanhNg224/DeskBridge/milestone/1) | Foundation and package pipeline verified by successful Windows CI. | Issues #1–#3 |
+| [P2: Implementation & Automated Tests](https://github.com/ThanhNg224/DeskBridge/milestone/2) | Automated checks pass: 43 core tests, 26 Windows adapter/composer tests, 32 Java server tests; Windows Release build has 0 warnings/errors and the self-contained x64 package was produced. | Issues #4–#10 |
 | [P3: Windows Acceptance](https://github.com/ThanhNg224/DeskBridge/milestone/3) | Actual Windows and Android acceptance is pending. | Issues #11–#14; label: `blocked:windows-device` |
 
-Use the GitHub labels `platform:windows`, `platform:macos`, `area:shared` and `blocked:windows-device` to identify platform, shared-area and device-blocked work. Record remote CI evidence here when available; no Windows CI success is claimed while it is pending.
+Remote evidence: [successful CI run](https://github.com/ThanhNg224/DeskBridge/actions/runs/38875077284) for source [`a20a9081809971013deff97bd818b81f345c3f29`](https://github.com/ThanhNg224/DeskBridge/commit/a20a9081809971013deff97bd818b81f345c3f29), with the [Windows x64 ZIP artifact](https://github.com/ThanhNg224/DeskBridge/actions/runs/38875077284/artifacts/12035440464). See the [acceptance record](../docs/WINDOWS_ACCEPTANCE.md) for the verified job details and outstanding physical checks.
+
+Use the GitHub labels `platform:windows`, `platform:macos`, `area:shared` and `blocked:windows-device` to identify platform, shared-area and device-blocked work.
 
 ## Release boundary
 

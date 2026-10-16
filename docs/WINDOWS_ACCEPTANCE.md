@@ -1,10 +1,24 @@
 # Windows acceptance record
 
-Status: **P3 pending Windows and Android acceptance**. This record covers Windows code developed on the permanent `windows` branch; `main` remains the macOS ARM64 source of truth. Local verification on 2026-10-16 is the baseline recorded below. Remote CI evidence will be recorded when available; no Windows CI success is claimed here. Native adapter tests and packaging on Windows remain unverified, and no hardware acceptance is implied by local checks.
+Status: **Automated CI and package verification complete; P3 interactive Windows and Android acceptance pending**. This record covers Windows code developed on the permanent `windows` branch; `main` remains the macOS ARM64 source of truth. Remote CI confirms the native automated test jobs and Windows package pipeline passed. It does not verify real hooks, IME, clipboard, device behavior or other physical acceptance scenarios below.
 
 Local checks on 2026-10-16 (macOS): 43 core tests and 32 existing Java tests passed; the server JAR built; locked NuGet restore passed; the complete Windows solution cross-built with 0 warnings/errors; self-contained `win-x64` cross-publish passed. The local ZIP is a macOS cross-build artifact, not Windows packaging evidence. None of these checks completes a Windows-runtime gate.
 
 The Windows host targets Windows 11 x64. The inherited `mac/` snapshot on this branch is not the supported Mac source; use `main` for macOS changes. The Android protocol v1 is a shared compatibility boundary, so shared server or protocol fixes must be ported selectively and tested on both branches.
+
+## Remote CI evidence
+
+Successful [GitHub Actions run](https://github.com/ThanhNg224/DeskBridge/actions/runs/38875077284) on 2026-10-16, source [`a20a9081809971013deff97bd818b81f345c3f29`](https://github.com/ThanhNg224/DeskBridge/commit/a20a9081809971013deff97bd818b81f345c3f29), on the permanent `windows` branch. The [uploaded artifact](https://github.com/ThanhNg224/DeskBridge/actions/runs/38875077284/artifacts/12035440464) is `DeskBridge-windows-x64-a20a9081809971013deff97bd818b81f345c3f29` and contains the ZIP.
+
+| CI job | Result |
+| --- | --- |
+| Ubuntu Java server tests and JAR build | 32 tests passed; JAR build succeeded |
+| Windows Release build | Succeeded with 0 warnings and 0 errors |
+| Windows core tests | 43 passed |
+| Windows adapter and composer tests | 26 passed; no skips |
+| Self-contained `win-x64` package and artifact upload | Succeeded |
+
+These results establish automated checks and package production only. They do not establish runtime behavior of real global hooks, cursor handoff, IME, clipboard, DPI handling or Android device interaction; those remain P3 acceptance work.
 
 ## Evidence boundaries
 
@@ -12,8 +26,8 @@ The Windows host targets Windows 11 x64. The inherited `mac/` snapshot on this b
 | --- | --- | --- |
 | Core regression tests | Mac or Windows | Packet bytes/parser, fake ADB, fake transport, timeouts and cleanup |
 | Solution cross-build | Mac | Core, WPF host and Windows tests compile |
-| Windows adapter tests | Windows CI | Native struct layouts, pure mapping/geometry, queue and WPF composer event logic |
-| Packaged artifact | Windows CI | Self-contained x64 output includes the same-commit Android JAR |
+| Windows adapter tests | Windows CI | Native struct layouts, pure mapping/geometry, queue and WPF composer event logic (26 passed in the linked run) |
+| Packaged artifact | Windows CI | Self-contained x64 package produced and uploaded in the linked run; device and interactive behavior remain unverified |
 | Opt-in device smoke | Windows PC + Android | Session handshake, enter/move/leave and local heartbeat |
 | Interactive matrix below | Windows PC + Android | Actual hooks, cursor handoff, IME, clipboard, DPI and recovery |
 

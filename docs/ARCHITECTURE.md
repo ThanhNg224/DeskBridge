@@ -2,7 +2,7 @@
 
 ## 1. Overview & Vision
 
-The permanent `main` branch is the source of truth for the completed macOS ARM64 host. The permanent `windows` branch develops an independent Windows 11 x64 host in `windows/`, using .NET 10/WPF and Win32 adapters. It reuses the Java server and protocol v1 without sharing host runtime code. Windows execution and physical-device acceptance remain pending; see [the Windows guide](../windows/README.md) and [acceptance record](WINDOWS_ACCEPTANCE.md). The macOS subsystem notes below are inherited reference material; original “Mac” directions in the protocol table apply to either host. Shared server/protocol fixes must be selectively ported and verified on each branch; the whole Windows branch is not merged into `main`.
+The permanent `main` branch is the source of truth for the completed macOS ARM64 host. The permanent `windows` branch develops an independent Windows 11 x64 host in `windows/`, using .NET 10/WPF and Win32 adapters. It reuses the Java server and protocol v1 without sharing host runtime code. Automated Windows tests and packaging have passed CI; interactive Windows/Android acceptance remains pending. See [the Windows guide](../windows/README.md) and [acceptance record](WINDOWS_ACCEPTANCE.md). The macOS subsystem notes below are inherited reference material; original “Mac” directions in the protocol table apply to either host. Shared server/protocol fixes must be selectively ported and verified on each branch; the whole Windows branch is not merged into `main`.
 
 **DeskBridge** shares one Mac mouse and keyboard with a physical **Android** phone/tablet over a USB cable or Wi-Fi ADB (similar to DeskDock, Synergy, or Logitech Flow).
 
