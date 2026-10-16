@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.6 (2026-10-16)
+
+- Added in-app Switch to Wi-Fi, manual IPv4/port connection, and Disconnect Wi-Fi actions, with USB/Wi-Fi indicators in the phone selector.
+- Aligned the Wi-Fi form, added input validation and English/Vietnamese errors, and prevented overlapping connection actions. Device selection now handles stale preferences and mDNS wireless endpoints; the phone list updates while paused.
+- Switching to Wi-Fi uses the phone's wlan0 address. A real Samsung Android 13 session stayed connected after USB was unplugged; Wi-Fi-only movement/exit verification passed.
+- Documented the difference between unencrypted legacy ADB TCP/IP and paired Wireless Debugging with TLS. Pairing is still performed outside DeskBridge.
+
+Known limit: measured Wi-Fi PING/PONG p95 was 34.06–41.10 ms on the tested network, exceeding the unchanged 25 ms gate. Transport RTT is not full input latency. See [docs/WIRELESS_VERIFICATION.md](docs/WIRELESS_VERIFICATION.md) for details.
+
 ## 1.1.5 (2026-10-13)
 
 - Fixed a CPU burn that started whenever a session ended (phone unplugged, `adb` restarted, app switched off and on): the reader of the phone server's error output kept firing on the closed pipe and used a whole core until DeskBridge was quit. Present since 1.0.0.
