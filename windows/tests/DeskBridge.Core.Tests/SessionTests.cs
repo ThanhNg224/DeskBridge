@@ -30,9 +30,10 @@ public class SessionTests
     }
     [Fact] public async Task HeartbeatRunsWhileLocalThenStaleCleansUp()
     {
-        var backend = new FakeBackend(); await using var session = new DeviceSession(backend, options: new() { HeartbeatInterval = TimeSpan.FromMilliseconds(20), StaleTimeout = TimeSpan.FromMilliseconds(90) });
+        var backend = new FakeBackend(); var time = new ManualTimeProvider(); await using var session = new DeviceSession(backend, time, new() { HeartbeatInterval = TimeSpan.FromMilliseconds(20), StaleTimeout = TimeSpan.FromMilliseconds(90) });
         var ended = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously); session.Ended += reason => ended.TrySetResult(reason);
         await session.StartAsync("usb", "jar");
+        await backend.Stream.FirstPing.Task.WaitAsync(TimeSpan.FromSeconds(2)); time.Advance(TimeSpan.FromMilliseconds(90));
         Assert.Contains("stopped responding", await ended.Task.WaitAsync(TimeSpan.FromSeconds(2))); Assert.Contains(backend.Stream.Writes, b => b.SequenceEqual(new byte[] { 0xfe })); Assert.True(backend.Lease.Disposed);
     }
     [Fact] public async Task StartupTimeoutCleansUp()
@@ -105,6 +106,13 @@ public class SessionTests
         public Task<IServerLease> LaunchAsync(string serial, string jar, CancellationToken ct) => Task.FromResult<IServerLease>(Lease);
         public Task<Stream> ConnectAsync(int port, CancellationToken ct) { Connected.TrySetResult(); Attempts++; if (FailFirstConnection && Attempts == 1) throw new System.Net.Sockets.SocketException(); return Task.FromResult<Stream>(Stream); }
     }
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private long timestamp;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long GetTimestamp() => Interlocked.Read(ref timestamp);
+        public void Advance(TimeSpan amount) => Interlocked.Add(ref timestamp, amount.Ticks);
+    }
     private sealed class FakeLease : IServerLease
     {
         public int Port => 12345; public string Token => "0123456789abcdef0123456789abcdef"; public bool HasExited => Disposed; public bool Disposed; public int DisposeCount;
@@ -113,14 +121,14 @@ public class SessionTests
     }
     private sealed class FakeStream : Stream
     {
-        private readonly Channel<byte[]> incoming = Channel.CreateUnbounded<byte[]>(); public readonly ConcurrentQueue<byte[]> Writes = new(); public bool Disposed, BlockWrites;
+        private readonly Channel<byte[]> incoming = Channel.CreateUnbounded<byte[]>(); public readonly ConcurrentQueue<byte[]> Writes = new(); public readonly TaskCompletionSource FirstPing = new(TaskCreationOptions.RunContinuationsAsynchronously); public bool Disposed, BlockWrites;
         public void Feed(byte[] bytes) => incoming.Writer.TryWrite(bytes);
         public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default) { byte[] bytes = await incoming.Reader.ReadAsync(ct); bytes.CopyTo(buffer); return bytes.Length; }
         public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken ct = default)
         {
             ct.ThrowIfCancellationRequested();
             if (BlockWrites) return new ValueTask(Task.Delay(Timeout.Infinite, ct));
-            Writes.Enqueue(buffer.ToArray()); return ValueTask.CompletedTask;
+            var bytes = buffer.ToArray(); Writes.Enqueue(bytes); if (bytes.SequenceEqual(new byte[] { 0xfe })) FirstPing.TrySetResult(); return ValueTask.CompletedTask;
         }
         protected override void Dispose(bool disposing) { Disposed = true; incoming.Writer.TryComplete(); base.Dispose(disposing); }
         public override bool CanRead => true; public override bool CanWrite => true; public override bool CanSeek => false; public override long Length => throw new NotSupportedException(); public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
