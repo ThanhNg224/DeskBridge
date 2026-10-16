@@ -16,6 +16,10 @@ public struct AdbDevice: Equatable, Sendable {
         state == "device"
     }
 
+    public var isWireless: Bool {
+        serial.contains(":")
+    }
+
     /// Short name for the UI.
     public var displayName: String {
         model ?? serial
@@ -26,12 +30,16 @@ public enum ADBError: Error, CustomStringConvertible {
     case adbNotFound
     case commandFailed(String)
     case badForwardOutput(String)
+    case noWifiIPFound
+    case wirelessConnectionFailed(String)
 
     public var description: String {
         switch self {
         case .adbNotFound: "adb not found. Install Android platform-tools or set ANDROID_HOME."
         case let .commandFailed(output): "adb failed: \(output.trimmingCharacters(in: .whitespacesAndNewlines))"
         case let .badForwardOutput(output): "Unexpected adb forward output: \(output)"
+        case .noWifiIPFound: "Could not find a Wi-Fi IP address on the phone."
+        case let .wirelessConnectionFailed(output): "Failed to connect to phone over Wi-Fi: \(output.trimmingCharacters(in: .whitespacesAndNewlines))"
         }
     }
 }
@@ -82,6 +90,32 @@ public struct ADBBridge: Sendable {
         return port
     }
 
+    public static func parseIP(from output: String) -> String? {
+        // Check "src <ip>" from `ip route`
+        if let srcRange = output.range(of: "src ") {
+            let remainder = output[srcRange.upperBound...]
+            let token = remainder.split(whereSeparator: \.isWhitespace).first
+            if let ip = token.map(String.init), ip.split(separator: ".").count == 4 {
+                return ip
+            }
+        }
+        // Check "inet <ip>/" from `ip addr`
+        if let inetRange = output.range(of: "inet ") {
+            let remainder = output[inetRange.upperBound...]
+            let token = remainder.split(separator: "/").first?.trimmingCharacters(in: .whitespaces)
+            if let ip = token, ip.split(separator: ".").count == 4 {
+                return ip
+            }
+        }
+        return nil
+    }
+
+    public static func isConnectSuccessful(output: String) -> Bool {
+        let lower = output.lowercased()
+        return (lower.contains("connected to") || lower.contains("already connected")) && !lower
+            .contains("failed") && !lower.contains("unable")
+    }
+
     /// Local ports of leftover DeskBridge forwards for `serial` (left behind when the app was killed).
     public static func staleForwardPorts(in output: String, serial: String) -> [Int] {
         output.split(whereSeparator: \.isNewline).compactMap { line in
@@ -113,6 +147,46 @@ public struct ADBBridge: Sendable {
         let model = (try? run(["-s", serial, "shell", "getprop", "ro.product.model"]))?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return model.isEmpty ? serial : model
+    }
+
+    public func deviceIP(serial: String) throws -> String {
+        let routeOutput = (try? run(["-s", serial, "shell", "ip", "route"])) ?? ""
+        if let ip = Self.parseIP(from: routeOutput) {
+            return ip
+        }
+        let addrOutput = (try? run(["-s", serial, "shell", "ip", "-f", "inet", "addr", "show", "wlan0"])) ?? ""
+        if let ip = Self.parseIP(from: addrOutput) {
+            return ip
+        }
+        throw ADBError.noWifiIPFound
+    }
+
+    public func switchToWireless(serial: String, port: Int = 5555) async throws -> String {
+        let ip = try deviceIP(serial: serial)
+        _ = try run(["-s", serial, "tcpip", "\(port)"])
+        try await Task.sleep(nanoseconds: 1_000_000_000)
+        let target = "\(ip):\(port)"
+        let output = try run(["connect", target])
+        guard Self.isConnectSuccessful(output: output) else {
+            throw ADBError.wirelessConnectionFailed(output)
+        }
+        return target
+    }
+
+    public func connectWireless(ip: String, port: Int = 5555) async throws -> String {
+        let trimmedIP = ip.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedIP.isEmpty else { throw ADBError.commandFailed("IP address cannot be empty") }
+        let target = "\(trimmedIP):\(port)"
+        let output = try run(["connect", target])
+        guard Self.isConnectSuccessful(output: output) else {
+            throw ADBError.wirelessConnectionFailed(output)
+        }
+        return target
+    }
+
+    @discardableResult
+    public func disconnectWireless(serial: String) throws -> String {
+        try run(["disconnect", serial])
     }
 
     public func removeStaleForwards(serial: String) {

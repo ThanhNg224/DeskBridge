@@ -12,6 +12,12 @@ final class AppModel {
     var status = StatusText.searching
     var setup = SetupState()
 
+    var wirelessIP = ""
+    var wirelessPort = "5555"
+    var isConnectingWireless = false
+    var isSwitchingToWireless = false
+    var wirelessErrorMessage: String?
+
     var prefs: Settings.Values {
         didSet {
             settings.values = prefs
@@ -267,6 +273,73 @@ final class AppModel {
                 retryNotBefore = Date().addingTimeInterval(backoff.delay)
             }
             wakeDiscovery()
+        }
+    }
+
+    // MARK: - Wireless ADB
+
+    func switchToWireless(serial: String) {
+        guard let adb = try? ADBBridge() else {
+            wirelessErrorMessage = ADBError.adbNotFound.description
+            return
+        }
+        isSwitchingToWireless = true
+        wirelessErrorMessage = nil
+        Task {
+            do {
+                let target = try await Task.detached {
+                    try await adb.switchToWireless(serial: serial)
+                }.value
+                prefs.preferredSerial = target
+                isSwitchingToWireless = false
+                wakeDiscovery()
+            } catch {
+                wirelessErrorMessage = "\(error)"
+                isSwitchingToWireless = false
+            }
+        }
+    }
+
+    func connectWireless() {
+        guard let adb = try? ADBBridge() else {
+            wirelessErrorMessage = ADBError.adbNotFound.description
+            return
+        }
+        let ip = wirelessIP.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !ip.isEmpty else { return }
+        let port = Int(wirelessPort.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 5555
+        isConnectingWireless = true
+        wirelessErrorMessage = nil
+        Task {
+            do {
+                let target = try await Task.detached {
+                    try await adb.connectWireless(ip: ip, port: port)
+                }.value
+                prefs.preferredSerial = target
+                wirelessIP = ""
+                isConnectingWireless = false
+                wakeDiscovery()
+            } catch {
+                wirelessErrorMessage = "\(error)"
+                isConnectingWireless = false
+            }
+        }
+    }
+
+    func disconnectWireless(serial: String) {
+        guard let adb = try? ADBBridge() else { return }
+        Task {
+            do {
+                _ = try await Task.detached {
+                    try adb.disconnectWireless(serial: serial)
+                }.value
+                if prefs.preferredSerial == serial {
+                    prefs.preferredSerial = nil
+                }
+                wakeDiscovery()
+            } catch {
+                wirelessErrorMessage = "\(error)"
+            }
         }
     }
 }

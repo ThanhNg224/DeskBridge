@@ -2,7 +2,7 @@
 
 ## 1. Overview & Vision
 
-**DeskBridge** shares one Mac mouse and keyboard with a physical **Android** phone/tablet over a USB cable (similar to DeskDock, Synergy, or Logitech Flow).
+**DeskBridge** shares one Mac mouse and keyboard with a physical **Android** phone/tablet over a USB cable or Wi-Fi ADB (similar to DeskDock, Synergy, or Logitech Flow).
 
 When the Mac cursor pushes through the configured screen edge (left, right, top or bottom), control moves to the Android device. The cursor pushing back through the same edge returns control to the Mac. Keystrokes go to whichever device currently has control.
 
@@ -12,7 +12,7 @@ When the Mac cursor pushes through the configured screen edge (left, right, top 
  |                        |                     |                          |
  |  CGEventTap thread     |                     |  deskbridge-server       |
  |        |               |                     |  (app_process, UID 2000) |
- |  DeviceSession         |   USB / adb         |        ^                 |
+ |  DeviceSession         |   USB/Wi-Fi adb     |        ^                 |
  |  (state machine)       |   forward           |  LocalServerSocket       |
  |        |               |                     |  "deskbridge-<random>"   |
  |  Connection (NWConn)---+--127.0.0.1:<port>---+--> abstract unix socket   |
@@ -149,4 +149,4 @@ The server runs as shell UID with the power to inject arbitrary input, so access
 
 Emulators have no OEM layer, so Samsung/Xiaomi behaviour on 14+ is still unverified on real hardware.
 
-**Non-goals for MVP:** multiple simultaneous devices, wireless ADB, rotation changes *during* a visit, display mirroring.
+**Non-goals for MVP:** multiple simultaneous devices, rotation changes *during* a visit, display mirroring.

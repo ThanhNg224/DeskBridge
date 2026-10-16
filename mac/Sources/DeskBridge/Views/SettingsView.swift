@@ -18,14 +18,63 @@ struct SettingsView: View {
                 SetupChecklist(setup: model.setup)
             }
 
-            if model.setup.phones.count > 1 {
+            if !model.setup.phones.isEmpty {
                 Section("Phone") {
-                    Picker("Use this phone", selection: $model.prefs.preferredSerial) {
-                        Text("Choose…").tag(String?.none)
-                        ForEach(model.setup.phones, id: \.serial) { phone in
-                            Text(phone.displayName).tag(String?.some(phone.serial))
+                    if model.setup.phones.count > 1 {
+                        Picker("Use this phone", selection: $model.prefs.preferredSerial) {
+                            Text("Choose…").tag(String?.none)
+                            ForEach(model.setup.phones, id: \.serial) { phone in
+                                Text("\(phone.displayName) [\(phone.isWireless ? "Wi-Fi" : "USB")]")
+                                    .tag(String?.some(phone.serial))
+                            }
+                        }
+                    } else if let phone = model.setup.phones.first {
+                        LabeledContent(
+                            "Connected phone",
+                            value: "\(phone.displayName) [\(phone.isWireless ? "Wi-Fi" : "USB")]"
+                        )
+                    }
+
+                    if let active = activePhone {
+                        if !active.isWireless {
+                            HStack {
+                                Button("Switch to Wi-Fi") {
+                                    model.switchToWireless(serial: active.serial)
+                                }
+                                .disabled(model.isSwitchingToWireless)
+                                if model.isSwitchingToWireless {
+                                    ProgressView().controlSize(.small)
+                                }
+                            }
+                        } else {
+                            Button("Disconnect Wi-Fi", role: .destructive) {
+                                model.disconnectWireless(serial: active.serial)
+                            }
                         }
                     }
+                }
+            }
+
+            Section("Connect via Wi-Fi") {
+                HStack {
+                    TextField("IP Address", text: $model.wirelessIP)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("Port", text: $model.wirelessPort)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 70)
+                    Button("Connect") {
+                        model.connectWireless()
+                    }
+                    .disabled(model.wirelessIP.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model
+                        .isConnectingWireless)
+                    if model.isConnectingWireless {
+                        ProgressView().controlSize(.small)
+                    }
+                }
+                if let error = model.wirelessErrorMessage {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
                 }
             }
 
@@ -60,6 +109,13 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    private var activePhone: AdbDevice? {
+        if let preferred = model.prefs.preferredSerial {
+            return model.setup.phones.first(where: { $0.serial == preferred })
+        }
+        return model.setup.phones.first
     }
 }
 

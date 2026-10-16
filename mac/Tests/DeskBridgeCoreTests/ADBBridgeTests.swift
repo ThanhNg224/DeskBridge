@@ -48,4 +48,40 @@ struct ADBBridgeTests {
         #expect(try ADBBridge.parseForwardPort("54321\n") == 54321)
         #expect(throws: ADBError.self) { try ADBBridge.parseForwardPort("error: closed") }
     }
+
+    @Test func isWirelessDistinguishesUsbAndWifi() {
+        let usbDevice = AdbDevice(serial: "RF8NA2EZKZK", state: "device")
+        #expect(!usbDevice.isWireless)
+
+        let wifiDevice = AdbDevice(serial: "192.168.1.50:5555", state: "device")
+        #expect(wifiDevice.isWireless)
+    }
+
+    @Test func parseIPExtractsWlanAddress() {
+        let routeOutput = """
+        192.168.1.0/24 dev wlan0 proto kernel scope link src 192.168.1.120
+        default via 192.168.1.1 dev wlan0
+        """
+        #expect(ADBBridge.parseIP(from: routeOutput) == "192.168.1.120")
+
+        let addrOutput = """
+        inet 192.168.1.125/24 brd 192.168.1.255 scope global wlan0
+        """
+        #expect(ADBBridge.parseIP(from: addrOutput) == "192.168.1.125")
+
+        let emptyOutput = ""
+        #expect(ADBBridge.parseIP(from: emptyOutput) == nil)
+    }
+
+    @Test func parseConnectOutputDetectsErrors() {
+        let successOutput = "connected to 192.168.1.50:5555\n"
+        let alreadyConnected = "already connected to 192.168.1.50:5555\n"
+        let failureOutput = "failed to connect to 192.168.1.50:5555: Connection refused\n"
+        let unableOutput = "unable to connect to 192.168.1.50:5555: Connection timed out\n"
+
+        #expect(ADBBridge.isConnectSuccessful(output: successOutput))
+        #expect(ADBBridge.isConnectSuccessful(output: alreadyConnected))
+        #expect(!ADBBridge.isConnectSuccessful(output: failureOutput))
+        #expect(!ADBBridge.isConnectSuccessful(output: unableOutput))
+    }
 }

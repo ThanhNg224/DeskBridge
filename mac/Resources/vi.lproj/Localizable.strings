@@ -3,7 +3,7 @@
 /* Status */
 "Looking for a device…" = "Đang tìm thiết bị…";
 "Paused" = "Đã tạm dừng";
-"Connect an Android phone with USB debugging turned on" = "Cắm điện thoại Android và bật gỡ lỗi USB";
+"Connect an Android phone via USB or Wi-Fi with debugging enabled" = "Kết nối điện thoại Android qua USB hoặc Wi-Fi và bật gỡ lỗi";
 "DeskBridge needs Accessibility access" = "DeskBridge cần quyền Trợ năng (Accessibility)";
 "The Android server file is missing. Run scripts/build_server.sh" = "Thiếu tệp máy chủ Android. Hãy chạy scripts/build_server.sh";
 "Connecting to %@…" = "Đang kết nối với %@…";
@@ -36,7 +36,7 @@
 "Phone not authorized (%@)" = "Điện thoại chưa cho phép (%@)";
 "Unlock the phone and tap Allow." = "Mở khóa điện thoại và chạm Cho phép.";
 "No phone found" = "Không thấy điện thoại";
-"Plug it in and turn on USB debugging." = "Cắm cáp và bật gỡ lỗi USB.";
+"Connect via USB cable or Wi-Fi (wireless debugging)." = "Cắm cáp USB hoặc kết nối qua Wi-Fi (gỡ lỗi không dây).";
 
 /* Settings */
 "Layout" = "Bố cục";
@@ -59,7 +59,14 @@
 "Show icon in the Dock" = "Hiện biểu tượng trên Dock";
 "%lld phones are connected. Choose one in Settings." = "Có %lld điện thoại đang kết nối. Hãy chọn một máy trong Cài đặt.";
 "Phone" = "Điện thoại";
+"Connected phone" = "Điện thoại đang kết nối";
 "Use this phone" = "Dùng điện thoại này";
 "Choose…" = "Chọn…";
 "%lld phones found" = "Tìm thấy %lld điện thoại";
 "Pick one in the Phone section below." = "Hãy chọn một máy ở mục Điện thoại bên dưới.";
+"Switch to Wi-Fi" = "Chuyển sang Wi-Fi";
+"Disconnect Wi-Fi" = "Ngắt kết nối Wi-Fi";
+"Connect via Wi-Fi" = "Kết nối qua Wi-Fi";
+"IP Address" = "Địa chỉ IP";
+"Port" = "Cổng";
+"Connect" = "Kết nối";

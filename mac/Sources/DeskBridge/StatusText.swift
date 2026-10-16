@@ -5,7 +5,7 @@ import Foundation
 enum StatusText {
     static let searching = String(localized: "Looking for a device…")
     static let paused = String(localized: "Paused")
-    static let noDevice = String(localized: "Connect an Android phone with USB debugging turned on")
+    static let noDevice = String(localized: "Connect an Android phone via USB or Wi-Fi with debugging enabled")
     static let needsAccessibility = String(localized: "DeskBridge needs Accessibility access")
     static let jarMissing = String(localized: "The Android server file is missing. Run scripts/build_server.sh")
 

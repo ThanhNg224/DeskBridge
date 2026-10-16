@@ -37,7 +37,9 @@ struct SetupChecklist: View {
         case let .choose(count):
             row(ok: false, title: "\(count) phones found", hint: "Pick one in the Phone section below.") { EmptyView() }
         case .none:
-            row(ok: false, title: "No phone found", hint: "Plug it in and turn on USB debugging.") { EmptyView() }
+            row(ok: false, title: "No phone found", hint: "Connect via USB cable or Wi-Fi (wireless debugging).") {
+                EmptyView()
+            }
         }
     }
 
