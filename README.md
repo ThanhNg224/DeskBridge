@@ -15,6 +15,11 @@ Push the pointer off the edge of the screen and it appears on the phone. Push it
 
 ---
 
+## Platform branches
+
+- **macOS ARM64:** this `main` branch is the supported Mac source and release line.
+- **Windows 11 x64:** an independent native application is developed on the permanent [`windows` branch](https://github.com/ThanhNg224/DeskBridge/tree/windows). Windows automated CI and packaging have passed; interactive Windows/Android acceptance is still pending. See its [progress and setup guide](https://github.com/ThanhNg224/DeskBridge/blob/windows/windows/README.md) and [three milestones](https://github.com/ThanhNg224/DeskBridge/milestones?state=all).
+
 ## What it does
 
 - **One mouse and keyboard for both.** Click, scroll, drag and type on the phone without touching it.
