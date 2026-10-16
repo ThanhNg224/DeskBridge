@@ -65,6 +65,8 @@ The DeskBridge window shows what is still missing and turns green when everythin
 
 ## For developers
 
+An independent **Windows 11 x64 host** is under development in [`windows/`](windows/README.md), using C#/.NET 10 and WPF with the same Android server and protocol. It is experimental: Windows CI/runtime and physical-device acceptance are pending. The completed Mac host remains Swift/ARM64. See the [Windows progress table and GitHub tracking](windows/README.md#progress-and-github-tracking) and the [acceptance checklist](docs/WINDOWS_ACCEPTANCE.md).
+
 DeskBridge is a Swift 6 menu bar app (`mac/`) plus a plain-Java server (`server/`) that the Mac starts on the phone through `adb shell app_process`. No APK, no Gradle, no Kotlin. Mouse and keyboard travel over an adb-forwarded abstract socket with a small binary protocol; the server injects them through Android's `InputManager` and draws its own pointer.
 
 Start with **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** (decisions, protocol, security model, risks) and **[CLAUDE.md](CLAUDE.md)** (commands, rules and gotchas for people and AI agents).

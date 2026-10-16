@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DeskBridge.Core/DeskBridge.Core.csproj" />
+    <Project Path="src/DeskBridge.Windows/DeskBridge.Windows.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DeskBridge.Core.Tests/DeskBridge.Core.Tests.csproj" />
+    <Project Path="tests/DeskBridge.Windows.Tests/DeskBridge.Windows.Tests.csproj" />
+  </Folder>
+</Solution>

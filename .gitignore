@@ -29,3 +29,13 @@ captures/
 # Output binaries
 dist/
 target/
+
+# Windows / .NET
+obj/
+.vs/
+TestResults/
+*.user
+*.suo
+
+# Local handoff plans
+docs/plans/
