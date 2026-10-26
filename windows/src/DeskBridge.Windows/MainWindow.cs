@@ -1,5 +1,7 @@
 using System.Globalization;
+using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using DeskBridge.Core;
 
 namespace DeskBridge.Windows;
@@ -24,6 +26,7 @@ internal sealed class MainWindow : Window
     {
         this.model = model;
         Title = "DeskBridge — Windows (experimental)";
+        LoadIcon();
         Width = 640; Height = 840; MinWidth = 520; MinHeight = 640;
         Background = new SolidColorBrush(Color.FromRgb(246, 248, 252));
         var root = new DockPanel { Margin = new Thickness(24) };
@@ -149,5 +152,24 @@ internal sealed class MainWindow : Window
             "Controlling Android" => "Đang điều khiển Android", "Disconnected" => "Đã ngắt kết nối", "Error" => "Có lỗi", _ => model.Status
         } : model.Status;
         error.Text = model.Error ?? "";
+    }
+    private void LoadIcon()
+    {
+        try
+        {
+            string? exe = Environment.ProcessPath;
+            if (!string.IsNullOrEmpty(exe))
+            {
+                using var ico = System.Drawing.Icon.ExtractAssociatedIcon(exe);
+                if (ico != null)
+                {
+                    Icon = Imaging.CreateBitmapSourceFromHIcon(
+                        ico.Handle,
+                        Int32Rect.Empty,
+                        BitmapSizeOptions.FromEmptyOptions());
+                }
+            }
+        }
+        catch { }
     }
 }

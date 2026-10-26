@@ -8,7 +8,10 @@ Independent Windows 11 x64 host, built with C#/.NET 10 and WPF. The macOS ARM64 
 
 1. Use Windows 11 x64 and an Android 13+ phone with USB debugging enabled.
 2. Install Android SDK Platform Tools. Put `adb.exe` on PATH, or choose it in DeskBridge Settings. No JDK, Android SDK or .NET installation is required to run the self-contained package.
-3. Extract the whole ZIP into a writable folder. Keep `deskbridge-server.jar` beside `DeskBridge.Windows.exe` and run the executable. The first build is unsigned; Windows warnings still need to be observed during acceptance. Do not disable Windows security globally.
+3. Choose your distribution:
+   - **Installer (`DeskBridge-Setup-x64.exe`)**: Recommended for end users. Installs per-user without requiring administrator privileges, creates Start Menu/Desktop shortcuts, and registers an uninstaller in Windows Settings.
+   - **Portable (`DeskBridge-windows-x64.zip`)**: Extract the whole ZIP into a writable folder. Keep `deskbridge-server.jar` beside `DeskBridge.Windows.exe` and run the executable directly.
+   The build is unsigned at this stage; Windows SmartScreen warnings need to be acknowledged during preview testing. Do not disable Windows security globally.
 4. Authorize the PC on the phone, select the device and enable DeskBridge. If exactly one phone is ready, it is selected automatically. Changes in Settings take effect with **Apply & reconnect**.
 5. Push through the selected screen edge. Press **Ctrl+Alt+Shift+Esc** to return control immediately. Closing the Settings window leaves the app in the tray; choose **Quit** to stop it.
 
@@ -50,7 +53,7 @@ In PowerShell, from `windows/`:
 ./scripts/package.ps1 -ServerJar ../server/build/deskbridge-server.jar
 ```
 
-The server JAR is built on macOS/Linux. Windows CI downloads the artifact produced by its Ubuntu job at the same commit, runs automated tests, then packages `build/DeskBridge-windows-x64.zip`. There is no CI device test. The ZIP includes `VERSION`, `SOURCE_COMMIT` and the server SHA-256 alongside the self-contained app. CI artifacts are test builds, not GitHub releases.
+The server JAR is built on macOS/Linux. Windows CI downloads the artifact produced by its Ubuntu job at the same commit, runs automated tests, then packages both `build/DeskBridge-windows-x64.zip` (portable) and `build/DeskBridge-Setup-x64.exe` (Inno Setup installer). There is no CI device test. The package includes `VERSION`, `SOURCE_COMMIT` and the server SHA-256 alongside the self-contained ReadyToRun app. CI artifacts are test builds, not GitHub releases.
 
 ```powershell
 # Exports OS, process architecture, ADB/device and physical-display information.

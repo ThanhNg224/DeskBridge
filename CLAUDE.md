@@ -52,4 +52,4 @@ The JAR is built on Mac/Linux or downloaded from the same-commit CI server job. 
 
 Windows CI runs on push/PR to `windows`; Mac CI remains associated with `main`. Track phase 1/2/3 in GitHub milestones 1/2/3 and issues 1–14. Keep physical acceptance issues labeled `blocked:windows-device` until tested.
 
-Windows uses its own `windows/VERSION`, eventual `windows-vX.Y.Z` prerelease tags and `DeskBridge-windows-x64.zip`. Keep Mac tags/assets unchanged. Commit/push only when requested; a build/package does not authorize a merge or public release.
+Windows uses its own `windows/VERSION`, eventual `windows-vX.Y.Z` prerelease tags, `DeskBridge-windows-x64.zip` and `DeskBridge-Setup-x64.exe`. Keep Mac tags/assets unchanged. Commit/push only when requested; a build/package does not authorize a merge or public release.

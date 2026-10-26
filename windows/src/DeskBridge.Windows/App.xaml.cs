@@ -40,7 +40,7 @@ public partial class App : Application
             menu.Items.Add(toggle);
             var restore = menu.Items.Add(settings.Language == "vi" ? "Trả điều khiển về PC" : "Return control to PC", null, (_, _) => model.ReturnLocal());
             var quit = menu.Items.Add(settings.Language == "vi" ? "Thoát" : "Quit", null, async (_, _) => await QuitAsync());
-            tray = new Forms.NotifyIcon { Icon = (System.Drawing.Icon)System.Drawing.SystemIcons.Application.Clone(), Text = "DeskBridge · experimental", ContextMenuStrip = menu, Visible = true };
+            tray = new Forms.NotifyIcon { Icon = LoadAppIcon(), Text = "DeskBridge · experimental", ContextMenuStrip = menu, Visible = true };
             tray.MouseClick += (_, args) => { if (args.Button == Forms.MouseButtons.Left) ShowMain(); };
             model.Changed += () =>
             {
@@ -127,5 +127,19 @@ public partial class App : Application
         if (!session.Connected) throw new IOException("Session ended during heartbeat check.");
         await session.StopAsync();
         await File.WriteAllTextAsync(output, JsonSerializer.Serialize(new { Timestamp = DateTimeOffset.UtcNow, session.Width, session.Height, HandshakeMs = handshakeMs, Result = "protocol-smoke-pass", InteractiveAcceptance = "pending" }, new JsonSerializerOptions { WriteIndented = true }));
+    }
+    private static System.Drawing.Icon LoadAppIcon()
+    {
+        try
+        {
+            string? exe = Environment.ProcessPath;
+            if (!string.IsNullOrEmpty(exe))
+            {
+                var icon = System.Drawing.Icon.ExtractAssociatedIcon(exe);
+                if (icon != null) return icon;
+            }
+        }
+        catch { }
+        return (System.Drawing.Icon)System.Drawing.SystemIcons.Application.Clone();
     }
 }
