@@ -284,8 +284,9 @@ final class AppModel {
             guard !Task.isCancelled, generation == discoveryGeneration else { return }
             var pick = updateDevices(devices)
             if let phone = sessionPhone,
-               phone.serial != prefs.preferredSerial || !devices
-               .contains(where: { $0.serial == phone.serial && $0.isReady })
+               phone.serial != prefs.preferredSerial || !devices.contains(where: {
+                   $0.serial == phone.serial && $0.isReady
+               })
             {
                 stopSession()
                 phase = isEnabled ? .searching : .paused
