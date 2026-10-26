@@ -36,6 +36,10 @@ struct SetupChecklist: View {
             }
         case let .choose(count):
             row(ok: false, title: "\(count) phones found", hint: "Pick one in the Phone section below.") { EmptyView() }
+        case let .waiting(name):
+            row(ok: false, title: "Waiting for \(name)", hint: "Reconnect the selected device or choose another one.") {
+                EmptyView()
+            }
         case .none:
             row(ok: false, title: "No phone found", hint: "Connect via USB cable or Wi-Fi (wireless debugging).") {
                 EmptyView()

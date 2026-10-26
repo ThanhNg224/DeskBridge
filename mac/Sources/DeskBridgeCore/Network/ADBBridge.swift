@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public struct AdbDevice: Equatable, Sendable {
@@ -27,6 +28,9 @@ public struct AdbDevice: Equatable, Sendable {
 }
 
 public enum ADBError: Error, CustomStringConvertible {
+    case commandTimedOut
+    case operationTimedOut
+    case wirelessDeviceNotReady(String)
     case adbNotFound
     case commandFailed(String)
     case badForwardOutput(String)
@@ -37,6 +41,9 @@ public enum ADBError: Error, CustomStringConvertible {
 
     public var description: String {
         switch self {
+        case .commandTimedOut: "The ADB command timed out."
+        case .operationTimedOut: "The ADB operation timed out."
+        case let .wirelessDeviceNotReady(target): "The phone at \(target) is not ready over Wi-Fi."
         case .adbNotFound: "adb not found. Install Android platform-tools or set ANDROID_HOME."
         case let .commandFailed(output): "adb failed: \(output.trimmingCharacters(in: .whitespacesAndNewlines))"
         case let .badForwardOutput(output): "Unexpected adb forward output: \(output)"
@@ -48,12 +55,32 @@ public enum ADBError: Error, CustomStringConvertible {
     }
 }
 
+public enum WirelessStage: Sendable {
+    case readingAddress, preparing, connecting, checkingDevice
+}
+
 public struct ADBBridge: Sendable {
     public let adbPath: String
+    private var operation: ADBOperation?
 
     public init(adbPath: String? = nil) throws {
         guard let path = adbPath ?? Self.locate() else { throw ADBError.adbNotFound }
         self.adbPath = path
+    }
+
+    public func withOperation(_ operation: ADBOperation) -> ADBBridge {
+        var bridge = self
+        bridge.operation = operation
+        return bridge
+    }
+
+    /// Only an IPv4 endpoint can be reconnected with `adb connect`; mDNS serials are not endpoints.
+    public static func wirelessEndpoint(serial: String) -> (ip: String, port: Int)? {
+        let parts = serial.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2, let ip = normalizedIPv4(String(parts[0])),
+              let port = Int(parts[1]), (1 ... 65535).contains(port)
+        else { return nil }
+        return (ip, port)
     }
 
     public static func locate() -> String? {
@@ -175,37 +202,86 @@ public struct ADBBridge: Sendable {
     }
 
     public func deviceIP(serial: String) throws -> String {
-        let routeOutput = (try? run(["-s", serial, "shell", "ip", "route"])) ?? ""
+        let routeOutput = try addressOutput(["-s", serial, "shell", "ip", "route"])
         if let ip = Self.parseIP(from: routeOutput) {
             return ip
         }
-        let addrOutput = (try? run(["-s", serial, "shell", "ip", "-f", "inet", "addr", "show", "wlan0"])) ?? ""
+        let addrOutput = try addressOutput(["-s", serial, "shell", "ip", "-f", "inet", "addr", "show", "wlan0"])
         if let ip = Self.parseIP(from: addrOutput) {
             return ip
         }
         throw ADBError.noWifiIPFound
     }
 
-    public func switchToWireless(serial: String, port: Int = 5555) async throws -> String {
-        guard (1 ... 65535).contains(port) else { throw ADBError.invalidWirelessPort }
-        let ip = try deviceIP(serial: serial)
-        let target = try Self.wirelessTarget(ip: ip, port: port)
-        _ = try run(["-s", serial, "tcpip", "\(port)"])
-        try await Task.sleep(nanoseconds: 1_000_000_000)
-        let output = try run(["connect", target])
-        guard Self.isConnectSuccessful(output: output) else {
-            throw ADBError.wirelessConnectionFailed(output)
-        }
-        return target
+    private func addressOutput(_ arguments: [String]) throws -> String {
+        do { return try run(arguments) }
+        catch ADBError.commandFailed { return "" }
     }
 
-    public func connectWireless(ip: String, port: Int = 5555) async throws -> String {
+    public func switchToWireless(
+        serial: String, port: Int = 5555,
+        progress: @Sendable (WirelessStage) -> Void = { _ in }
+    ) async throws -> String {
+        guard (1 ... 65535).contains(port) else { throw ADBError.invalidWirelessPort }
+        let bridge = withOperation(operation ?? ADBOperation())
+        progress(.readingAddress)
+        let ip = try bridge.deviceIP(serial: serial)
         let target = try Self.wirelessTarget(ip: ip, port: port)
-        let output = try run(["connect", target])
-        guard Self.isConnectSuccessful(output: output) else {
-            throw ADBError.wirelessConnectionFailed(output)
+        progress(.preparing)
+        _ = try bridge.run(["-s", serial, "tcpip", "\(port)"])
+        return try await bridge.awaitWireless(target: target, retryConnection: true, progress: progress)
+    }
+
+    public func connectWireless(
+        ip: String, port: Int = 5555,
+        progress: @Sendable (WirelessStage) -> Void = { _ in }
+    ) async throws -> String {
+        let target = try Self.wirelessTarget(ip: ip, port: port)
+        let bridge = withOperation(operation ?? ADBOperation())
+        return try await bridge.awaitWireless(target: target, retryConnection: false, progress: progress)
+    }
+
+    private func awaitWireless(
+        target: String, retryConnection: Bool,
+        progress: @Sendable (WirelessStage) -> Void
+    ) async throws -> String {
+        var connectionOutput = ""
+        var connected = false
+        while true {
+            try operation?.checkCancellation()
+            progress(.connecting)
+            do {
+                connectionOutput = try run(["connect", target])
+                connected = Self.isConnectSuccessful(output: connectionOutput)
+                if !connected, !retryConnection {
+                    throw ADBError.wirelessConnectionFailed(connectionOutput)
+                }
+            } catch let ADBError.commandFailed(output) {
+                if !retryConnection {
+                    throw ADBError.commandFailed(output)
+                }
+                connectionOutput = output
+                connected = false
+            }
+            if connected {
+                progress(.checkingDevice)
+                if try devices().contains(where: { $0.serial == target && $0.isReady }) {
+                    return target
+                }
+            }
+            // Report the failed stage while the shared operation still has time left.
+            guard let operation, operation.remaining > 1 else {
+                if connected {
+                    throw ADBError.wirelessDeviceNotReady(target)
+                }
+                throw ADBError.wirelessConnectionFailed(connectionOutput)
+            }
+            let pauseUntil = ProcessInfo.processInfo.systemUptime + min(1, operation.remaining)
+            while ProcessInfo.processInfo.systemUptime < pauseUntil {
+                try operation.checkCancellation()
+                try await Task.sleep(nanoseconds: 50_000_000)
+            }
         }
-        return target
     }
 
     @discardableResult
@@ -226,6 +302,8 @@ public struct ADBBridge: Sendable {
 
     /// Long-lived `adb shell` process; stderr is piped so the caller can surface server errors.
     public func spawnShell(serial: String, command: String) throws -> (process: Process, stderr: Pipe) {
+        try operation?.checkCancellation()
+        try Task.checkCancellation()
         let process = Process()
         let stderr = Pipe()
         process.executableURL = URL(fileURLWithPath: adbPath)
@@ -238,15 +316,46 @@ public struct ADBBridge: Sendable {
 
     @discardableResult
     func run(_ arguments: [String]) throws -> String {
+        try operation?.checkCancellation()
+        try Task.checkCancellation()
+        let commandDeadline = ProcessInfo.processInfo.systemUptime + 10
+        let outputURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("deskbridge-adb-\(UUID().uuidString)")
+        _ = FileManager.default.createFile(
+            atPath: outputURL.path,
+            contents: nil,
+            attributes: [.posixPermissions: 0o600]
+        )
+        defer { try? FileManager.default.removeItem(at: outputURL) }
+        let output = try FileHandle(forWritingTo: outputURL)
+        defer { try? output.close() }
         let process = Process()
-        let pipe = Pipe()
         process.executableURL = URL(fileURLWithPath: adbPath)
         process.arguments = arguments
-        process.standardOutput = pipe
-        process.standardError = pipe
+        // A regular file cannot hang while waiting for inherited pipe descriptors to close.
+        process.standardOutput = output
+        process.standardError = output
         try process.run()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile() // read before wait: avoids a full-pipe deadlock
+        do {
+            while process.isRunning {
+                try operation?.checkCancellation()
+                try Task.checkCancellation()
+                if ProcessInfo.processInfo.systemUptime >= commandDeadline {
+                    throw ADBError.commandTimedOut
+                }
+                Thread.sleep(forTimeInterval: 0.01)
+            }
+            try operation?.checkCancellation()
+            try Task.checkCancellation()
+        } catch {
+            if process.isRunning {
+                kill(process.processIdentifier, SIGKILL)
+            }
+            process.waitUntilExit()
+            throw error
+        }
         process.waitUntilExit()
+        let data = try Data(contentsOf: outputURL)
         let text = String(decoding: data, as: UTF8.self)
         guard process.terminationStatus == 0 else { throw ADBError.commandFailed(text) }
         return text

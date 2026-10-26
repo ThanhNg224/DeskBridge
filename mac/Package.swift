@@ -19,5 +19,10 @@ let package = Package(
             dependencies: ["DeskBridgeCore"],
             path: "Tests/DeskBridgeCoreTests"
         ),
+        .testTarget(
+            name: "DeskBridgeTests",
+            dependencies: ["DeskBridge"],
+            path: "Tests/DeskBridgeTests"
+        ),
     ]
 )

@@ -58,18 +58,25 @@ struct SettingsView: View {
     private var phoneSection: some View {
         if !model.setup.phones.isEmpty {
             Section("Phone") {
-                if model.setup.phones.count > 1 {
-                    Picker("Use this phone", selection: $model.prefs.preferredSerial) {
-                        Text("Choose…").tag(String?.none)
-                        ForEach(model.setup.phones, id: \.serial) { phone in
-                            Label("\(phone.displayName) · \(phone.isWireless ? "Wi-Fi" : "USB")",
-                                  systemImage: phone.isWireless ? "wifi" : "cable.connector")
-                                .tag(String?.some(phone.serial))
+                Picker("Use this phone", selection: Binding(
+                    get: { model.prefs.preferredSerial },
+                    set: { model.selectDevice(serial: $0) }
+                )) {
+                    Text("Choose…").tag(String?.none).disabled(true)
+                    ForEach(model.setup.phones, id: \.serial) { phone in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Label {
+                                Text(verbatim: phone.connectionLabel + (
+                                    phone.isReady ? "" : " · \(String(localized: "Disconnected"))"
+                                ))
+                            } icon: {
+                                Image(systemName: phone.isWireless ? "wifi" : "cable.connector")
+                            }
+                            Text(phone.serial).font(.caption).foregroundStyle(.secondary)
                         }
+                        .tag(String?.some(phone.serial))
+                        .help(phone.serial)
                     }
-                    .disabled(model.isOperatingWireless)
-                } else if let phone = model.setup.phones.first {
-                    LabeledContent("Connected phone", value: phone.displayName)
                 }
 
                 if let phone = model.selectedPhone {
@@ -82,13 +89,17 @@ struct SettingsView: View {
                             Button("Disconnect Wi-Fi", role: .destructive) {
                                 model.disconnectWireless(serial: phone.serial)
                             }
+                            .disabled(model.isOperatingWireless)
                         } else {
                             Button("Switch to Wi-Fi") {
                                 model.switchToWireless(serial: phone.serial)
                             }
+                            .disabled(!phone.isReady || model.isOperatingWireless)
                         }
                     }
-                    .disabled(model.isOperatingWireless)
+                }
+                if model.canRetryConnection {
+                    Button("Retry now") { model.retryConnection() }
                 }
             }
         }
@@ -128,12 +139,17 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-                if let error = model.wirelessErrorMessage ?? model.wirelessInputError {
-                    Label(error, systemImage: "exclamationmark.circle")
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .fixedSize(horizontal: false, vertical: true)
+                Group {
+                    if let error = model.wirelessErrorMessage ?? model.wirelessInputError {
+                        Label(error, systemImage: "exclamationmark.circle")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Text(" ").font(.caption)
+                    }
                 }
+                .frame(minHeight: 18, alignment: .topLeading)
 
                 HStack(spacing: 8) {
                     ProgressView()
@@ -146,7 +162,12 @@ struct SettingsView: View {
                     Spacer(minLength: 8)
                     Button("Connect") { model.connectWireless() }
                         .disabled(!model.canConnectWireless)
+                    if model.isOperatingWireless {
+                        Button("Cancel") { model.cancelWireless() }
+                            .keyboardShortcut(.cancelAction)
+                    }
                 }
+                .frame(minHeight: 24)
             }
             .padding(.vertical, 8)
             .onChange(of: model.wirelessIP) { model.wirelessErrorMessage = nil }
@@ -158,8 +179,11 @@ struct SettingsView: View {
     private var wirelessProgress: some View {
         switch model.wirelessOperation {
         case .idle: EmptyView()
-        case .connecting: Text("Connecting…")
-        case .switching: Text("Switching to Wi-Fi…")
+        case .readingAddress: Text("Reading Wi-Fi address…")
+        case .preparing: Text("Preparing Wi-Fi…")
+        case .connecting: Text("Connecting to ADB…")
+        case .checkingDevice: Text("Waiting for device…")
+        case .startingSession: Text("Starting control session…")
         case .disconnecting: Text("Disconnecting…")
         }
     }

@@ -26,6 +26,8 @@ public final class DeviceSession: @unchecked Sendable {
     private let serial: String
     private let jar: URL
     private let settings: Settings
+    private let startupOperation: ADBOperation
+    private let acceptingInput = OSAllocatedUnfairLock(initialState: true)
     private let queue = DispatchQueue(label: "deskbridge.session", qos: .userInteractive)
     private let cursor: RemoteCursor
     private let clipboard = MacClipboard()
@@ -43,6 +45,7 @@ public final class DeviceSession: @unchecked Sendable {
     private var connection: Connection?
     private var capturer: InputCapturer?
     private var heartbeat: DispatchSourceTimer?
+    private var startupTimer: DispatchSourceTimer?
     private var parser = ServerPacketParser()
     private var coalescer = MoveCoalescer()
     private var detector = EdgeDetector(edge: .right, displays: [])
@@ -52,11 +55,14 @@ public final class DeviceSession: @unchecked Sendable {
     /// Display the cursor left from; control returns to the same display.
     private var entryDisplay = CGRect.zero
 
-    public init(adb: ADBBridge, serial: String, jar: URL, settings: Settings) {
+    public init(adb: ADBBridge, serial: String, jar: URL, settings: Settings,
+                operation: ADBOperation = ADBOperation())
+    {
         self.adb = adb
         self.serial = serial
         self.jar = jar
         self.settings = settings
+        startupOperation = operation
         cursor = RemoteCursor(queue: queue)
     }
 
@@ -65,6 +71,8 @@ public final class DeviceSession: @unchecked Sendable {
     }
 
     public func stop() {
+        acceptingInput.withLock { $0 = false }
+        startupOperation.cancel()
         queue.async { self.end(.stopped) }
     }
 
@@ -75,6 +83,8 @@ public final class DeviceSession: @unchecked Sendable {
 
     /// For app termination: finishes teardown (cursor, forward, server) before returning.
     public func stopAndWait() {
+        acceptingInput.withLock { $0 = false }
+        startupOperation.cancel()
         queue.sync { self.end(.stopped) }
     }
 
@@ -82,11 +92,21 @@ public final class DeviceSession: @unchecked Sendable {
 
     private func launch() {
         do {
-            server = try adb.launchServer(serial: serial, jar: jar)
-            connectDeadline = Date().addingTimeInterval(Self.connectTimeout)
+            try startupOperation.checkCancellation()
+            server = try adb.withOperation(startupOperation).launchServer(serial: serial, jar: jar)
+            let timeout = min(Self.connectTimeout, startupOperation.remaining)
+            connectDeadline = Date().addingTimeInterval(timeout)
+            let timer = DispatchSource.makeTimerSource(queue: queue)
+            timer.schedule(deadline: .now() + timeout)
+            timer.setEventHandler { [weak self] in
+                guard let self, state == .starting else { return }
+                end(.adbFailed(ADBError.operationTimedOut.description))
+            }
+            timer.resume()
+            startupTimer = timer
             connect()
         } catch {
-            end(.adbFailed("\(error)"))
+            end(acceptingInput.withLock { $0 } ? .adbFailed("\(error)") : .stopped)
         }
     }
 
@@ -120,7 +140,11 @@ public final class DeviceSession: @unchecked Sendable {
     }
 
     private func startRunning() {
-        guard state == .starting else { return }
+        guard state == .starting, acceptingInput.withLock({ $0 }) else { return }
+        do { try startupOperation.checkCancellation() }
+        catch { end(.adbFailed("\(error)")); return }
+        startupTimer?.cancel()
+        startupTimer = nil
         refreshDetector()
         lastReceived = Date()
         cursor.prepare()
@@ -204,7 +228,7 @@ public final class DeviceSession: @unchecked Sendable {
 
     /// The phone's new clip arrives just before it hands control back (or after our LEAVE).
     private func receivedClipboard(_ text: String) {
-        if settings.values.shareClipboard {
+        if acceptingInput.withLock({ $0 }), settings.values.shareClipboard {
             clipboard.apply(text)
         }
     }
@@ -212,6 +236,7 @@ public final class DeviceSession: @unchecked Sendable {
     // MARK: - Captured input
 
     private func handle(_ event: CapturedEvent) {
+        guard acceptingInput.withLock({ $0 }) else { return }
         switch (state, event) {
         case let (.local, .move(dx, dy, location)):
             if let crossing = detector.crossing(at: location, deltaX: dx, deltaY: dy) {
@@ -268,7 +293,7 @@ public final class DeviceSession: @unchecked Sendable {
 
     /// Text a Mac input method composed (Vietnamese Telex, ...), typed on the phone; split to fit a packet.
     private func sendText(_ text: String) {
-        guard state == .remote else { return }
+        guard state == .remote, acceptingInput.withLock({ $0 }) else { return }
         flushMoves()
         var chunk = ""
         for character in text {
@@ -283,7 +308,7 @@ public final class DeviceSession: @unchecked Sendable {
 
     /// A key the input method handed back unhandled (Return, Backspace, an arrow, ...): a plain key press.
     private func sendKeyPress(code: UInt16, flags: UInt64) {
-        guard state == .remote else { return }
+        guard state == .remote, acceptingInput.withLock({ $0 }) else { return }
         for down in [true, false] {
             perform(RemoteInput.action(for: .key(code: code, down: down, flags: flags), prefs: settings.values))
         }
@@ -292,10 +317,12 @@ public final class DeviceSession: @unchecked Sendable {
     // MARK: - Sending
 
     private func send(_ data: Data) {
+        guard acceptingInput.withLock({ $0 }) else { return }
         connection?.send(data)
     }
 
     private func transmit(_ delta: MoveCoalescer.Delta) {
+        guard acceptingInput.withLock({ $0 }) else { return }
         connection?.send(ProtocolEncoder.moveRel(dx: delta.dx, dy: delta.dy)) { [weak self] in
             // Runs on the connection queue, which is the session queue.
             guard let self, let next = coalescer.sendCompleted() else { return }
@@ -320,7 +347,11 @@ public final class DeviceSession: @unchecked Sendable {
 
     private func end(_ reason: SessionEndReason) {
         guard !isEnded else { return }
+        acceptingInput.withLock { $0 = false }
+        startupOperation.cancel()
         returnToMac(along: nil, notifyServer: false)
+        startupTimer?.cancel()
+        startupTimer = nil
         heartbeat?.cancel()
         heartbeat = nil
         if let screenObserver {

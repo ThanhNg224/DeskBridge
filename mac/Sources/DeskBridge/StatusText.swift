@@ -8,6 +8,8 @@ enum StatusText {
     static let noDevice = String(localized: "Connect an Android phone via USB or Wi-Fi with debugging enabled")
     static let needsAccessibility = String(localized: "DeskBridge needs Accessibility access")
     static let jarMissing = String(localized: "The Android server file is missing. Run scripts/build_server.sh")
+    static let preparingConnection = String(localized: "Preparing connection…")
+    static let connectionCancelled = String(localized: "Connection cancelled")
 
     static func choosePhone(count: Int) -> String {
         String(localized: "\(count) phones are connected. Choose one in Settings.")
@@ -19,6 +21,18 @@ enum StatusText {
 
     static func connected(_ name: String) -> String {
         String(localized: "Connected to \(name)")
+    }
+
+    static func waiting(_ name: String) -> String {
+        String(localized: "Waiting for \(name)")
+    }
+
+    static func reconnecting(_ name: String) -> String {
+        String(localized: "Reconnecting to \(name)…")
+    }
+
+    static func disconnected(_ name: String) -> String {
+        String(localized: "Disconnected from \(name)")
     }
 
     static func controlling(_ name: String) -> String {

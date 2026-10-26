@@ -52,6 +52,8 @@ The DeskBridge window shows what is still missing and turns green when everythin
 
 **Can I use it without a cable?** Yes. With the Mac and phone on the same Wi-Fi network, plug in via USB and click **Switch to Wi-Fi**. Once connected, unplug the cable. For an already configured phone, enter its IPv4 address and connection port in **Connect via Wi-Fi**; the port must be between 1 and 65535. Android's Wireless Debugging connection port can differ from its pairing port. **Disconnect Wi-Fi** disconnects this Mac from that ADB endpoint; it does not turn off debugging on the phone.
 
+**Which device is being controlled?** The header names the active phone and its USB or Wi-Fi connection. The dropdown keeps your chosen connection when it goes offline; DeskBridge waits for that connection instead of switching to another phone. Choose a different entry to change phones or return to USB. A temporary Wi-Fi loss retries the selected IP and port automatically. **Disconnect Wi-Fi**, **Cancel**, and turning **Enabled** off stop automatic reconnection until you explicitly retry, select a connection, or enable control again. A Wi-Fi connection attempt has a 30-second limit; success means the control session is ready, not just that ADB accepted the connection.
+
 **Is it safe?** Every DeskBridge session uses a one-time token. **Switch to Wi-Fi** enables legacy ADB TCP/IP, which does not encrypt traffic; use it only on a trusted network and turn off network debugging on the phone when finished. Android's paired Wireless Debugging uses TLS instead and requires pairing outside DeskBridge. The session token does not encrypt keyboard or clipboard data. Details in [the architecture notes](docs/ARCHITECTURE.md).
 
 ## Known limits

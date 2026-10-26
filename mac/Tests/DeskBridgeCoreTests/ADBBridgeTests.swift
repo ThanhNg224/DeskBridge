@@ -131,11 +131,12 @@ struct ADBBridgeTests {
             ("-s USB shell ip route", "192.168.1.0/24 dev wlan0 src 192.168.1.120", 0),
             ("-s USB tcpip 5555", "restarting in TCP mode port: 5555", 0),
             ("connect 192.168.1.120:5555", "connected to 192.168.1.120:5555", 0),
+            ("devices -l", "192.168.1.120:5555 device", 0),
         ])
         defer { fixture.remove() }
         #expect(try await fixture.bridge.switchToWireless(serial: "USB") == "192.168.1.120:5555")
         #expect(try fixture.commands() == [
-            "-s USB shell ip route", "-s USB tcpip 5555", "connect 192.168.1.120:5555",
+            "-s USB shell ip route", "-s USB tcpip 5555", "connect 192.168.1.120:5555", "devices -l",
         ])
     }
 
@@ -179,13 +180,14 @@ struct ADBBridgeTests {
     @Test func connectNormalizesAddressAndDisconnects() async throws {
         let fixture = try FakeADB(responses: [
             ("connect 192.168.1.10:5555", "already connected to 192.168.1.10:5555", 0),
+            ("devices -l", "192.168.1.10:5555 device", 0),
             ("disconnect 192.168.1.10:5555", "disconnected 192.168.1.10:5555", 0),
         ])
         defer { fixture.remove() }
         let target = try await fixture.bridge.connectWireless(ip: " 192.168.001.010 \n")
         #expect(target == "192.168.1.10:5555")
         #expect(try fixture.bridge.disconnectWireless(serial: target).contains("disconnected"))
-        #expect(try fixture.commands() == ["connect 192.168.1.10:5555", "disconnect 192.168.1.10:5555"])
+        #expect(try fixture.commands() == ["connect 192.168.1.10:5555", "devices -l", "disconnect 192.168.1.10:5555"])
     }
 
     @Test func connectSurfacesOutputAndProcessFailures() async throws {
@@ -202,6 +204,129 @@ struct ADBBridgeTests {
             } catch { Issue.record("Unexpected error: \(error)") }
             #expect(try fixture.commands() == ["connect 1.2.3.4:5555"])
         }
+    }
+
+    @Test func endpointClassificationExcludesMDNS() {
+        #expect(ADBBridge.wirelessEndpoint(serial: "192.168.1.10:5555")?.ip == "192.168.1.10")
+        #expect(ADBBridge.wirelessEndpoint(serial: "adb-phone._adb-tls-connect._tcp") == nil)
+        #expect(ADBBridge.wirelessEndpoint(serial: "USB") == nil)
+        #expect(ADBBridge.wirelessEndpoint(serial: "host.local:5555") == nil)
+    }
+
+    @Test func waitsForExactTargetToBecomeReady() async throws {
+        let fixture = try FakeADB(responses: [
+            ("connect 1.2.3.4:5555", "connected to 1.2.3.4:5555", 0),
+        ], scripts: [("devices -l", """
+        if [ -f "$0.ready" ]; then echo '1.2.3.4:5555 device'; else
+          touch "$0.ready"; echo 'OTHER device'; echo '1.2.3.4:5555 offline'
+        fi
+        """)])
+        defer { fixture.remove() }
+        #expect(try await fixture.bridge.connectWireless(ip: "1.2.3.4") == "1.2.3.4:5555")
+        #expect(try fixture.commands() == ["connect 1.2.3.4:5555", "devices -l", "connect 1.2.3.4:5555", "devices -l"])
+    }
+
+    @Test func unrelatedReadyDeviceNeverCompletesWirelessPreparation() async throws {
+        let fixture = try FakeADB(responses: [
+            ("connect 1.2.3.4:5555", "connected to 1.2.3.4:5555", 0),
+            ("devices -l", "OTHER device\n1.2.3.4:5555 unauthorized", 0),
+        ])
+        defer { fixture.remove() }
+        do {
+            _ = try await fixture.bridge.withOperation(ADBOperation(timeout: 0.8)).connectWireless(ip: "1.2.3.4")
+            Issue.record("Expected wirelessDeviceNotReady")
+        } catch let ADBError.wirelessDeviceNotReady(target) {
+            #expect(target == "1.2.3.4:5555")
+        } catch { Issue.record("Unexpected error: \(error)") }
+        #expect(try fixture.commands() == ["connect 1.2.3.4:5555", "devices -l"])
+    }
+
+    @Test func retriesConnectionWhileTCPIPStarts() async throws {
+        let fixture = try FakeADB(responses: [
+            ("-s USB shell ip route", "default dev wlan0 src 1.2.3.4", 0),
+            ("-s USB tcpip 5555", "restarting", 0),
+            ("devices -l", "1.2.3.4:5555 device", 0),
+        ], scripts: [("connect 1.2.3.4:5555", """
+        if [ -f "$0.ready" ]; then echo 'connected to 1.2.3.4:5555'; else
+          touch "$0.ready"; echo 'failed to connect'; exit 1
+        fi
+        """)])
+        defer { fixture.remove() }
+        #expect(try await fixture.bridge.switchToWireless(serial: "USB") == "1.2.3.4:5555")
+        #expect(try fixture.commands() == [
+            "-s USB shell ip route",
+            "-s USB tcpip 5555",
+            "connect 1.2.3.4:5555",
+            "connect 1.2.3.4:5555",
+            "devices -l",
+        ])
+    }
+
+    @Test func operationDeadlineBoundsHungCommandAndInheritedOutput() throws {
+        let fixture = try FakeADB(responses: [], scripts: [("devices -l", "sleep 2 & wait")])
+        defer { fixture.remove() }
+        let started = ProcessInfo.processInfo.systemUptime
+        do {
+            _ = try fixture.bridge.withOperation(ADBOperation(timeout: 1)).devices()
+            Issue.record("Expected operationTimedOut")
+        } catch ADBError.operationTimedOut {} catch { Issue.record("Unexpected error: \(error)") }
+        #expect(ProcessInfo.processInfo.systemUptime - started < 1.8)
+        #expect(try fixture.commands() == ["devices -l"])
+    }
+
+    @Test func commandExitDoesNotWaitForInheritedOutputDescriptor() throws {
+        let fixture = try FakeADB(responses: [], scripts: [("devices -l", "sleep 2 & echo 'USB device'; exit 0")])
+        defer { fixture.remove() }
+        let started = ProcessInfo.processInfo.systemUptime
+        #expect(try fixture.bridge.devices() == [AdbDevice(serial: "USB", state: "device")])
+        #expect(ProcessInfo.processInfo.systemUptime - started < 1)
+    }
+
+    @Test func cancellationStopsOwnedCommandWithoutKillingDaemon() async throws {
+        let fixture = try FakeADB(responses: [], scripts: [("devices -l", "sleep 2 & wait")])
+        defer { fixture.remove() }
+        let operation = ADBOperation()
+        let bridge = fixture.bridge.withOperation(operation)
+        let task = Task.detached { try bridge.devices() }
+        while try fixture.commands().isEmpty {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        operation.cancel()
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(try fixture.commands() == ["devices -l"])
+    }
+
+    @Test func taskCancellationStopsOwnedCommand() async throws {
+        let fixture = try FakeADB(responses: [], scripts: [("devices -l", "sleep 2 & wait")])
+        defer { fixture.remove() }
+        let bridge = fixture.bridge
+        let task = Task.detached { try bridge.devices() }
+        while try fixture.commands().isEmpty {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        task.cancel()
+        await #expect(throws: CancellationError.self) { try await task.value }
+    }
+
+    @Test func unboundCommandHasTenSecondLimit() throws {
+        let fixture = try FakeADB(responses: [], scripts: [("devices -l", "exec sleep 30")])
+        defer { fixture.remove() }
+        let started = ProcessInfo.processInfo.systemUptime
+        do {
+            _ = try fixture.bridge.devices()
+            Issue.record("Expected commandTimedOut")
+        } catch ADBError.commandTimedOut {} catch { Issue.record("Unexpected error: \(error)") }
+        #expect(ProcessInfo.processInfo.systemUptime - started < 12)
+        #expect(try fixture.commands() == ["devices -l"])
+    }
+
+    @Test func operationCancellationAndDeadline() {
+        let cancelled = ADBOperation()
+        cancelled.cancel()
+        #expect(throws: CancellationError.self) { try cancelled.checkCancellation() }
+        let expired = ADBOperation(timeout: 0)
+        #expect(expired.remaining == 0)
+        #expect(throws: ADBError.self) { try expired.checkCancellation() }
     }
 
     @Test func parseConnectOutputDetectsErrors() {
@@ -221,14 +346,16 @@ private struct FakeADB {
     let directory: URL
     let bridge: ADBBridge
 
-    init(responses: [(String, String, Int32)]) throws {
+    init(responses: [(String, String, Int32)], scripts: [(String, String)] = []) throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent("deskbridge-adb-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let executable = directory.appendingPathComponent("adb")
         let log = directory.appendingPathComponent("commands")
-        let cases = responses.map { arguments, output, status in
+        let cases = (scripts.map { arguments, body in
+            "\(Self.quote(arguments))) \(body);;"
+        } + responses.map { arguments, output, status in
             "\(Self.quote(arguments))) printf '%s\\n' \(Self.quote(output)); exit \(status);;"
-        }.joined(separator: "\n")
+        }).joined(separator: "\n")
         let script = """
         #!/bin/sh
         printf '%s\\n' "$*" >> \(Self.quote(log.path))

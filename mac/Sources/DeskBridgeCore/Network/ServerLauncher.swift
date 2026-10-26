@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import os
 
@@ -40,13 +41,32 @@ public final class LaunchedServer: @unchecked Sendable {
     public func terminate() {
         if process.isRunning {
             process.terminate()
+            let deadline = ProcessInfo.processInfo.systemUptime + 0.25
+            while process.isRunning, ProcessInfo.processInfo.systemUptime < deadline {
+                usleep(10000)
+            }
+            if process.isRunning {
+                kill(process.processIdentifier, SIGKILL)
+            }
+            let killDeadline = ProcessInfo.processInfo.systemUptime + 0.25
+            while process.isRunning, ProcessInfo.processInfo.systemUptime < killDeadline {
+                usleep(10000)
+            }
         }
-        adb.removeForward(serial: serial, port: port)
+        // Startup's operation may already have been cancelled or expired. Cleanup owns a fresh, bounded command.
+        adb.cleanupForward(serial: serial, port: port)
     }
 }
 
 extension ADBBridge {
     static let remoteJar = "/data/local/tmp/deskbridge-server.jar"
+
+    /// Resource cleanup must survive cancellation of the operation which allocated the resource.
+    func cleanupForward(serial: String, port: Int) {
+        if let cleanup = try? ADBBridge(adbPath: adbPath).withOperation(ADBOperation(timeout: 2)) {
+            cleanup.removeForward(serial: serial, port: port)
+        }
+    }
 
     /// Pushes the jar, forwards a random abstract socket and starts the server.
     /// The server may need a moment to listen: callers retry the connection.
@@ -62,7 +82,7 @@ extension ADBBridge {
             let (process, stderr) = try spawnShell(serial: serial, command: command)
             return LaunchedServer(serial: serial, port: port, token: token, adb: self, process: process, stderr: stderr)
         } catch {
-            removeForward(serial: serial, port: port)
+            cleanupForward(serial: serial, port: port)
             throw error
         }
     }

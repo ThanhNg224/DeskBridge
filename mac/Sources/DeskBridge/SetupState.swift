@@ -7,6 +7,7 @@ struct SetupState: Equatable {
         /// Several phones are ready and none is chosen yet.
         case choose(Int)
         case notAuthorized(String)
+        case waiting(String)
         case ready(String)
     }
 

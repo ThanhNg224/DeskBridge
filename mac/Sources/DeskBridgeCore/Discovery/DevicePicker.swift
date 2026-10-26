@@ -8,12 +8,14 @@ public enum DevicePick: Equatable, Sendable {
 }
 
 public enum DevicePicker {
-    /// The preferred device if it is ready, the only ready device, or a request to choose between several.
+    /// An explicit selection is pinned even when offline. Only the initial selection may be automatic.
     /// With nothing ready, the first attached device is returned so the UI can say what is wrong with it.
     public static func pick(from devices: [AdbDevice], preferredSerial: String? = nil) -> DevicePick {
         let ready = devices.filter(\.isReady)
-        if let preferredSerial, let preferred = ready.first(where: { $0.serial == preferredSerial }) {
-            return .ready(preferred)
+        if let preferredSerial {
+            let preferred = devices.first { $0.serial == preferredSerial }
+                ?? AdbDevice(serial: preferredSerial, state: "offline")
+            return preferred.isReady ? .ready(preferred) : .notReady(preferred)
         }
         switch ready.count {
         case 0: break

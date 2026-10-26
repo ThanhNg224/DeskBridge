@@ -24,7 +24,13 @@ struct DevicePickerTests {
 
     @Test func thePreferredDeviceWinsWhenReady() {
         #expect(DevicePicker.pick(from: [ready, second], preferredSerial: "B") == .ready(second))
-        #expect(DevicePicker.pick(from: [ready, second], preferredSerial: "gone") == .choose([ready, second]))
-        #expect(DevicePicker.pick(from: [ready], preferredSerial: "gone") == .ready(ready))
+        let missing = AdbDevice(serial: "gone", state: "offline")
+        #expect(DevicePicker.pick(from: [ready, second], preferredSerial: "gone") == .notReady(missing))
+        #expect(DevicePicker.pick(from: [ready], preferredSerial: "gone") == .notReady(missing))
+        #expect(DevicePicker.pick(from: [], preferredSerial: "gone") == .notReady(missing))
+    }
+
+    @Test func unauthorizedSelectionDoesNotFallBackToAnotherPhone() {
+        #expect(DevicePicker.pick(from: [ready, unauthorized], preferredSerial: "C") == .notReady(unauthorized))
     }
 }

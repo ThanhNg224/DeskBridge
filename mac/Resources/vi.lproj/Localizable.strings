@@ -8,6 +8,11 @@
 "The Android server file is missing. Run scripts/build_server.sh" = "Thiếu tệp máy chủ Android. Hãy chạy scripts/build_server.sh";
 "Connecting to %@…" = "Đang kết nối với %@…";
 "Connected to %@" = "Đã kết nối với %@";
+"Waiting for %@" = "Đang chờ %@";
+"Reconnecting to %@…" = "Đang kết nối lại với %@…";
+"Disconnected from %@" = "Đã ngắt kết nối với %@";
+"Preparing connection…" = "Đang chuẩn bị kết nối…";
+"Connection cancelled" = "Đã hủy kết nối";
 "Controlling %@. Press ⌃⌥⌘⎋ to give the mouse back to the Mac." = "Đang điều khiển %@. Nhấn ⌃⌥⌘⎋ để trả chuột về Mac.";
 "Allow this Mac on the phone (%@)" = "Hãy cho phép máy Mac này trên điện thoại (%@)";
 "The phone refused input. On Xiaomi, turn on “USB debugging (Security settings)”." = "Điện thoại từ chối nhận thao tác. Trên Xiaomi, hãy bật “Gỡ lỗi USB (Cài đặt bảo mật)”.";
@@ -62,6 +67,7 @@
 "Connected phone" = "Điện thoại đang kết nối";
 "Use this phone" = "Dùng điện thoại này";
 "Choose…" = "Chọn…";
+"Disconnected" = "Đã ngắt kết nối";
 "%lld phones found" = "Tìm thấy %lld điện thoại";
 "Pick one in the Phone section below." = "Hãy chọn một máy ở mục Điện thoại bên dưới.";
 "Switch to Wi-Fi" = "Chuyển sang Wi-Fi";
@@ -73,6 +79,17 @@
 "Connecting…" = "Đang kết nối…";
 "Switching to Wi-Fi…" = "Đang chuyển sang Wi-Fi…";
 "Disconnecting…" = "Đang ngắt kết nối…";
+"Reading Wi-Fi address…" = "Đang đọc địa chỉ Wi-Fi…";
+"Preparing Wi-Fi…" = "Đang chuẩn bị Wi-Fi…";
+"Connecting to ADB…" = "Đang kết nối ADB…";
+"Waiting for device…" = "Đang chờ thiết bị…";
+"Starting control session…" = "Đang khởi động phiên điều khiển…";
+"Retry now" = "Thử lại ngay";
+"Cancel" = "Hủy";
+"The control session could not start. Check the phone, then retry." = "Không thể khởi động phiên điều khiển. Hãy kiểm tra điện thoại rồi thử lại.";
+"The connection timed out. Check the phone and Wi-Fi, then retry." = "Kết nối quá thời gian chờ. Hãy kiểm tra điện thoại và Wi-Fi rồi thử lại.";
+"The Wi-Fi device is not reachable. Check its address and network, then retry." = "Không thể truy cập thiết bị Wi-Fi. Hãy kiểm tra địa chỉ và mạng rồi thử lại.";
+"Reconnect the selected device or choose another one." = "Kết nối lại thiết bị đã chọn hoặc chọn thiết bị khác.";
 "Use the same Wi-Fi network. First use Switch to Wi-Fi over USB, or pair the phone outside DeskBridge." = "Dùng cùng mạng Wi-Fi. Trước tiên, chọn Chuyển sang Wi-Fi khi cắm USB, hoặc ghép đôi điện thoại bên ngoài DeskBridge.";
 "Enter a valid IPv4 address, such as 192.168.1.75." = "Nhập địa chỉ IPv4 hợp lệ, ví dụ 192.168.1.75.";
 "Enter a port between 1 and 65535." = "Nhập cổng từ 1 đến 65535.";
