@@ -283,7 +283,7 @@ struct ADBBridgeTests {
     }
 
     @Test func cancellationStopsOwnedCommandWithoutKillingDaemon() async throws {
-        let fixture = try FakeADB(responses: [], scripts: [("devices -l", "sleep 2 & wait")])
+        let fixture = try FakeADB(responses: [], scripts: [("devices -l", "exec sleep 30")])
         defer { fixture.remove() }
         let operation = ADBOperation()
         let bridge = fixture.bridge.withOperation(operation)
@@ -297,7 +297,7 @@ struct ADBBridgeTests {
     }
 
     @Test func taskCancellationStopsOwnedCommand() async throws {
-        let fixture = try FakeADB(responses: [], scripts: [("devices -l", "sleep 2 & wait")])
+        let fixture = try FakeADB(responses: [], scripts: [("devices -l", "exec sleep 30")])
         defer { fixture.remove() }
         let bridge = fixture.bridge
         let task = Task.detached { try bridge.devices() }
