@@ -76,9 +76,12 @@ public class AdbTests
         Assert.Empty(runner.Calls);
 
         runner.Hang = true;
-        using var caller = new CancellationTokenSource(TimeSpan.FromMilliseconds(30));
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => adb.ListDevicesAsync(caller.Token));
+        var callerAdb = new AdbClient("adb", runner);
+        using var caller = new CancellationTokenSource();
+        var pending = callerAdb.ListDevicesAsync(caller.Token);
         Assert.Single(runner.Calls);
+        caller.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
     }
     internal sealed class FakeRunner : IProcessRunner
     {
