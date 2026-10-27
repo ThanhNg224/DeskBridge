@@ -38,7 +38,10 @@ internal sealed class MainWindow : Window
         DockPanel.SetDock(header, Dock.Top); root.Children.Add(header);
         root.Children.Add(new ScrollViewer { Content = fields, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
         Content = root;
-        device.SelectionChanged += (_, _) => { if (!loading) model.SelectedSerial = device.SelectedValue as string; };
+        device.SelectionChanged += async (_, _) =>
+        {
+            if (!loading) await model.SelectDeviceAsync(device.SelectedValue as string);
+        };
         Closing += (_, e) => { if (!((App)Application.Current).Exiting) { e.Cancel = true; Hide(); } };
         model.Changed += Render;
         BuildFields(); LoadSettings(); Render();
@@ -137,18 +140,22 @@ internal sealed class MainWindow : Window
     }
     private void Render()
     {
-        string key = string.Join('\n', model.Devices.Select(d => d.Serial + d.State + d.Description));
+        string key = model.SelectedSerial + "\n" + string.Join('\n', model.Devices.Select(d => d.Serial + d.State + d.Description));
+        loading = true;
         if (key != devicesKey || device.ItemsSource is null)
         {
-            loading = true;
-            device.ItemsSource = model.Devices.Select(d => new DeviceChoice(d.Serial, $"{d.Description} — {d.Serial} ({d.State})")).ToArray();
-            device.SelectedValue = model.SelectedSerial;
-            devicesKey = key; loading = false;
+            var choices = model.Devices.Select(d => new DeviceChoice(d.Serial, $"{d.Description} — {d.Serial} ({d.State})")).ToList();
+            if (model.SelectedSerial is { } serial && choices.All(d => d.Serial != serial))
+                choices.Add(new(serial, $"{serial} — {T("unavailable", "chưa sẵn sàng")}"));
+            device.ItemsSource = choices;
+            devicesKey = key;
         }
+        device.SelectedValue = model.SelectedSerial;
+        loading = false;
         status.Text = model.Settings.Language == "vi" ? model.Status switch
         {
             "Starting" => "Đang khởi động", "Disabled" => "Đã tắt", "No authorized device" => "Chưa có thiết bị được cấp quyền",
-            "Ready" => "Sẵn sàng", "Connecting" => "Đang kết nối", "Connected" => "Đã kết nối",
+            "Ready" => "Sẵn sàng", "Selected device unavailable" => "Thiết bị đã chọn chưa sẵn sàng", "Connecting" => "Đang kết nối", "Connected" => "Đã kết nối",
             "Controlling Android" => "Đang điều khiển Android", "Disconnected" => "Đã ngắt kết nối", "Error" => "Có lỗi", _ => model.Status
         } : model.Status;
         error.Text = model.Error ?? "";

@@ -7,13 +7,17 @@ namespace DeskBridge.Windows;
 
 internal sealed class AppModel : IAsyncDisposable
 {
-    private readonly Dispatcher dispatcher = Application.Current.Dispatcher;
-    private readonly InputController input = new();
+    private readonly Dispatcher dispatcher;
+    private readonly IInputController input;
+    private readonly Func<string, AdbClient> makeAdb;
+    private readonly Func<AdbClient, DeviceSession> makeSession;
+    private readonly string serverJar;
     private readonly InputMailbox mailbox = new();
     private readonly CancellationTokenSource lifetime = new();
     private readonly DispatcherTimer discovery = new() { Interval = TimeSpan.FromSeconds(2) };
     private readonly DispatcherTimer desktopWatch = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private readonly Task inputPump;
+    private readonly ConnectionOperations operations;
     private DeviceSession? session;
     private ControlWindow? shield;
     private DisplayArea? returnDisplay;
@@ -22,23 +26,33 @@ internal sealed class AppModel : IAsyncDisposable
     private int endingGeneration = -1;
     private int failures;
     private DateTimeOffset nextAttempt;
-    private bool busy, disposing;
+    private bool disposing;
+    private bool entering;
     private Task releaseVisit = Task.CompletedTask;
+    private Task enterVisit = Task.CompletedTask;
     public Settings Settings { get; private set; }
     public IReadOnlyList<AdbDevice> Devices { get; private set; } = [];
-    public string? SelectedSerial { get; set; }
+    public string? SelectedSerial { get; private set; }
     public string Status { get; private set; } = "Starting";
     public string? Error { get; private set; }
-    public bool Connected => session?.Connected == true;
+    public bool Connected => session?.Connected == true && sessionSerial == SelectedSerial;
+    private string? sessionSerial;
     public bool Remote => input.Remote;
     public event Action? Changed;
-    public AppModel(Settings settings)
+    public AppModel(Settings settings) : this(settings, new InputController(), path => new AdbClient(path), adb => new DeviceSession(adb),
+        Environment.GetEnvironmentVariable("DESKBRIDGE_SERVER_JAR") ?? Path.Combine(AppContext.BaseDirectory, "deskbridge-server.jar"), Application.Current.Dispatcher) { }
+
+    internal AppModel(Settings settings, IInputController input, Func<string, AdbClient> makeAdb,
+        Func<AdbClient, DeviceSession> makeSession, string serverJar, Dispatcher dispatcher)
     {
+        this.input = input; this.makeAdb = makeAdb; this.makeSession = makeSession;
+        this.serverJar = serverJar; this.dispatcher = dispatcher;
+        operations = new(lifetime.Token);
         Settings = settings; SelectedSerial = settings.PreferredSerial;
         input.Crossing += (display, point) =>
         {
             if (!Connected) { input.CancelCrossing(); return; }
-            dispatcher.BeginInvoke(() => EnterAsync(display, point));
+            dispatcher.BeginInvoke(() => { enterVisit = EnterAsync(display, point); });
         };
         input.Command += Queue;
         input.ReleaseRequested += () => dispatcher.BeginInvoke(ReturnLocal);
@@ -68,47 +82,62 @@ internal sealed class AppModel : IAsyncDisposable
         Error = error.Message; Status = "Error";
         AppLog.Write("operation-failed", error); Notify();
     }
-    public async Task RefreshAsync()
+    private async Task RunConnectionAsync(Func<CancellationToken, Task> action, bool supersede = true)
     {
-        if (busy || disposing) return;
-        busy = true;
+        if (disposing) return;
         try
         {
-            if (!Connected)
-            {
-                Devices = await new AdbClient(Settings.AdbPath).ListDevicesAsync(lifetime.Token);
-                var ready = Devices.Where(d => d.State == "device").ToArray();
-                if (SelectedSerial is null && ready.Length == 1) SelectedSerial = ready[0].Serial;
-                Status = !Settings.Enabled ? "Disabled" : ready.Length == 0 ? "No authorized device" : "Ready";
-                if (Settings.Enabled && ready.Any(d => d.Serial == SelectedSerial) && DateTimeOffset.UtcNow >= nextAttempt)
-                    await ConnectCoreAsync();
-            }
+            await operations.RunAsync(action, supersede);
         }
-        catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
         catch (Exception e)
         {
             nextAttempt = DateTimeOffset.UtcNow.AddSeconds(Math.Min(30, 2 << Math.Min(failures++, 4)));
             Report(e);
         }
-        finally { busy = false; Notify(); }
+        finally { Notify(); }
     }
-    public async Task ConnectAsync()
+    public Task RefreshAsync() => RunConnectionAsync(RefreshCoreAsync, supersede: false);
+    private async Task RefreshCoreAsync(CancellationToken ct)
     {
-        if (busy || disposing || Connected) return;
-        busy = true;
-        try { await ConnectCoreAsync(); }
-        catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
-        catch (Exception e) { Report(e); }
-        finally { busy = false; Notify(); }
+        var devices = await makeAdb(Settings.AdbPath).ListDevicesAsync(ct);
+        ct.ThrowIfCancellationRequested();
+        Devices = devices;
+        var ready = Devices.Where(d => d.State == "device").ToArray();
+        if (SelectedSerial is null && ready.Length == 1) SelectedSerial = ready[0].Serial;
+        if (!Connected)
+        {
+            Status = !Settings.Enabled ? "Disabled" : SelectedSerial is not null && !ready.Any(d => d.Serial == SelectedSerial)
+                ? "Selected device unavailable" : ready.Length == 0 ? "No authorized device" : "Ready";
+            if (Settings.Enabled && ready.Any(d => d.Serial == SelectedSerial) && DateTimeOffset.UtcNow >= nextAttempt)
+            {
+                await DisconnectCoreAsync();
+                await ConnectCoreAsync(ct);
+            }
+        }
     }
-    private async Task ConnectCoreAsync()
+    public Task SelectDeviceAsync(string? serial)
     {
+        if (serial == SelectedSerial) return Task.CompletedTask;
+        SelectedSerial = serial; nextAttempt = DateTimeOffset.MinValue;
+        ReturnLocal(); Notify();
+        return RunConnectionAsync(async ct => { await DisconnectCoreAsync(); ct.ThrowIfCancellationRequested(); await RefreshCoreAsync(ct); });
+    }
+    public Task ConnectAsync() => RunConnectionAsync(async ct =>
+    {
+        if (Connected) return;
+        nextAttempt = DateTimeOffset.MinValue;
+        await DisconnectCoreAsync(); ct.ThrowIfCancellationRequested();
+        await ConnectCoreAsync(ct);
+    });
+    private async Task ConnectCoreAsync(CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
         if (!Settings.Enabled) throw new InvalidOperationException("Enable DeskBridge first.");
         if (string.IsNullOrWhiteSpace(SelectedSerial)) throw new InvalidOperationException("Select an authorized device.");
-        var jar = Environment.GetEnvironmentVariable("DESKBRIDGE_SERVER_JAR") ?? Path.Combine(AppContext.BaseDirectory, "deskbridge-server.jar");
-        if (!File.Exists(jar)) throw new FileNotFoundException("deskbridge-server.jar is missing. Use the packaged build or set DESKBRIDGE_SERVER_JAR.");
-        var active = new DeviceSession(new AdbClient(Settings.AdbPath));
-        session = active;
+        if (!File.Exists(serverJar)) throw new FileNotFoundException("deskbridge-server.jar is missing. Use the packaged build or set DESKBRIDGE_SERVER_JAR.");
+        string serial = SelectedSerial;
+        var active = makeSession(makeAdb(Settings.AdbPath));
+        session = active; sessionSerial = serial;
         active.ConnectedChanged += () => { if (session == active && !active.Connected) input.Release(); };
         active.Exited += along =>
         {
@@ -117,7 +146,7 @@ internal sealed class AppModel : IAsyncDisposable
         };
         active.ClipboardReceived += text => dispatcher.BeginInvoke(() =>
         {
-            if (session != active || !Settings.ShareClipboard) return;
+            if (session != active || sessionSerial != SelectedSerial || !Settings.ShareClipboard) return;
             try { System.Windows.Clipboard.SetText(text); }
             catch (ExternalException e) { Report(e); }
         });
@@ -130,28 +159,32 @@ internal sealed class AppModel : IAsyncDisposable
         {
             Status = "Connecting"; Error = null; Notify();
             var watch = Stopwatch.StartNew();
-            await active.StartAsync(SelectedSerial, jar, lifetime.Token);
+            await active.StartAsync(serial, serverJar, ct);
+            ct.ThrowIfCancellationRequested();
+            if (session != active || SelectedSerial != serial) throw new OperationCanceledException(ct);
             AppLog.Write($"session-connected duration-ms={watch.ElapsedMilliseconds}");
             Status = "Connected"; failures = 0; nextAttempt = DateTimeOffset.MinValue;
         }
         catch
         {
-            if (session == active) session = null;
+            if (session == active) { session = null; sessionSerial = null; }
             await active.DisposeAsync(); throw;
         }
     }
 
-    private async void EnterAsync(DisplayArea display, Native.Point point)
+    private async Task EnterAsync(DisplayArea display, Native.Point point)
     {
         var active = session;
-        if (disposing || busy || active?.Connected != true || active.Remote || !Settings.Enabled)
+        if (disposing || operations.Busy || entering || active?.Connected != true || active.Remote || !Settings.Enabled)
         { input.CancelCrossing(); return; }
+        entering = true;
+        int visit = Interlocked.Increment(ref generation);
         try
         {
             await releaseVisit;
-            if (session != active || !active.Connected) { input.CancelCrossing(); return; }
+            if (visit != Volatile.Read(ref generation) || session != active || !Connected || !Settings.Enabled)
+            { input.CancelCrossing(); return; }
             previousForeground = Native.GetForegroundWindow(); returnDisplay = display;
-            Interlocked.Increment(ref generation);
             shield = new ControlWindow(Settings.ComposedText, Queue);
             shield.FocusLost += ReturnLocal;
             shield.Place(display.Bounds);
@@ -159,7 +192,13 @@ internal sealed class AppModel : IAsyncDisposable
             if (Settings.ShareClipboard)
                 clipboard = System.Windows.Clipboard.ContainsText() ? System.Windows.Clipboard.GetText() : "";
             await active.EnterAsync(DesktopGeometry.Opposite(Settings.Edge), DesktopGeometry.Along(display.Bounds, point, Settings.Edge), clipboard, lifetime.Token);
-            if (session != active || !active.Remote || disposing) { RestoreLocal(); return; }
+            if (visit != Volatile.Read(ref generation) || session != active || !active.Remote || disposing || shield is null)
+            {
+                // ReturnLocal may have run while ENTER was awaiting the socket. Balance
+                // that ENTER before another visit/session can take over.
+                if (active.Remote) await active.LeaveAsync();
+                return;
+            }
             var park = new Native.Point(display.Bounds.Left + display.Bounds.Width / 2, display.Bounds.Top + display.Bounds.Height / 2);
             Native.SetCursorPos(park.X, park.Y);
             var clip = new Native.Rect { Left = park.X, Top = park.Y, Right = park.X + 1, Bottom = park.Y + 1 };
@@ -168,10 +207,15 @@ internal sealed class AppModel : IAsyncDisposable
             Status = "Controlling Android"; AppLog.Write("remote-enter"); Notify();
         }
         catch (Exception e) { ReturnLocal(); Report(e); }
+        finally { entering = false; input.CancelCrossing(); }
     }
     public void ReturnLocal()
     {
-        if (Volatile.Read(ref endingGeneration) >= 0) { input.Release(); return; }
+        if (Volatile.Read(ref endingGeneration) >= 0)
+        {
+            // Also invalidate an entry that is waiting for the previous LEAVE.
+            Interlocked.Increment(ref generation); input.Release(); return;
+        }
         var active = session;
         var pending = shield?.TakePendingText();
         int ending = Volatile.Read(ref generation);
@@ -219,7 +263,7 @@ internal sealed class AppModel : IAsyncDisposable
                     bool finishingText = command.Generation == Volatile.Read(ref endingGeneration)
                         && command.Kind is CommandKind.Text or CommandKind.Leave;
                     if (command.Generation != Volatile.Read(ref generation) && !finishingText) continue;
-                    if (command.Kind is CommandKind.Move or CommandKind.Button or CommandKind.Scroll)
+                    if (Settings.ComposedText && command.Kind is CommandKind.Move or CommandKind.Button or CommandKind.Scroll)
                     {
                         // Finish an uncommitted word before pointer movement can cause Android EXIT.
                         var text = await dispatcher.InvokeAsync(() =>
@@ -254,43 +298,76 @@ internal sealed class AppModel : IAsyncDisposable
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
     }
 
-    public async Task DisconnectAsync()
+    private async Task DisconnectCoreAsync()
     {
         ReturnLocal();
+        await enterVisit;
         await releaseVisit;
-        var active = session; session = null;
+        var active = session; session = null; sessionSerial = null;
         if (active is not null) await active.DisposeAsync();
-        nextAttempt = DateTimeOffset.MaxValue; Status = "Disconnected"; Notify();
+        Status = "Disconnected";
     }
-    public async Task ApplyAsync(Settings value)
+    public Task DisconnectAsync()
+    {
+        // Release local input synchronously, even when an ADB command is still stopping.
+        ReturnLocal(); nextAttempt = DateTimeOffset.MaxValue;
+        return RunConnectionAsync(_ => DisconnectCoreAsync());
+    }
+    public Task ApplyAsync(Settings value)
     {
         value.Validate();
-        await DisconnectAsync();
-        SettingsStore.SetStartup(value.StartWithWindows); SettingsStore.Save(value);
-        Settings = value; SelectedSerial = value.PreferredSerial;
-        input.Configure(value, DesktopGeometry.Read());
-        nextAttempt = DateTimeOffset.MinValue;
-        await RefreshAsync();
+        ReturnLocal();
+        return RunConnectionAsync(async ct =>
+        {
+            await DisconnectCoreAsync(); ct.ThrowIfCancellationRequested();
+            SettingsStore.SetStartup(value.StartWithWindows); SettingsStore.Save(value);
+            Settings = value; SelectedSerial = value.PreferredSerial;
+            input.Configure(value, DesktopGeometry.Read());
+            nextAttempt = DateTimeOffset.MinValue;
+            await RefreshCoreAsync(ct);
+        });
     }
-    public async Task ConnectWifiAsync(string host, int port)
+    public Task ConnectWifiAsync(string host, int port)
     {
-        await DisconnectAsync();
-        SelectedSerial = await new AdbClient(Settings.AdbPath).ConnectWifiAsync(host, port, lifetime.Token);
-        await ConnectAsync();
+        // Validate before changing a working connection.
+        AdbClient.WifiTarget(host, port);
+        ReturnLocal();
+        return RunConnectionAsync(async ct =>
+        {
+            await DisconnectCoreAsync(); ct.ThrowIfCancellationRequested();
+            var serial = await makeAdb(Settings.AdbPath).ConnectWifiAsync(host, port, ct);
+            ct.ThrowIfCancellationRequested(); SelectedSerial = serial;
+            nextAttempt = DateTimeOffset.MinValue;
+            await RefreshCoreAsync(ct);
+        });
     }
-    public async Task SwitchWifiAsync()
+    public Task SwitchWifiAsync()
     {
         var serial = SelectedSerial ?? throw new InvalidOperationException("Select a USB device.");
-        await DisconnectAsync();
-        SelectedSerial = await new AdbClient(Settings.AdbPath).SwitchToWifiAsync(serial, lifetime.Token);
-        await ConnectAsync();
+        if (AdbClient.IsWirelessSerial(serial)) throw new InvalidOperationException("Select a USB device.");
+        ReturnLocal();
+        return RunConnectionAsync(async ct =>
+        {
+            await DisconnectCoreAsync(); ct.ThrowIfCancellationRequested();
+            var endpoint = await makeAdb(Settings.AdbPath).SwitchToWifiAsync(serial, ct);
+            ct.ThrowIfCancellationRequested(); SelectedSerial = endpoint;
+            nextAttempt = DateTimeOffset.MinValue;
+            await RefreshCoreAsync(ct);
+        });
     }
-    public async Task DisconnectWifiAsync()
+    public Task DisconnectWifiAsync()
     {
         var serial = SelectedSerial ?? throw new InvalidOperationException("Select a Wi-Fi device.");
-        if (!serial.Contains(':')) throw new InvalidOperationException("The selected device is not a Wi-Fi endpoint.");
-        await DisconnectAsync();
-        await new AdbClient(Settings.AdbPath).DisconnectWifiAsync(serial, lifetime.Token);
+        if (!AdbClient.IsWirelessSerial(serial)) throw new InvalidOperationException("The selected device is not a Wi-Fi endpoint.");
+        ReturnLocal(); nextAttempt = DateTimeOffset.MaxValue;
+        return RunConnectionAsync(async ct =>
+        {
+            await DisconnectCoreAsync(); ct.ThrowIfCancellationRequested();
+            await makeAdb(Settings.AdbPath).DisconnectWifiAsync(serial, ct);
+            ct.ThrowIfCancellationRequested();
+            var devices = await makeAdb(Settings.AdbPath).ListDevicesAsync(ct);
+            ct.ThrowIfCancellationRequested(); Devices = devices;
+        });
     }
     private void CheckDesktop()
     {
@@ -312,9 +389,16 @@ internal sealed class AppModel : IAsyncDisposable
         discovery.Stop(); desktopWatch.Stop();
         Microsoft.Win32.SystemEvents.SessionSwitch -= OnSessionSwitch;
         Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerChange;
-        RestoreLocal(); disposing = true; lifetime.Cancel();
+        ReturnLocal(); disposing = true;
+        operations.Cancel();
+        try { await operations.Completion; } catch { /* The request's caller reports failures. */ }
+        await enterVisit;
+        // Keep the input pump alive until any ordered TEXT/LEAVE has finished.
+        // DisconnectCoreAsync may itself be waiting for this completion.
+        await releaseVisit;
         var active = session; session = null;
         if (active is not null) await active.DisposeAsync();
+        lifetime.Cancel();
         input.Dispose();
         await inputPump;
         mailbox.Dispose(); lifetime.Dispose();

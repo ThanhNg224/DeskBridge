@@ -6,6 +6,16 @@ Local checks on 2026-10-16 (macOS): 43 core tests and 32 existing Java tests pas
 
 The Windows host targets Windows 11 x64. The inherited `mac/` snapshot on this branch is not the supported Mac source; use `main` for macOS changes. The Android protocol v1 is a shared compatibility boundary, so shared server or protocol fixes must be ported selectively and tested on both branches.
 
+## Pre-acceptance changes — 2026-10-27
+
+The Windows host now pins the selected device across reconnects and serializes connection, Wi-Fi and settings operations. A newer user request cancels older work and waits for its cleanup. Late results cannot replace the newer selection. Manual disconnect pauses automatic reconnect, and an unavailable selected device stays visible in the picker. ADB commands have an 8-second deadline with a separate bounded process-exit wait on cancellation. Wireless mDNS endpoints use the same classification for disconnect and USB-to-Wi-Fi validation.
+
+The Raw Input thread reuses its mouse buffer. Direct-key pointer packets no longer visit the WPF dispatcher just to check for composed text. These changes remove allocations and a dispatcher hop from those paths; CPU, memory and end-to-end latency improvements have not been measured on Windows. The existing dedicated hook thread and `WM_INPUT` default processing follow Microsoft's [hook guidance](https://learn.microsoft.com/en-us/windows/win32/winmsg/lowlevelmouseproc) and [cleanup requirements](https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-input).
+
+Returning local control invalidates a pending entry; if `ENTER` completes late, it is balanced with `LEAVE` before another visit. Shutdown keeps the input pump alive until ordered text/leave processing and connection teardown finish. New regression coverage includes operation cancellation/cleanup order, rapid selection changes, late Wi-Fi results, unavailable selection, shutdown during disconnect, command timeouts and local process termination. Windows UI orchestration tests use fake input and ADB; they do not install global hooks or connect to a phone.
+
+Local verification on macOS: 55 core tests passed, locked restore succeeded, and the complete solution (including the new Windows orchestration tests) cross-built with zero warnings/errors. The GitHub Actions check on the delivery commit records the Windows test and package results. The mandatory physical matrix remains open.
+
 ## Remote CI evidence
 
 Successful [GitHub Actions run](https://github.com/ThanhNg224/DeskBridge/actions/runs/38875077284) on 2026-10-16, source [`a20a9081809971013deff97bd818b81f345c3f29`](https://github.com/ThanhNg224/DeskBridge/commit/a20a9081809971013deff97bd818b81f345c3f29), on the permanent `windows` branch. The [uploaded artifact](https://github.com/ThanhNg224/DeskBridge/actions/runs/38875077284/artifacts/12035440464) is `DeskBridge-windows-x64-a20a9081809971013deff97bd818b81f345c3f29` and contains the ZIP.
@@ -55,6 +65,7 @@ Record PASS/FAIL, evidence and defect issue for each unchecked row. Use a normal
 - [ ] Extract the complete ZIP, launch without .NET/admin, and repeat from a path containing spaces and Vietnamese characters.
 - [ ] Missing ADB, custom adb.exe, unauthorized/offline devices, no device, multiple devices and saved preferred device produce correct setup states.
 - [ ] USB connect; switch to Wi-Fi; unplug USB; manual paired connection; network loss/reconnect; disconnect only the selected endpoint.
+- [ ] Select A→B and A→B→A while connecting and while remote. Only the final selected phone receives input; an offline selection does not fall back to another phone. Reconnect the selected phone, cancel a pending Wi-Fi operation with a newer selection, and confirm manual disconnect stays disconnected. Include paired mDNS endpoints.
 - [ ] Enter and return across all four edges; click, drag, wheel, horizontal scroll and right-click Back/secondary mode. No input leaks into a PC application while remote.
 - [ ] Secondary monitor left/right/portrait, negative coordinates, 100/150/200% DPI, primary-monitor changes and unplugging a monitor. Internal edges do not enter Android.
 - [ ] Ctrl+C/V/A, arrows/Home/End, function keys, key repeat and modifiers held across handoff. No stuck key/button after return.
@@ -63,6 +74,7 @@ Record PASS/FAIL, evidence and defect issue for each unchecked row. Use a normal
 - [ ] Composed mode: pending word followed by mouse movement; committed words followed by pending text and immediate emergency return; rapid exit/re-entry preserves ordering.
 - [ ] Clipboard both directions, Unicode/empty text, unchanged clipboard, sharing disabled, non-text local clipboard and a temporarily busy clipboard. No automatic image/file replacement on Windows.
 - [ ] Emergency shortcut, quit, cable removal, server exit, transport stall, lock/unlock, UAC, sleep/wake and focus loss all restore local control.
+- [ ] Return local while entry is still pending, then immediately re-enter; no late capture or stale input reaches Android. Quit during disconnect or a stalled ADB command; input is local immediately and teardown finishes without hanging.
 - [ ] Tray open/quit/toggle, English/Vietnamese labels, persisted settings, optional startup and launching a second instance.
 - [ ] Task Manager, Alt+Tab and Windows key behavior are recorded. Secure desktop behavior stays within Windows boundaries.
 

@@ -21,15 +21,40 @@ public sealed class ProcessRunner : IProcessRunner
     }
     public async Task<ProcessResult> RunAsync(string executable, IReadOnlyList<string> arguments, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         using var process = new Process { StartInfo = Info(executable, arguments) };
         process.Start();
-        using var registration = cancellationToken.Register(() => { try { if (!process.HasExited) process.Kill(true); } catch (InvalidOperationException) { } });
+        using var registration = cancellationToken.Register(() =>
+        {
+            try { if (!process.HasExited) process.Kill(true); }
+            catch (InvalidOperationException) { }
+            catch (System.ComponentModel.Win32Exception) { }
+            catch (AggregateException) { /* A descendant may already be exiting. */ }
+        });
         var output = process.StandardOutput.ReadToEndAsync(cancellationToken);
         var error = process.StandardError.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            await Task.WhenAny(process.WaitForExitAsync(), Task.Delay(TimeSpan.FromSeconds(5))).ConfigureAwait(false);
+            await ObserveDrainAsync(output).ConfigureAwait(false);
+            await ObserveDrainAsync(error).ConfigureAwait(false);
+            throw;
+        }
         // Never propagate arbitrary adb/server output: it can contain session credentials.
         await error.ConfigureAwait(false);
         return new(process.ExitCode, await output.ConfigureAwait(false));
+    }
+
+    private static async Task ObserveDrainAsync(Task<string> drain)
+    {
+        try { await drain.ConfigureAwait(false); }
+        catch (OperationCanceledException) { }
+        catch (IOException) { }
+        catch (ObjectDisposedException) { }
     }
     public IRunningProcess Start(string executable, IReadOnlyList<string> arguments)
     {
@@ -50,13 +75,26 @@ public sealed class ProcessRunner : IProcessRunner
         }
     }
 }
-public sealed class AdbClient(string executable, IProcessRunner runner)
+public sealed class AdbClient(string executable, IProcessRunner runner, TimeSpan? commandTimeout = null)
 {
+    private readonly TimeSpan commandTimeout = commandTimeout ?? TimeSpan.FromSeconds(8);
     public AdbClient(string executable) : this(executable, new ProcessRunner()) { }
     private const string RemoteJar = "/data/local/tmp/deskbridge-server.jar";
     internal async Task<string> RunAsync(CancellationToken ct, params string[] arguments)
     {
-        var result = await runner.RunAsync(executable, arguments, ct).ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
+        using var timeout = new CancellationTokenSource(commandTimeout);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
+        ProcessResult result;
+        try
+        {
+            result = await runner.RunAsync(executable, arguments, linked.Token).ConfigureAwait(false);
+            linked.Token.ThrowIfCancellationRequested();
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested && timeout.IsCancellationRequested)
+        {
+            throw new TimeoutException("ADB command timed out.");
+        }
         if (result.ExitCode != 0) throw new IOException("ADB command failed. Check the device connection and authorization.");
         return result.Output;
     }
@@ -92,9 +130,12 @@ public sealed class AdbClient(string executable, IProcessRunner runner)
     }
     public async Task DisconnectWifiAsync(string serial, CancellationToken cancellationToken = default)
     {
-        if (!serial.Contains(':') && !serial.EndsWith("._adb-tls-connect._tcp", StringComparison.Ordinal) && !serial.EndsWith("._adb._tcp", StringComparison.Ordinal)) throw new ArgumentException("Select a wireless device.", nameof(serial));
+        if (!IsWirelessSerial(serial)) throw new ArgumentException("Select a wireless device.", nameof(serial));
         await RunAsync(cancellationToken, "disconnect", serial).ConfigureAwait(false);
     }
+    public static bool IsWirelessSerial(string serial) => serial.Contains(':') ||
+        serial.TrimEnd('.').EndsWith("_adb-tls-connect._tcp", StringComparison.Ordinal) ||
+        serial.TrimEnd('.').EndsWith("_adb._tcp", StringComparison.Ordinal);
     public static string? ParseWifiAddress(string output)
     {
         foreach (var line in output.Split('\n'))
@@ -109,7 +150,7 @@ public sealed class AdbClient(string executable, IProcessRunner runner)
     }
     public async Task<string> SwitchToWifiAsync(string usbSerial, CancellationToken cancellationToken = default)
     {
-        if (!(await ListDevicesAsync(cancellationToken).ConfigureAwait(false)).Any(d => d.Serial == usbSerial && d.State == "device") || usbSerial.Contains(':')) throw new InvalidOperationException("Select a ready USB device.");
+        if (IsWirelessSerial(usbSerial) || !(await ListDevicesAsync(cancellationToken).ConfigureAwait(false)).Any(d => d.Serial == usbSerial && d.State == "device")) throw new InvalidOperationException("Select a ready USB device.");
         string? ip = ParseWifiAddress(await RunAsync(cancellationToken, "-s", usbSerial, "shell", "ip", "route").ConfigureAwait(false));
         ip ??= ParseWifiAddress(await RunAsync(cancellationToken, "-s", usbSerial, "shell", "ip", "-f", "inet", "addr", "show", "wlan0").ConfigureAwait(false));
         if (ip is null) throw new IOException("No Wi-Fi IPv4 address found on the device.");

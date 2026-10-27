@@ -5,13 +5,29 @@ using Forms = System.Windows.Forms;
 
 namespace DeskBridge.Windows;
 
-internal sealed class InputController : IDisposable
+internal interface IInputController : IDisposable
+{
+    bool Remote { get; }
+    Task Ready { get; }
+    event Action<DisplayArea, Native.Point>? Crossing;
+    event Action<InputCommand>? Command;
+    event Action? ReleaseRequested;
+    event Action? DisplaysChanged;
+    void Configure(Settings value, IReadOnlyList<DisplayArea> layout);
+    void Engage(bool useComposer, nint handle);
+    void Release();
+    void CancelCrossing();
+}
+
+internal sealed class InputController : IInputController
 {
     private readonly Thread thread;
     private readonly TaskCompletionSource ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Native.HookProc mouseCallback, keyboardCallback;
     private readonly HashSet<uint> pressed = new();
     private nint mouseHook, keyboardHook;
+    private nint rawInputBuffer;
+    private static readonly int rawInputBufferCapacity = Marshal.SizeOf<Native.RawHeader>() + Marshal.SizeOf<Native.RawMouse>();
     private RawWindow? window;
     private volatile bool remote, composed;
     private nint composerHandle;
@@ -57,6 +73,8 @@ internal sealed class InputController : IDisposable
         try
         {
             window = new RawWindow(this);
+            // Raw input is dispatched on this thread; reuse its mouse-only buffer for every packet.
+            rawInputBuffer = Marshal.AllocHGlobal(rawInputBufferCapacity);
             var devices = new[] { new Native.RawDevice { Page = 1, Usage = 2, Flags = 0x100, Target = window.Handle } };
             if (!Native.RegisterRawInputDevices(devices, 1, (uint)Marshal.SizeOf<Native.RawDevice>())) throw new Win32Exception();
             var module = Native.GetModuleHandle(null);
@@ -74,6 +92,7 @@ internal sealed class InputController : IDisposable
             if (mouseHook != 0) Native.UnhookWindowsHookEx(mouseHook);
             if (keyboardHook != 0) Native.UnhookWindowsHookEx(keyboardHook);
             window?.DestroyHandle();
+            if (rawInputBuffer != 0) Marshal.FreeHGlobal(rawInputBuffer);
         }
     }
 
@@ -135,18 +154,14 @@ internal sealed class InputController : IDisposable
     {
         if (!remote) return;
         uint header = (uint)Marshal.SizeOf<Native.RawHeader>(), size = 0;
-        if (Native.GetRawInputData(handle, 0x10000003, 0, ref size, header) == uint.MaxValue || size < header || size > 65536) return;
-        var buffer = Marshal.AllocHGlobal((int)size);
-        try
-        {
-            if (Native.GetRawInputData(handle, 0x10000003, buffer, ref size, header) == uint.MaxValue) return;
-            var rawHeader = Marshal.PtrToStructure<Native.RawHeader>(buffer);
-            if (rawHeader.Type != 0 || size < header + 24) return;
-            var mouse = Marshal.PtrToStructure<Native.RawMouse>(buffer + (int)header);
-            if ((mouse.Flags & 1) == 0 && (mouse.X != 0 || mouse.Y != 0))
-                Command?.Invoke(new(CommandKind.Move, mouse.X, mouse.Y));
-        }
-        finally { Marshal.FreeHGlobal(buffer); }
+        uint minimumSize = header + (uint)Marshal.SizeOf<Native.RawMouse>();
+        if (Native.GetRawInputData(handle, 0x10000003, 0, ref size, header) == uint.MaxValue || size < minimumSize || size > rawInputBufferCapacity) return;
+        if (Native.GetRawInputData(handle, 0x10000003, rawInputBuffer, ref size, header) == uint.MaxValue || size < minimumSize || size > rawInputBufferCapacity) return;
+        var rawHeader = Marshal.PtrToStructure<Native.RawHeader>(rawInputBuffer);
+        if (rawHeader.Type != 0 || rawHeader.Size < minimumSize || rawHeader.Size > rawInputBufferCapacity) return;
+        var mouse = Marshal.PtrToStructure<Native.RawMouse>(rawInputBuffer + (int)header);
+        if ((mouse.Flags & 1) == 0 && (mouse.X != 0 || mouse.Y != 0))
+            Command?.Invoke(new(CommandKind.Move, mouse.X, mouse.Y));
     }
 
     public void Dispose()

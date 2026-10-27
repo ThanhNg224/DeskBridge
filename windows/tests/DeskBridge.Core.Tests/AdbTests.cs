@@ -10,6 +10,8 @@ public class AdbTests
     [Theory] [InlineData("127.0.0.1;whoami", 5555)] [InlineData("localhost", 5555)] [InlineData("256.1.1.1", 5555)] [InlineData("1.2.3", 5555)] [InlineData("1.2.3.4", 0)] [InlineData("1.2.3.4", 65536)]
     public void RejectsUntrustedEndpoint(string host, int port) => Assert.ThrowsAny<ArgumentException>(() => AdbClient.WifiTarget(host, port));
     [Fact] public void NormalizesIpv4() => Assert.Equal("192.168.1.2:5555", AdbClient.WifiTarget(" 192.168.001.002 ", 5555));
+    [Theory] [InlineData("10.0.0.2:5555", true)] [InlineData("adb-123._adb-tls-connect._tcp", true)] [InlineData("adb-123._adb._tcp.", true)] [InlineData("usb-123", false)]
+    public void ClassifiesWirelessSerials(string serial, bool expected) => Assert.Equal(expected, AdbClient.IsWirelessSerial(serial));
     [Theory] [InlineData("default via 192.168.1.1 dev wlan0 src 192.168.1.12", "192.168.1.12")] [InlineData("inet 10.0.0.2/24 brd 10.0.0.255 scope global wlan0", "10.0.0.2")] [InlineData("default dev rmnet0 src 10.0.0.2", null)]
     public void OnlySelectsWifiAddress(string output, string? expected) => Assert.Equal(expected, AdbClient.ParseWifiAddress(output));
     [Fact] public async Task CommandsUseArgumentListAndWirelessRequiresReadyDevice()
@@ -55,10 +57,33 @@ public class AdbTests
         Assert.Equal(new[] { "disconnect", "10.0.0.2:5555" }, runner.Calls[^1]);
         await Assert.ThrowsAsync<ArgumentException>(() => adb.DisconnectWifiAsync("usb"));
     }
+    [Fact] public async Task WirelessSerialCannotBeSwitchedAsUsb()
+    {
+        var runner = new FakeRunner();
+        await Assert.ThrowsAsync<InvalidOperationException>(() => new AdbClient("adb", runner).SwitchToWifiAsync("host._adb-tls-connect._tcp"));
+        Assert.Empty(runner.Calls);
+    }
+    [Fact] public async Task CommandTimeoutAndCancellationAreDistinguished()
+    {
+        var runner = new FakeRunner { Hang = true };
+        var adb = new AdbClient("adb", runner, TimeSpan.FromMilliseconds(30));
+        await Assert.ThrowsAsync<TimeoutException>(() => adb.ListDevicesAsync());
+        Assert.Single(runner.Calls);
+
+        runner.Calls.Clear();
+        using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => adb.ListDevicesAsync(cancelled.Token));
+        Assert.Empty(runner.Calls);
+
+        runner.Hang = true;
+        using var caller = new CancellationTokenSource(TimeSpan.FromMilliseconds(30));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => adb.ListDevicesAsync(caller.Token));
+        Assert.Single(runner.Calls);
+    }
     internal sealed class FakeRunner : IProcessRunner
     {
-        public readonly List<string[]> Calls = []; public readonly Queue<string> Outputs = []; public readonly FakeProcess Process = new(); public bool FailStart;
-        public Task<ProcessResult> RunAsync(string executable, IReadOnlyList<string> arguments, CancellationToken ct) { ct.ThrowIfCancellationRequested(); Calls.Add(arguments.ToArray()); return Task.FromResult(new ProcessResult(0, Outputs.TryDequeue(out var value) ? value : "")); }
+        public readonly List<string[]> Calls = []; public readonly Queue<string> Outputs = []; public readonly FakeProcess Process = new(); public bool FailStart; public bool Hang;
+        public async Task<ProcessResult> RunAsync(string executable, IReadOnlyList<string> arguments, CancellationToken ct) { ct.ThrowIfCancellationRequested(); Calls.Add(arguments.ToArray()); if (Hang) await Task.Delay(Timeout.Infinite, ct); return new ProcessResult(0, Outputs.TryDequeue(out var value) ? value : ""); }
         public IRunningProcess Start(string executable, IReadOnlyList<string> arguments) { Calls.Add(arguments.ToArray()); if (FailStart) throw new IOException(); return Process; }
     }
     internal sealed class FakeProcess : IRunningProcess { public bool Disposed; public bool HasExited => Disposed; public ValueTask DisposeAsync() { Disposed = true; return ValueTask.CompletedTask; } }

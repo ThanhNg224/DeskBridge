@@ -17,6 +17,8 @@ Independent Windows 11 x64 host, built with C#/.NET 10 and WPF. The macOS ARM64 
 
 Run as a normal user. UAC, sign-in/lock screens and other secure desktops are not remote-control targets. DeskBridge returns control locally when it detects that boundary.
 
+Changing the selected device stops the previous session before starting the new one. If that device disappears, DeskBridge keeps the selection and waits for it; it does not switch to another phone. **Disconnect** pauses automatic reconnect until you choose a device, connect explicitly or apply settings. ADB commands have an 8-second deadline; cancelling one waits up to 5 seconds for its local process to exit.
+
 ### Text input and clipboard
 
 **Direct keys** is the default: Windows key events become Android key events, with Ctrl+C/V/A retaining their usual role. **Composed text** focuses a small native text preview so Microsoft Vietnamese Telex or UniKey can edit the word locally. Space or punctuation commits the text; a pointer action flushes an uncommitted word before movement. Escape cancels an uncommitted word. An unfinished IME composition is cancelled on forced exit.
