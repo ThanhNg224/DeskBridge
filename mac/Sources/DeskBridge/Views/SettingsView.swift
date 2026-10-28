@@ -15,7 +15,7 @@ struct SettingsView: View {
     private var form: some View {
         Form {
             if !model.setup.isComplete {
-                SetupChecklist(setup: model.setup)
+                SetupChecklist(model: model)
             }
 
             phoneSection
@@ -59,6 +59,19 @@ struct SettingsView: View {
             Section("General") {
                 Toggle("Launch at login", isOn: $model.launchAtLogin)
                 Toggle("Show icon in the Dock", isOn: $model.showDockIcon)
+                HStack {
+                    Button("Check for updates") { model.checkForUpdates() }
+                        .disabled(model.checkingUpdates)
+                    if model.checkingUpdates {
+                        ProgressView().controlSize(.small)
+                    }
+                }
+                if let message = model.updateMessage {
+                    Text(verbatim: message).font(.caption)
+                }
+                if let url = model.updateURL {
+                    Link("Open download page", destination: url)
+                }
             }
         }
         .formStyle(.grouped)

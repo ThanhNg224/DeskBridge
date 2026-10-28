@@ -82,7 +82,10 @@ private final class ModelFixture {
 
     var model: AppModel!
 
-    init(selected: String? = nil, devices: [AdbDevice] = [], deadline: ResultGate? = nil) {
+    init(selected: String? = nil, devices: [AdbDevice] = [], deadline: ResultGate? = nil,
+         install: (@Sendable (URL) async throws -> Void)? = nil,
+         update: (@Sendable (String) async throws -> URL?)? = nil)
+    {
         self.devices = devices
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
@@ -91,6 +94,13 @@ private final class ModelFixture {
         values.preferredSerial = selected
         settings.values = values
         var dependencies = AppDependencies()
+        if let install {
+            dependencies.installADB = install
+        }
+        if let update {
+            dependencies.checkRelease = update
+        }
+        dependencies.installedVersion = { "1.1.7" }
         dependencies.adb = { try ADBBridge(adbPath: "/usr/bin/true") }
         dependencies.devices = { [weak self] _ in await self?.discoveredDevices() ?? [] }
         dependencies.wireless = { [weak self] _, request, _ in
@@ -403,5 +413,34 @@ struct AppModelTests {
         candidate.emit(.local)
         await settle()
         #expect(f.model.activePhone == nil)
+    }
+
+    @Test func manualUpdateCheckReportsNewVersionWithoutOpeningIt() async throws {
+        let expected = try #require(URL(string: "https://github.com/ThanhNg224/DeskBridge/releases/tag/v1.2.0"))
+        let f = ModelFixture(update: { _ in expected })
+        defer { f.close() }
+        f.model.checkForUpdates()
+        await eventually { !f.model.checkingUpdates }
+        #expect(f.model.updateURL == expected)
+        #expect(f.model.updateMessage != nil)
+    }
+
+    @Test func successfulADBInstallRestartsDiscoveryAndKeepsSelection() async {
+        let f = ModelFixture(selected: usb.serial, devices: [usb], install: { _ in })
+        defer { f.close() }
+        f.model.setup.adbFound = false
+        f.model.installADB(from: URL(fileURLWithPath: "/tmp/tools.zip"))
+        await eventually { !f.model.installingADB && f.model.setup.adbFound }
+        #expect(f.model.prefs.preferredSerial == usb.serial)
+        #expect(f.model.adbInstallError == nil)
+    }
+
+    @Test func failedADBInstallShowsErrorAndPreservesSelection() async {
+        let f = ModelFixture(selected: usb.serial, install: { _ in throw ManagedADB.InstallError.invalidArchive })
+        defer { f.close() }
+        f.model.installADB(from: URL(fileURLWithPath: "/tmp/bad.zip"))
+        await eventually { !f.model.installingADB }
+        #expect(f.model.adbInstallError != nil)
+        #expect(f.model.prefs.preferredSerial == usb.serial)
     }
 }

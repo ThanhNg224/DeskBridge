@@ -23,7 +23,8 @@ fi
 
 "$ROOT/scripts/build_server.sh"
 swift build -c release --package-path "$ROOT/mac"
-BIN="$(swift build -c release --package-path "$ROOT/mac" --show-bin-path)/DeskBridge"
+BIN_DIR="$(swift build -c release --package-path "$ROOT/mac" --show-bin-path)"
+BIN="$BIN_DIR/DeskBridge"
 
 # Assemble and verify away from the active app: a build or signing failure must leave it intact.
 mkdir -p "$APP_DIR"
@@ -41,8 +42,9 @@ trap cleanup EXIT
 BUNDLE="$STAGE/DeskBridge.app"
 mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
 cp "$BIN" "$BUNDLE/Contents/MacOS/DeskBridge"
-cp "$ROOT/server/build/deskbridge-server.jar" "$ROOT/mac/Resources/AppIcon.icns" "$BUNDLE/Contents/Resources/"
+cp "$ROOT/server/build/deskbridge-server.jar" "$ROOT/mac/Resources/AppIcon.icns" "$ROOT/mac/Resources/ThirdPartyNotices.txt" "$BUNDLE/Contents/Resources/"
 cp -R "$ROOT"/mac/Resources/*.lproj "$BUNDLE/Contents/Resources/"
+cp -R "$BIN_DIR/ZIPFoundation_ZIPFoundation.bundle" "$BUNDLE/Contents/Resources/"
 
 VERSION="$(cat "$ROOT/VERSION")"
 cat > "$BUNDLE/Contents/Info.plist" <<PLIST

@@ -3,6 +3,16 @@ import Foundation
 import Testing
 
 struct ADBBridgeTests {
+    @Test func existingADBPathsTakePrecedenceOverManagedCopy() {
+        let paths = ADBBridge.candidatePaths(environment: ["ADB": "/chosen/adb", "ANDROID_HOME": "/sdk",
+                                                           "PATH": "/tools:/other"],
+                                             home: "/home", managed: "/managed/adb")
+        #expect(paths.first == "/chosen/adb")
+        #expect(paths.contains("/sdk/platform-tools/adb"))
+        #expect(paths.contains("/tools/adb"))
+        #expect(paths.last == "/managed/adb")
+    }
+
     @Test func parsesDeviceList() {
         let output = """
         * daemon started successfully *

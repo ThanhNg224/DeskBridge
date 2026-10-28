@@ -10,11 +10,13 @@ DerivedData/
 *.xcworkspace/xcuserdata/
 .build/
 Package.resolved
+!mac/Package.resolved
 
 # Android / Gradle / Java
 .gradle/
 build/
 bin/
+obj/
 *.class
 *.dex
 *.apk

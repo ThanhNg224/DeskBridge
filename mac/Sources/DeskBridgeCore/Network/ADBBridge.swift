@@ -83,21 +83,24 @@ public struct ADBBridge: Sendable {
         return (ip, port)
     }
 
-    public static func locate() -> String? {
-        let env = ProcessInfo.processInfo.environment
+    static func candidatePaths(environment: [String: String], home: String, managed: String) -> [String] {
         var candidates: [String] = []
-        if let adb = env["ADB"] {
+        if let adb = environment["ADB"] {
             candidates.append(adb)
         }
-        if let sdk = env["ANDROID_HOME"] ?? env["ANDROID_SDK_ROOT"] {
+        if let sdk = environment["ANDROID_HOME"] ?? environment["ANDROID_SDK_ROOT"] {
             candidates.append(sdk + "/platform-tools/adb")
         }
-        candidates += [
-            NSHomeDirectory() + "/Library/Android/sdk/platform-tools/adb",
-            "/opt/homebrew/bin/adb",
-            "/usr/local/bin/adb",
-        ]
-        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+        candidates += [home + "/Library/Android/sdk/platform-tools/adb", "/opt/homebrew/bin/adb", "/usr/local/bin/adb"]
+        candidates += (environment["PATH"] ?? "").split(separator: ":").map { String($0) + "/adb" }
+        candidates.append(managed)
+        return candidates
+    }
+
+    public static func locate() -> String? {
+        candidatePaths(environment: ProcessInfo.processInfo.environment, home: NSHomeDirectory(),
+                       managed: ManagedADB.executable.path)
+            .first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
     // MARK: - Parsing (pure, unit-tested)
@@ -304,6 +307,9 @@ public struct ADBBridge: Sendable {
     public func spawnShell(serial: String, command: String) throws -> (process: Process, stderr: Pipe) {
         try operation?.checkCancellation()
         try Task.checkCancellation()
+        if adbPath == ManagedADB.executable.path {
+            try ManagedADB.ensureServerCompatible(ManagedADB.executable)
+        }
         let process = Process()
         let stderr = Pipe()
         process.executableURL = URL(fileURLWithPath: adbPath)
@@ -318,6 +324,9 @@ public struct ADBBridge: Sendable {
     func run(_ arguments: [String]) throws -> String {
         try operation?.checkCancellation()
         try Task.checkCancellation()
+        if adbPath == ManagedADB.executable.path {
+            try ManagedADB.ensureServerCompatible(ManagedADB.executable)
+        }
         let commandDeadline = ProcessInfo.processInfo.systemUptime + 10
         let outputURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("deskbridge-adb-\(UUID().uuidString)")

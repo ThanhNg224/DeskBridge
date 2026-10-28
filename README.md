@@ -34,13 +34,13 @@ Push the pointer off the edge of the screen and it appears on the phone. Push it
 
 - A Mac with Apple Silicon, macOS 14 or newer.
 - An Android phone or tablet, Android 13 or newer, connected via a USB cable or Wi-Fi (wireless debugging).
-- Android's USB tools (`adb`). If you use [Homebrew](https://brew.sh): `brew install --cask android-platform-tools`.
+- Android Platform Tools (`adb`). If missing, DeskBridge guides you through downloading the official ZIP from Google and selecting it in the app.
 
 ## Get started
 
 1. **Download** [DeskBridge.zip](https://github.com/ThanhNg224/DeskBridge/releases/latest/download/DeskBridge.zip), unzip it and drag **DeskBridge** to your Applications folder.
-2. **Open it the first time.** The app is not yet notarized by Apple, so macOS blocks it once: open **System Settings > Privacy & Security**, scroll down and click **Open Anyway** next to DeskBridge. (Or run `xattr -dr com.apple.quarantine /Applications/DeskBridge.app` in Terminal.)
-3. **Allow Accessibility.** DeskBridge asks for it so it can read your mouse and keyboard: **System Settings > Privacy & Security > Accessibility**, switch DeskBridge on.
+2. **Open it the first time.** The app is not yet notarized by Apple, so macOS blocks it once: open **System Settings > Privacy & Security**, scroll down and click **Open Anyway** next to DeskBridge.
+3. **Allow Accessibility and prepare Android tools.** Follow the checklist in DeskBridge. If Android tools are missing, download Platform Tools for Mac from Google and select the ZIP in the app.
 4. **Prepare the phone.** Turn on *Developer options* (tap **Build number** seven times in *Settings > About phone*), then switch on **USB debugging**. Xiaomi/HyperOS phones also need **USB debugging (Security settings)**.
 5. **Connect the phone.** Plug it in and tap **Allow** on the phone. To go wireless, connect the Mac and phone to the same Wi-Fi network, click **Switch to Wi-Fi** in DeskBridge, and wait until it connects before unplugging the cable. To enter an IP and port manually, the phone must already have ADB over TCP/IP enabled or have been paired with this Mac outside DeskBridge. DeskBridge does not perform pairing itself.
 

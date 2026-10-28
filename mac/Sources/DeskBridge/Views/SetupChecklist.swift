@@ -1,11 +1,13 @@
 import DeskBridgeCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Live checklist of what DeskBridge needs. Shown at the top of Settings until everything is ready.
 struct SetupChecklist: View {
-    let setup: SetupState
-
-    private static let adbInstallCommand = "brew install --cask android-platform-tools"
+    let model: AppModel
+    private var setup: SetupState {
+        model.setup
+    }
 
     var body: some View {
         Section("Setup") {
@@ -15,11 +17,20 @@ struct SetupChecklist: View {
                 Button("Open Settings") { Permissions.openSettings(.accessibility) }
                 Button("Input Monitoring") { Permissions.openSettings(.inputMonitoring) }
             }
-            row(ok: setup.adbFound, title: "Android tools (adb)", hint: "Install them with Homebrew:") {
-                Button("Copy command") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(Self.adbInstallCommand, forType: .string)
+            row(ok: setup.adbFound, title: "Android tools (adb)",
+                hint: "Download Platform Tools for Mac from Google, then select the ZIP.")
+            {
+                Link(
+                    "Download from Google",
+                    destination: URL(string: "https://developer.android.com/tools/releases/platform-tools")!
+                )
+                Button("Select ZIP…") { selectZIP() }.disabled(model.installingADB)
+                if model.installingADB {
+                    ProgressView().controlSize(.small)
                 }
+            }
+            if let error = model.adbInstallError {
+                Text(verbatim: error).font(.caption).foregroundStyle(.red)
             }
             deviceRow
         }
@@ -41,9 +52,23 @@ struct SetupChecklist: View {
                 EmptyView()
             }
         case .none:
-            row(ok: false, title: "No phone found", hint: "Connect via USB cable or Wi-Fi (wireless debugging).") {
+            row(
+                ok: false,
+                title: "No phone found",
+                hint: "On your phone, tap Build number seven times in About phone. Enable USB debugging in Developer options, connect with USB, then tap Allow."
+            ) {
                 EmptyView()
             }
+        }
+    }
+
+    private func selectZIP() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.zip]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        if panel.runModal() == .OK, let url = panel.url {
+            model.installADB(from: url)
         }
     }
 

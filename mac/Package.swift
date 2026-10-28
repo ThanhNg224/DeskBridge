@@ -7,8 +7,13 @@ let package = Package(
     products: [
         .executable(name: "DeskBridge", targets: ["DeskBridge"]),
     ],
+    dependencies: [.package(url: "https://github.com/weichsel/ZIPFoundation.git", exact: "0.9.20")],
     targets: [
-        .target(name: "DeskBridgeCore", path: "Sources/DeskBridgeCore"),
+        .target(
+            name: "DeskBridgeCore",
+            dependencies: [.product(name: "ZIPFoundation", package: "ZIPFoundation")],
+            path: "Sources/DeskBridgeCore"
+        ),
         .executableTarget(
             name: "DeskBridge",
             dependencies: ["DeskBridgeCore"],

@@ -105,3 +105,16 @@
 "Volume up" = "Tăng âm lượng";
 "Volume down" = "Giảm âm lượng";
 "Switch apps" = "Chuyển ứng dụng";
+
+"Download Platform Tools for Mac from Google, then select the ZIP." = "Tải Platform Tools cho Mac từ Google, sau đó chọn tệp ZIP.";
+"Download from Google" = "Tải từ Google";
+"Select ZIP…" = "Chọn tệp ZIP…";
+"On your phone, tap Build number seven times in About phone. Enable USB debugging in Developer options, connect with USB, then tap Allow." = "Trên điện thoại, chạm Số bản dựng bảy lần trong Giới thiệu điện thoại. Bật Gỡ lỗi USB trong Tùy chọn nhà phát triển, cắm cáp USB rồi chạm Cho phép.";
+"Could not verify the Android tools ZIP. Download it from Google and try again." = "Không thể xác minh tệp ZIP công cụ Android. Hãy tải từ Google và thử lại.";
+"The existing Android tools are incompatible. Close the other tools and try again." = "Công cụ Android đang chạy không tương thích. Hãy đóng công cụ khác rồi thử lại.";
+"Check for updates" = "Kiểm tra bản cập nhật";
+"DeskBridge is up to date." = "DeskBridge đang ở phiên bản mới nhất.";
+"A new version is available." = "Đã có phiên bản mới.";
+"Could not check for updates. Check your connection and try again." = "Không thể kiểm tra cập nhật. Hãy kiểm tra kết nối và thử lại.";
+"Open download page" = "Mở trang tải về";
+"GitHub limited or refused the request. Try again later." = "GitHub đã giới hạn hoặc từ chối yêu cầu. Hãy thử lại sau.";

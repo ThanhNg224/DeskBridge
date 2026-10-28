@@ -18,6 +18,11 @@ final class AppModel {
     var wirelessPort = "5555"
     private(set) var wirelessOperation = WirelessOperation.idle
     var wirelessErrorMessage: String?
+    private(set) var installingADB = false
+    private(set) var adbInstallError: String?
+    private(set) var checkingUpdates = false
+    private(set) var updateMessage: String?
+    private(set) var updateURL: URL?
 
     var isOperatingWireless: Bool {
         wirelessOperation != .idle
@@ -157,6 +162,53 @@ final class AppModel {
         wirelessDeadline?.cancel()
         watcher?.stop()
         session?.stop()
+    }
+
+    func installADB(from url: URL) {
+        guard !installingADB else { return }
+        installingADB = true
+        adbInstallError = nil
+        let scoped = url.startAccessingSecurityScopedResource()
+        Task {
+            defer {
+                if scoped {
+                    url.stopAccessingSecurityScopedResource()
+                }
+                installingADB = false
+            }
+            do {
+                try await dependencies.installADB(url)
+                wakeDiscovery()
+            } catch ManagedADB.InstallError.incompatibleServer {
+                adbInstallError =
+                    String(
+                        localized: "The existing Android tools are incompatible. Close the other tools and try again."
+                    )
+            } catch {
+                adbInstallError =
+                    String(localized: "Could not verify the Android tools ZIP. Download it from Google and try again.")
+            }
+        }
+    }
+
+    func checkForUpdates() {
+        guard !checkingUpdates else { return }
+        checkingUpdates = true
+        updateMessage = nil
+        updateURL = nil
+        Task {
+            defer { checkingUpdates = false }
+            do {
+                updateURL = try await dependencies.checkRelease(dependencies.installedVersion())
+                updateMessage = updateURL == nil
+                    ? String(localized: "DeskBridge is up to date.")
+                    : String(localized: "A new version is available.")
+            } catch ReleaseChecker.Error.rateLimited {
+                updateMessage = String(localized: "GitHub limited or refused the request. Try again later.")
+            } catch {
+                updateMessage = String(localized: "Could not check for updates. Check your connection and try again.")
+            }
+        }
     }
 
     // MARK: - Selection
@@ -339,6 +391,13 @@ final class AppModel {
             }
             if case ADBError.adbNotFound = error {
                 setup.adbFound = false
+            }
+            if case ManagedADB.InstallError.incompatibleServer = error {
+                status =
+                    String(
+                        localized: "The existing Android tools are incompatible. Close the other tools and try again."
+                    )
+                return
             }
             if wirelessOperation == .startingSession {
                 failWireless(error); return

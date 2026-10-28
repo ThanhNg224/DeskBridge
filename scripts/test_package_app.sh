@@ -9,8 +9,11 @@ cp "$ROOT/scripts/package_app.sh" "$TEST_ROOT/scripts/package_app.sh"
 printf old > "$TEST_ROOT/build/DeskBridge.app/sentinel"
 printf 1.0 > "$TEST_ROOT/VERSION"
 printf icon > "$TEST_ROOT/mac/Resources/AppIcon.icns"
+printf license > "$TEST_ROOT/mac/Resources/ThirdPartyNotices.txt"
 printf strings > "$TEST_ROOT/mac/Resources/en.lproj/Localizable.strings"
 printf executable > "$TEST_ROOT/bin/DeskBridge"
+mkdir -p "$TEST_ROOT/bin/ZIPFoundation_ZIPFoundation.bundle/Contents/Resources"
+printf privacy > "$TEST_ROOT/bin/ZIPFoundation_ZIPFoundation.bundle/Contents/Resources/PrivacyInfo.xcprivacy"
 cat > "$TEST_ROOT/scripts/build_server.sh" <<'STUB'
 #!/usr/bin/env bash
 printf jar > "$(dirname "$0")/../server/build/deskbridge-server.jar"
@@ -48,6 +51,8 @@ unset TEST_SIGN_FAIL
 "$TEST_ROOT/scripts/package_app.sh" >/dev/null
 grep -q -- '--force --sign 111' "$TEST_ROOT/codesign.log"
 [ -f "$TEST_ROOT/build/DeskBridge.app/Contents/MacOS/DeskBridge" ]
+[ -f "$TEST_ROOT/build/DeskBridge.app/Contents/Resources/ThirdPartyNotices.txt" ]
+[ -f "$TEST_ROOT/build/DeskBridge.app/Contents/Resources/ZIPFoundation_ZIPFoundation.bundle/Contents/Resources/PrivacyInfo.xcprivacy" ]
 [ ! -e "$TEST_ROOT/build/DeskBridge.app/sentinel" ]
 DESKBRIDGE_APP_OUTPUT="$TEST_ROOT/build/release/DeskBridge.app" CODESIGN_IDENTITY=- "$TEST_ROOT/scripts/package_app.sh" >/dev/null
 [ -f "$TEST_ROOT/build/release/DeskBridge.app/Contents/MacOS/DeskBridge" ]
