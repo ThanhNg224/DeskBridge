@@ -42,8 +42,7 @@ public enum ManagedADB {
                 selected = entry
             }
         }
-        guard let selected else { throw InstallError.invalidArchive }
-        guard FileManager.default
+        guard let selected, FileManager.default
             .createFile(atPath: output.path, contents: nil, attributes: [.posixPermissions: 0o600])
         else {
             throw InstallError.invalidArchive
@@ -73,9 +72,9 @@ public enum ManagedADB {
         var expected: SecRequirement?
         guard SecRequirementCreateWithString(requirement as CFString, [], &expected) == errSecSuccess,
               let expected,
-              SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSStrictValidate), expected) == errSecSuccess
+              SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSStrictValidate), expected) == errSecSuccess,
+              try supportsArm64(url)
         else { throw InstallError.invalidSignature }
-        guard try supportsArm64(url) else { throw InstallError.invalidSignature }
     }
 
     static func supportsArm64(_ url: URL) throws -> Bool {
