@@ -10,6 +10,8 @@ public enum CapturedEvent: Sendable {
     case button(MouseButton, down: Bool)
     case scroll(h: Double, v: Double)
     case key(code: UInt16, down: Bool, flags: UInt64)
+    case androidKey(code: Int32, down: Bool)
+    case switchKey(code: Int32, down: Bool, meta: Int32)
 }
 
 public enum CaptureError: Error, CustomStringConvertible {
@@ -30,6 +32,8 @@ public final class InputCapturer: @unchecked Sendable {
     private let isRemote: @Sendable () -> Bool
     private let deliversKeyToMac: @Sendable (UInt16, CGEventFlags) -> Bool
     private let onEvent: @Sendable (CapturedEvent) -> Void
+    private var shortcuts = ShortcutKeys()
+    private var appSwitcher = AppSwitcher()
     private var passedKeys = Set<UInt16>() // tap thread only: keys whose down went to the Mac, their up must too
     private var tap: CFMachPort?
     private var runLoop: CFRunLoop?
@@ -52,7 +56,7 @@ public final class InputCapturer: @unchecked Sendable {
             let types: [CGEventType] = [
                 .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged,
                 .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp,
-                .otherMouseDown, .otherMouseUp, .scrollWheel, .keyDown, .keyUp,
+                .otherMouseDown, .otherMouseUp, .scrollWheel, .keyDown, .keyUp, .flagsChanged,
             ]
             let mask = types.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << CGEventMask($1.rawValue)) }
 
@@ -96,6 +100,11 @@ public final class InputCapturer: @unchecked Sendable {
     fileprivate func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         let pass = Unmanaged.passUnretained(event)
         let remote = isRemote()
+        if !remote {
+            shortcuts = ShortcutKeys()
+            appSwitcher = AppSwitcher()
+            passedKeys.removeAll()
+        }
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             if let tap {
@@ -137,16 +146,41 @@ public final class InputCapturer: @unchecked Sendable {
             ))
             return nil
 
+        case .flagsChanged:
+            guard remote else { return pass }
+            for key in appSwitcher.modifiersChanged(event.flags) {
+                onEvent(.switchKey(code: key.code, down: key.down, meta: key.meta))
+            }
+            return pass
+
         case .keyDown, .keyUp:
             guard remote else { return pass }
             let code = UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode))
+            if passedKeys.contains(code) {
+                if type == .keyUp {
+                    passedKeys.remove(code)
+                }
+                return pass
+            }
+            if code == 48, type == .keyDown, event.flags.contains(.maskCommand) {
+                passedKeys.insert(code)
+                return pass
+            }
+            if code == 48, let keys = appSwitcher.tab(down: type == .keyDown, flags: event.flags) {
+                for key in keys {
+                    onEvent(.switchKey(code: key.code, down: key.down, meta: key.meta))
+                }
+                return nil
+            }
+            if let android = shortcuts.route(code: code, down: type == .keyDown, flags: event.flags) {
+                onEvent(.androidKey(code: android, down: type == .keyDown))
+                return nil
+            }
             if type == .keyDown {
                 if deliversKeyToMac(code, event.flags) {
                     passedKeys.insert(code)
                     return pass
                 }
-            } else if passedKeys.remove(code) != nil {
-                return pass
             }
             onEvent(.key(
                 code: code,

@@ -96,3 +96,12 @@
 "No Wi-Fi address found. Connect the phone to Wi-Fi, then try again." = "Không tìm thấy địa chỉ Wi-Fi. Kết nối điện thoại với Wi-Fi rồi thử lại.";
 "Android tools (adb) are missing. Install them to connect." = "Thiếu công cụ Android (adb). Hãy cài đặt để kết nối.";
 "The Wi-Fi action failed. Check the phone and your network, then try again." = "Thao tác Wi-Fi thất bại. Kiểm tra điện thoại và mạng rồi thử lại.";
+
+"Android shortcuts" = "Phím tắt Android";
+"Home" = "Màn hình chính";
+"Back" = "Quay lại";
+"Recent apps" = "Ứng dụng gần đây";
+"Sleep screen" = "Tắt màn hình";
+"Volume up" = "Tăng âm lượng";
+"Volume down" = "Giảm âm lượng";
+"Switch apps" = "Chuyển ứng dụng";

@@ -53,4 +53,48 @@ struct RemoteInputTests {
         // The key-up of the chord is a normal Escape release.
         #expect(action(.key(code: UInt16(kVK_Escape), down: false, flags: chord)) != .releaseToMac)
     }
+
+    @Test func shortcutsKeepTheirAndroidKeyUntilRelease() {
+        let keys: [(Int, Int32)] = [(kVK_ANSI_H, 3), (kVK_ANSI_B, 4), (kVK_ANSI_R, 187),
+                                    (kVK_ANSI_L, 223), (kVK_UpArrow, 24), (kVK_DownArrow, 25)]
+        var shortcuts = ShortcutKeys()
+        for (mac, android) in keys {
+            let code = UInt16(mac)
+            #expect(shortcuts.route(code: code, down: true, flags: .maskAlternate) == android)
+            #expect(shortcuts.route(code: code, down: false, flags: []) == android)
+            #expect(action(.androidKey(code: android, down: true))
+                == .send(ProtocolEncoder.key(code: android, down: true, meta: 0)))
+            #expect(action(.androidKey(code: android, down: false))
+                == .send(ProtocolEncoder.key(code: android, down: false, meta: 0)))
+        }
+        #expect(shortcuts.route(code: UInt16(kVK_ANSI_H), down: true, flags: [.maskAlternate, .maskCommand]) == nil)
+        #expect(shortcuts.route(code: UInt16(kVK_ANSI_H), down: true, flags: []) == nil)
+    }
+
+    @Test func appSwitcherHoldsAltAcrossRepeatedTabPresses() {
+        var switcher = AppSwitcher()
+        let altDown = AppSwitcher.Key(code: 57, down: true, meta: 0x12)
+        let tabDown = AppSwitcher.Key(code: 61, down: true, meta: 0x12)
+        let tabUp = AppSwitcher.Key(code: 61, down: false, meta: 0x12)
+        let altUp = AppSwitcher.Key(code: 57, down: false, meta: 0)
+        #expect(switcher.tab(down: true, flags: .maskAlternate) == [altDown, tabDown])
+        #expect(switcher.tab(down: true, flags: .maskAlternate) == [])
+        #expect(switcher.tab(down: false, flags: .maskAlternate) == [tabUp])
+        #expect(switcher.tab(down: true, flags: .maskAlternate) == [tabDown])
+        #expect(switcher.tab(down: false, flags: .maskAlternate) == [tabUp])
+        #expect(switcher.modifiersChanged([]) == [altUp])
+        #expect(switcher.modifiersChanged([]).isEmpty)
+        #expect(action(.switchKey(code: 61, down: true, meta: 0x12))
+            == .send(ProtocolEncoder.key(code: 61, down: true, meta: 0x12)))
+    }
+
+    @Test func appSwitcherHandlesReleasingOptionBeforeTab() {
+        var switcher = AppSwitcher()
+        #expect(switcher.tab(down: true, flags: []) == nil)
+        #expect(switcher.tab(down: true, flags: [.maskAlternate, .maskCommand]) == nil)
+        #expect(switcher.tab(down: true, flags: .maskAlternate)?.count == 2)
+        #expect(switcher.modifiersChanged([]) == [AppSwitcher.Key(code: 57, down: false, meta: 0)])
+        #expect(switcher.tab(down: false, flags: []) == [AppSwitcher.Key(code: 61, down: false, meta: 0)])
+        #expect(switcher.tab(down: false, flags: []) == nil)
+    }
 }

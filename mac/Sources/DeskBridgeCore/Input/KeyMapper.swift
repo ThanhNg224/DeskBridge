@@ -57,3 +57,73 @@ public enum KeyMapper {
             && flags.contains(.maskControl) && flags.contains(.maskAlternate) && flags.contains(.maskCommand)
     }
 }
+
+/// Tracks shortcut key downs so releasing Option first still releases the same Android key.
+struct ShortcutKeys {
+    private var pressed: [UInt16: Int32] = [:]
+
+    mutating func route(code: UInt16, down: Bool, flags: CGEventFlags) -> Int32? {
+        if !down {
+            return pressed.removeValue(forKey: code)
+        }
+        if let key = pressed[code] {
+            return key
+        }
+        guard flags.contains(.maskAlternate),
+              flags.intersection([.maskCommand, .maskControl, .maskShift]).isEmpty else { return nil }
+        let key: Int32
+        switch Int(code) {
+        case kVK_ANSI_H: key = 3 // HOME
+        case kVK_ANSI_B: key = 4 // BACK
+        case kVK_ANSI_R: key = 187 // APP_SWITCH
+        case kVK_ANSI_L: key = 223 // SLEEP
+        case kVK_UpArrow: key = 24 // VOLUME_UP
+        case kVK_DownArrow: key = 25 // VOLUME_DOWN
+        default: return nil
+        }
+        pressed[code] = key
+        return key
+    }
+}
+
+/// Android's task switcher holds Alt until Option is released. Only the switcher's keys are forwarded.
+struct AppSwitcher {
+    struct Key: Equatable {
+        let code: Int32
+        let down: Bool
+        let meta: Int32
+    }
+
+    private static let alt: Int32 = 57
+    private static let tab: Int32 = 61
+    private static let altMeta: Int32 = 0x12
+    private var active = false
+    private var tabDown = false
+
+    mutating func tab(down: Bool, flags: CGEventFlags) -> [Key]? {
+        if !down {
+            guard tabDown else { return nil }
+            tabDown = false
+            return [Key(code: Self.tab, down: false, meta: active ? Self.altMeta : 0)]
+        }
+        if tabDown {
+            return []
+        }
+        guard active || (flags.contains(.maskAlternate)
+            && flags.intersection([.maskCommand, .maskControl, .maskShift]).isEmpty) else { return nil }
+        var keys: [Key] = []
+        if !active {
+            active = true
+            keys.append(Key(code: Self.alt, down: true, meta: Self.altMeta))
+        }
+        tabDown = true
+        keys.append(Key(code: Self.tab, down: true, meta: Self.altMeta))
+        return keys
+    }
+
+    mutating func modifiersChanged(_ flags: CGEventFlags) -> [Key] {
+        guard active, !flags.contains(.maskAlternate) else { return [] }
+        active = false
+        return [Key(code: Self.alt, down: false, meta: 0)]
+    }
+}

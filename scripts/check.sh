@@ -42,6 +42,7 @@ scripts=(scripts/*.sh)
 shopt -u nullglob
 
 stage "shellcheck"        "scripts"                         shellcheck -S warning "${scripts[@]}"
+stage "package tests"    "scripts/test_package_app.sh"     scripts/test_package_app.sh
 stage "swiftformat"       "mac/Package.swift"               swiftformat --lint mac
 stage "strings"          "mac/Resources/vi.lproj"          plutil -lint mac/Resources/vi.lproj/Localizable.strings
 stage "server tests"      "scripts/test_server.sh"          scripts/test_server.sh

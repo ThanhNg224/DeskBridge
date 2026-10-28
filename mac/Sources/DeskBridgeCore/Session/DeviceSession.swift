@@ -44,6 +44,9 @@ public final class DeviceSession: @unchecked Sendable {
     private var server: LaunchedServer?
     private var connection: Connection?
     private var capturer: InputCapturer?
+    private var visitGeneration = 0
+    private var shortcutPending = false
+    private var bufferedInput: [CapturedEvent] = []
     private var heartbeat: DispatchSourceTimer?
     private var startupTimer: DispatchSourceTimer?
     private var parser = ServerPacketParser()
@@ -237,6 +240,37 @@ public final class DeviceSession: @unchecked Sendable {
 
     private func handle(_ event: CapturedEvent) {
         guard acceptingInput.withLock({ $0 }) else { return }
+        if shortcutPending {
+            bufferedInput.append(event)
+            return
+        }
+        let startsShortcut = switch event {
+        case .androidKey(_, true), .switchKey(57, true, _): true
+        default: false
+        }
+        if state == .remote, startsShortcut {
+            shortcutPending = true
+            let generation = visitGeneration
+            cursor.commitComposition { [weak self] in
+                guard let self else { return }
+                queue.async {
+                    self.shortcutPending = false
+                    guard self.visitGeneration == generation else {
+                        self.bufferedInput.removeAll()
+                        return
+                    }
+                    if self.state == .remote, self.acceptingInput.withLock({ $0 }) {
+                        self.perform(RemoteInput.action(for: event, prefs: self.settings.values))
+                    }
+                    let buffered = self.bufferedInput
+                    self.bufferedInput.removeAll()
+                    for next in buffered {
+                        self.handle(next)
+                    }
+                }
+            }
+            return
+        }
         switch (state, event) {
         case let (.local, .move(dx, dy, location)):
             if let crossing = detector.crossing(at: location, deltaX: dx, deltaY: dy) {
@@ -269,6 +303,7 @@ public final class DeviceSession: @unchecked Sendable {
     }
 
     private func enterRemote(_ crossing: EdgeDetector.Crossing, from location: CGPoint) {
+        visitGeneration += 1
         entryDisplay = crossing.display
         coalescer = MoveCoalescer()
         if settings.values.shareClipboard {
@@ -281,6 +316,7 @@ public final class DeviceSession: @unchecked Sendable {
 
     private func returnToMac(along: Float?, notifyServer: Bool) {
         guard state == .remote else { return }
+        visitGeneration += 1
         if notifyServer {
             send(ProtocolEncoder.leave())
         }

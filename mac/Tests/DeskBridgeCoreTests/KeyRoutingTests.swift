@@ -1,5 +1,7 @@
 import CoreGraphics
 @testable import DeskBridgeCore
+import Foundation
+import os
 import Testing
 
 struct KeyRoutingTests {
@@ -36,5 +38,19 @@ struct KeyRoutingTests {
         #expect(!KeyRouting.deliversToMac(
             keyCode: backspace, flags: [], state: KeyboardState(imeActive: true, ready: false, composing: true)
         ))
+    }
+
+    @Test @MainActor func committingMarkedTextPreservesTheComposedWord() {
+        let keyboard = KeyboardStateBox()
+        let composer = ComposerView(keyboard: keyboard)
+        let received = OSAllocatedUnfairLock(initialState: [String]())
+        composer.onText = { text in received.withLock { $0.append(text) } }
+        composer.setMarkedText("tiếng Việt", selectedRange: NSRange(location: 0, length: 0),
+                               replacementRange: NSRange(location: 0, length: 0))
+        #expect(keyboard.read().composing)
+        composer.unmarkText()
+        composer.unmarkText()
+        #expect(received.withLock { $0 } == ["tiếng Việt"])
+        #expect(!keyboard.read().composing)
     }
 }

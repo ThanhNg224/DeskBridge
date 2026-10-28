@@ -12,8 +12,8 @@ import android.view.MotionEvent;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
-import java.util.Set;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /** Injects mouse and keyboard events through the hidden InputManager. Failures are unchecked (fail fast). */
 public final class InputInjector implements Session.Input {
@@ -21,6 +21,7 @@ public final class InputInjector implements Session.Input {
     private static final int KEYBOARD_DEVICE_ID = -1; // KeyCharacterMap.VIRTUAL_KEYBOARD
     private static final int INJECT_MODE_ASYNC = 0;
     private static final int KEYCODE_WAKEUP = 224;
+    private static final int KEYCODE_SLEEP = 223;
     private static final long WAKE_CHECK_INTERVAL_MS = 300;
     private static final int KEYCODE_V = 50;
     private static final int KEYCODE_CTRL_LEFT = 113;
@@ -38,8 +39,7 @@ public final class InputInjector implements Session.Input {
     private long lastWakeCheck;
     private int buttonState;
     private long downTime;
-    private long keyDownTime;
-    private final Set<Integer> pressedKeys = new LinkedHashSet<>();
+    private final Map<Integer, Long> pressedKeys = new LinkedHashMap<>();
 
     public InputInjector() throws ReflectiveOperationException {
         // Android 14 moved injection to InputManagerGlobal; InputManager.getInstance() throws NPE there.
@@ -104,12 +104,16 @@ public final class InputInjector implements Session.Input {
     @Override
     public void key(int keyCode, int action, int metaState) {
         long now = SystemClock.uptimeMillis();
+        long keyDownTime;
         if (action == KeyEvent.ACTION_DOWN) {
-            wakeIfAsleep();
-            keyDownTime = now;
-            pressedKeys.add(keyCode);
+            if (keyCode != KEYCODE_SLEEP) {
+                wakeIfAsleep();
+            }
+            keyDownTime = pressedKeys.getOrDefault(keyCode, now);
+            pressedKeys.put(keyCode, keyDownTime);
         } else {
-            pressedKeys.remove(keyCode);
+            Long previousDown = pressedKeys.remove(keyCode);
+            keyDownTime = previousDown == null ? now : previousDown;
         }
         inject(new KeyEvent(keyDownTime, now, action, keyCode, 0, metaState,
                 KEYBOARD_DEVICE_ID, 0, 0, InputDevice.SOURCE_KEYBOARD));
@@ -153,7 +157,7 @@ public final class InputInjector implements Session.Input {
     /** Releases any held mouse buttons and keys so nothing stays pressed after a session ends. */
     @Override
     public void releaseAll(float x, float y) {
-        for (Integer keyCode : new ArrayList<>(pressedKeys)) {
+        for (Integer keyCode : new ArrayList<>(pressedKeys.keySet())) {
             key(keyCode, KeyEvent.ACTION_UP, 0);
         }
         for (int bit = 1; bit <= 0x10 && buttonState != 0; bit <<= 1) {

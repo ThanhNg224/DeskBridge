@@ -5,20 +5,47 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP="$ROOT/build/DeskBridge.app"
+APP="${DESKBRIDGE_APP_OUTPUT:-$ROOT/build/DeskBridge.app}"
+APP_DIR="$(dirname "$APP")"
+
+# Fail rather than silently replacing an existing developer signature with ad-hoc signing.
+# find-identity without -v includes usable self-signed identities that are not trusted system-wide.
+IDENTITY="${CODESIGN_IDENTITY:-}"
+if [ -z "$IDENTITY" ]; then
+  IDENTITIES="$(security find-identity -p codesigning | awk '/"DeskBridge Dev"/ && !seen[$2]++ { print $2 }')"
+  COUNT="$(printf '%s\n' "$IDENTITIES" | awk 'NF { n++ } END { print n+0 }')"
+  if [ "$COUNT" -ne 1 ]; then
+    echo 'Expected one DeskBridge Dev signing identity. Run scripts/setup_signing.sh, or set CODESIGN_IDENTITY explicitly.' >&2
+    exit 1
+  fi
+  IDENTITY="$IDENTITIES"
+fi
 
 "$ROOT/scripts/build_server.sh"
 swift build -c release --package-path "$ROOT/mac"
 BIN="$(swift build -c release --package-path "$ROOT/mac" --show-bin-path)/DeskBridge"
 
-rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/DeskBridge"
-cp "$ROOT/server/build/deskbridge-server.jar" "$ROOT/mac/Resources/AppIcon.icns" "$APP/Contents/Resources/"
-cp -R "$ROOT"/mac/Resources/*.lproj "$APP/Contents/Resources/"
+# Assemble and verify away from the active app: a build or signing failure must leave it intact.
+mkdir -p "$APP_DIR"
+STAGE="$(mktemp -d "$APP_DIR/.package.XXXXXX")"
+cleanup() {
+  if [ -e "$STAGE/previous.app" ] && [ ! -e "$APP" ]; then
+    if ! mv "$STAGE/previous.app" "$APP"; then
+      echo "Could not restore previous app; it remains at $STAGE/previous.app" >&2
+      return
+    fi
+  fi
+  rm -rf "$STAGE"
+}
+trap cleanup EXIT
+BUNDLE="$STAGE/DeskBridge.app"
+mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
+cp "$BIN" "$BUNDLE/Contents/MacOS/DeskBridge"
+cp "$ROOT/server/build/deskbridge-server.jar" "$ROOT/mac/Resources/AppIcon.icns" "$BUNDLE/Contents/Resources/"
+cp -R "$ROOT"/mac/Resources/*.lproj "$BUNDLE/Contents/Resources/"
 
 VERSION="$(cat "$ROOT/VERSION")"
-cat > "$APP/Contents/Info.plist" <<PLIST
+cat > "$BUNDLE/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -37,18 +64,21 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Identity: $CODESIGN_IDENTITY, else the local "DeskBridge Dev" (scripts/setup_signing.sh), else ad-hoc.
-IDENTITY="${CODESIGN_IDENTITY:-}"
-if [ -z "$IDENTITY" ]; then
-  if security find-identity -p codesigning | grep -q '"DeskBridge Dev"'; then IDENTITY="DeskBridge Dev"; else IDENTITY="-"; fi
-fi
+# Explicit ad-hoc signing is used by the release script; local builds use the stable identity above.
 if [ "$IDENTITY" = "-" ]; then
-  # Ad-hoc: bind the signature to the bundle id instead of the binary hash so grants survive rebuilds.
-  codesign --force --sign - --requirements '=designated => identifier "com.deskbridge.app"' "$APP"
+  codesign --force --sign - --requirements '=designated => identifier "com.deskbridge.app"' "$BUNDLE"
 elif [[ "$IDENTITY" == "Developer ID Application"* ]]; then
-  codesign --force --sign "$IDENTITY" --options runtime --timestamp "$APP" # what notarization requires
+  codesign --force --sign "$IDENTITY" --options runtime --timestamp "$BUNDLE"
 else
-  codesign --force --sign "$IDENTITY" "$APP"
+  codesign --force --sign "$IDENTITY" "$BUNDLE"
+fi
+codesign --verify --strict "$BUNDLE"
+
+# Keep the previous bundle until installation has succeeded, and restore it if the move fails.
+if [ -e "$APP" ]; then mv "$APP" "$STAGE/previous.app"; fi
+if ! mv "$BUNDLE" "$APP"; then
+  if [ -e "$STAGE/previous.app" ]; then mv "$STAGE/previous.app" "$APP"; fi
+  exit 1
 fi
 echo "Signed with: $IDENTITY"
 echo "Built $APP"

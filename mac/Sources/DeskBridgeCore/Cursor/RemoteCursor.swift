@@ -57,6 +57,10 @@ final class RemoteCursor: @unchecked Sendable {
         shield.setKeyboardHandlers(text: text, command: command)
     }
 
+    func commitComposition(then completion: @escaping @Sendable () -> Void) {
+        shield.commitComposition(then: completion)
+    }
+
     /// True for the synthetic big move our own warp causes (see `WarpFilter`).
     func shouldIgnoreMove(dx: Double, dy: Double) -> Bool {
         warpFilter.shouldIgnore(dx: dx, dy: dy)

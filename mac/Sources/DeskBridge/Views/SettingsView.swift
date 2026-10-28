@@ -46,12 +46,30 @@ struct SettingsView: View {
                 Toggle("Share the clipboard (text)", isOn: $model.prefs.shareClipboard)
             }
 
+            Section("Android shortcuts") {
+                shortcutRow("Home", "⌥H")
+                shortcutRow("Back", "⌥B")
+                shortcutRow("Recent apps", "⌥R")
+                shortcutRow("Switch apps", "⌥Tab")
+                shortcutRow("Sleep screen", "⌥L")
+                shortcutRow("Volume up", "⌥↑")
+                shortcutRow("Volume down", "⌥↓")
+            }
+
             Section("General") {
                 Toggle("Launch at login", isOn: $model.launchAtLogin)
                 Toggle("Show icon in the Dock", isOn: $model.showDockIcon)
             }
         }
         .formStyle(.grouped)
+    }
+
+    private func shortcutRow(_ title: LocalizedStringKey, _ keys: String) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text(verbatim: keys).foregroundStyle(.secondary)
+        }
     }
 
     @ViewBuilder

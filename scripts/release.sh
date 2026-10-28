@@ -12,10 +12,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP="$ROOT/build/DeskBridge.app"
+APP="$ROOT/build/release/DeskBridge.app"
 ZIP="$ROOT/build/DeskBridge.zip"
 
-CODESIGN_IDENTITY="${DEVELOPER_ID:--}" "$ROOT/scripts/package_app.sh"
+DESKBRIDGE_APP_OUTPUT="$APP" CODESIGN_IDENTITY="${DEVELOPER_ID:--}" "$ROOT/scripts/package_app.sh"
 
 if [ -n "${NOTARY_PROFILE:-}" ]; then
   [ -n "${DEVELOPER_ID:-}" ] || { echo "NOTARY_PROFILE needs DEVELOPER_ID" >&2; exit 1; }

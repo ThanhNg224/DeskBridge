@@ -94,6 +94,17 @@ final class CursorShield: @unchecked Sendable {
         }
     }
 
+    /// Commit a marked word before a shortcut can change the focused Android app.
+    func commitComposition(then completion: @escaping @Sendable () -> Void) {
+        DispatchQueue.main.async {
+            if let composer = self.composer, composer.hasMarkedText() {
+                composer.unmarkText()
+                composer.inputContext?.discardMarkedText()
+            }
+            completion()
+        }
+    }
+
     func hide() {
         DispatchQueue.main.async {
             self.tearDownKeyboard()

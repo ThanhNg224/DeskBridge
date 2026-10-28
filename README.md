@@ -82,8 +82,10 @@ Needs macOS 14+ on Apple Silicon, Xcode 16+ (Swift 6), JDK 17+, the Android SDK 
 
 ```bash
 scripts/setup_signing.sh   # once: a local signing identity, so macOS keeps the Accessibility grant across rebuilds
-scripts/package_app.sh     # build/DeskBridge.app
+scripts/package_app.sh     # build/DeskBridge.app with the existing DeskBridge Dev identity
 ```
+
+The package script signs and verifies a staged bundle before replacing the previous app. It stops if the local signing identity is missing or ambiguous; it does not silently fall back to ad-hoc signing. To choose another identity, set `CODESIGN_IDENTITY` explicitly. `scripts/release.sh` uses a separate `build/release/DeskBridge.app` and explicitly selects its release signing mode, leaving the developer app intact.
 
 ### Test
 

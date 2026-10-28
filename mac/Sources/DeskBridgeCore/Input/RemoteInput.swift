@@ -27,6 +27,10 @@ public enum RemoteInput {
         case let .scroll(h, v):
             let factor = Float(prefs.scrollSpeed) * (prefs.invertScroll ? -1 : 1)
             return .send(ProtocolEncoder.scroll(h: Float(h) * factor, v: Float(v) * factor))
+        case let .androidKey(code, down):
+            return .send(ProtocolEncoder.key(code: code, down: down, meta: 0))
+        case let .switchKey(code, down, meta):
+            return .send(ProtocolEncoder.key(code: code, down: down, meta: meta))
         case let .key(code, down, flags):
             if down, KeyMapper.isReleaseChord(keyCode: code, flags: flags) {
                 return .releaseToMac
