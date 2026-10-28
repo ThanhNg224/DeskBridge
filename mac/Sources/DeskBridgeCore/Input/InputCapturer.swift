@@ -176,11 +176,9 @@ public final class InputCapturer: @unchecked Sendable {
                 onEvent(.androidKey(code: android, down: type == .keyDown))
                 return nil
             }
-            if type == .keyDown {
-                if deliversKeyToMac(code, event.flags) {
-                    passedKeys.insert(code)
-                    return pass
-                }
+            if type == .keyDown, deliversKeyToMac(code, event.flags) {
+                passedKeys.insert(code)
+                return pass
             }
             onEvent(.key(
                 code: code,
