@@ -7,7 +7,7 @@ Independent Windows 11 x64 host, built with C#/.NET 10 and WPF. The macOS ARM64 
 ## Run a packaged build
 
 1. Use Windows 11 x64 and an Android 13+ phone with USB debugging enabled.
-2. Install Android SDK Platform Tools. Put `adb.exe` on PATH, or choose it in DeskBridge Settings. No JDK, Android SDK or .NET installation is required to run the self-contained package.
+2. Install Android SDK Platform Tools or use DeskBridge Settings to open Google's download page and select the Windows ZIP. DeskBridge checks the extracted tools before using them. No JDK, Android SDK or .NET installation is required to run the self-contained package.
 3. Choose your distribution:
    - **Installer (`DeskBridge-Setup-x64.exe`)**: Recommended for end users. Installs per-user without requiring administrator privileges, creates Start Menu/Desktop shortcuts, and registers an uninstaller in Windows Settings.
    - **Portable (`DeskBridge-windows-x64.zip`)**: Extract the whole ZIP into a writable folder. Keep `deskbridge-server.jar` beside `DeskBridge.Windows.exe` and run the executable directly.
@@ -18,6 +18,29 @@ Independent Windows 11 x64 host, built with C#/.NET 10 and WPF. The macOS ARM64 
 Run as a normal user. UAC, sign-in/lock screens and other secure desktops are not remote-control targets. DeskBridge returns control locally when it detects that boundary.
 
 Changing the selected device stops the previous session before starting the new one. If that device disappears, DeskBridge keeps the selection and waits for it; it does not switch to another phone. **Disconnect** pauses automatic reconnect until you choose a device, connect explicitly or apply settings. ADB commands have an 8-second deadline; cancelling one waits up to 5 seconds for its local process to exit.
+
+### Android keyboard shortcuts
+
+While controlling Android, use these shortcuts:
+
+- `Alt+H`: Home
+- `Alt+B`: Back
+- `Alt+R`: Recent apps
+- `Alt+L`: Sleep screen
+- `Alt+Up` / `Alt+Down`: Volume up / down
+- `Alt+Left` / `Alt+Right`: Brightness down / up
+- `Alt+N`: Notifications
+- `Alt+M`: Mute
+- `Alt+P`: Play/pause
+- `Alt+Tab`: Hold `Alt` and press `Tab` to move through recent apps; release `Alt` to select.
+- `Ctrl+C`, `Ctrl+V`, `Ctrl+A`: Copy, paste and select all in Android apps.
+- `Ctrl+Alt+Shift+Esc`: Return control to the PC immediately.
+
+The phone's Android version and manufacturer determine how brightness, notifications and media behave. Adjusting brightness may turn off automatic brightness. Shortcuts and their interaction with Windows IMEs require the physical acceptance checks below.
+
+### Updates
+
+Use **Check for updates** in Settings to look for a newer stable Windows release and open its download page. DeskBridge does not download or install updates automatically.
 
 ### Text input and clipboard
 

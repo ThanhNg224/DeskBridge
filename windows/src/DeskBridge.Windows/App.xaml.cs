@@ -93,7 +93,7 @@ public partial class App : Application
             using var ct = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             var version = await new ProcessRunner().RunAsync(settings.AdbPath, ["version"], ct.Token);
             adbVersion = version.Output.Split('\n').FirstOrDefault()?.Trim();
-            devices = await new AdbClient(settings.AdbPath).ListDevicesAsync(ct.Token);
+            devices = await ManagedAdb.Client(settings.AdbPath).ListDevicesAsync(ct.Token);
         }
         catch (Exception e) { error = e.GetType().Name; }
         var report = new
@@ -115,7 +115,7 @@ public partial class App : Application
         if (index < 0 || index + 1 >= args.Length) throw new ArgumentException("--serial is required.");
         var settings = SettingsStore.Load();
         using var ct = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-        await using var session = new DeviceSession(new AdbClient(settings.AdbPath));
+        await using var session = new DeviceSession(ManagedAdb.Client(settings.AdbPath));
         var watch = Stopwatch.StartNew();
         var jar = Environment.GetEnvironmentVariable("DESKBRIDGE_SERVER_JAR") ?? Path.Combine(AppContext.BaseDirectory, "deskbridge-server.jar");
         await session.StartAsync(args[index + 1], jar, ct.Token);

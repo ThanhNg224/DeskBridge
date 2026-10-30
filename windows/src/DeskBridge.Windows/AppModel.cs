@@ -24,6 +24,8 @@ internal sealed class AppModel : IAsyncDisposable
     private nint previousForeground;
     private int generation;
     private int endingGeneration = -1;
+    private int shortcutGeneration = -1;
+    private readonly HashSet<int> rejectedShortcuts = new();
     private int failures;
     private DateTimeOffset nextAttempt;
     private bool disposing;
@@ -39,7 +41,7 @@ internal sealed class AppModel : IAsyncDisposable
     private string? sessionSerial;
     public bool Remote => input.Remote;
     public event Action? Changed;
-    public AppModel(Settings settings) : this(settings, new InputController(), path => new AdbClient(path), adb => new DeviceSession(adb),
+    public AppModel(Settings settings) : this(settings, new InputController(), ManagedAdb.Client, adb => new DeviceSession(adb),
         Environment.GetEnvironmentVariable("DESKBRIDGE_SERVER_JAR") ?? Path.Combine(AppContext.BaseDirectory, "deskbridge-server.jar"), Application.Current.Dispatcher) { }
 
     internal AppModel(Settings settings, IInputController input, Func<string, AdbClient> makeAdb,
@@ -263,6 +265,27 @@ internal sealed class AppModel : IAsyncDisposable
                     bool finishingText = command.Generation == Volatile.Read(ref endingGeneration)
                         && command.Kind is CommandKind.Text or CommandKind.Leave;
                     if (command.Generation != Volatile.Read(ref generation) && !finishingText) continue;
+                    if (command.ShortcutId != 0)
+                    {
+                        if (shortcutGeneration != command.Generation)
+                        {
+                            shortcutGeneration = command.Generation; rejectedShortcuts.Clear();
+                        }
+                        if (command.ShortcutStart && Settings.ComposedText)
+                        {
+                            var pending = await dispatcher.InvokeAsync(() =>
+                            {
+                                if (command.Generation != Volatile.Read(ref generation) || command.Target != session || shield is null)
+                                    return (Success: false, Text: (string?)null);
+                                bool success = shield.TryTakeShortcutText(out var text);
+                                return (Success: success, Text: text);
+                            });
+                            if (!pending.Success) rejectedShortcuts.Add(command.ShortcutId);
+                            else if (pending.Text is not null && active.Remote && command.Generation == Volatile.Read(ref generation))
+                                await active.TextAsync(pending.Text);
+                        }
+                        if (rejectedShortcuts.Contains(command.ShortcutId)) continue;
+                    }
                     if (Settings.ComposedText && command.Kind is CommandKind.Move or CommandKind.Button or CommandKind.Scroll)
                     {
                         // Finish an uncommitted word before pointer movement can cause Android EXIT.

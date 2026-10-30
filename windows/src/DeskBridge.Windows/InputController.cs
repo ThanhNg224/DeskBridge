@@ -25,6 +25,9 @@ internal sealed class InputController : IInputController
     private readonly TaskCompletionSource ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Native.HookProc mouseCallback, keyboardCallback;
     private readonly HashSet<uint> pressed = new();
+    private readonly AndroidShortcuts shortcuts = new();
+    private int visitVersion, observedVisit;
+    private bool altForwarded;
     private nint mouseHook, keyboardHook;
     private nint rawInputBuffer;
     private static readonly int rawInputBufferCapacity = Marshal.SizeOf<Native.RawHeader>() + Marshal.SizeOf<Native.RawMouse>();
@@ -56,7 +59,7 @@ internal sealed class InputController : IInputController
     }
     public void Engage(bool useComposer, nint handle)
     {
-        composerHandle = handle; composed = useComposer; remote = true;
+        composerHandle = handle; composed = useComposer; Interlocked.Increment(ref visitVersion); remote = true;
     }
     public void Release()
     {
@@ -137,14 +140,29 @@ internal sealed class InputController : IInputController
             Release(); ReleaseRequested?.Invoke(); return 1;
         }
         if (!remote) return Native.CallNextHookEx(keyboardHook, code, wParam, lParam);
-        if (composed)
+        if (composed && Native.GetForegroundWindow() != composerHandle)
         {
-            // The real events must reach the focused native text control for IME/UniKey composition.
-            if (Native.GetForegroundWindow() == composerHandle)
-                return Native.CallNextHookEx(keyboardHook, code, wParam, lParam);
             Release(); ReleaseRequested?.Invoke();
             return Native.CallNextHookEx(keyboardHook, code, wParam, lParam);
         }
+        int visit = Volatile.Read(ref visitVersion);
+        if (observedVisit != visit) { shortcuts.Reset(); altForwarded = false; observedVisit = visit; }
+        var commands = new List<InputCommand>(2);
+        bool routed = shortcuts.Route(data.Key, down, meta, composed, altForwarded, commands,
+            KeyboardMap.Android(data.Key, data.Scan, data.Flags));
+        foreach (var command in commands) Command?.Invoke(command);
+        if (routed)
+        {
+            if (data.Key is 0x12 or 0xA4 or 0xA5)
+            {
+                altForwarded = false;
+                if (composed) return Native.CallNextHookEx(keyboardHook, code, wParam, lParam);
+            }
+            return 1;
+        }
+        // The real events must reach the focused native text control for IME/UniKey composition.
+        if (composed) return Native.CallNextHookEx(keyboardHook, code, wParam, lParam);
+        if (data.Key is 0x12 or 0xA4 or 0xA5) altForwarded = (meta & 0x2) != 0;
         int android = KeyboardMap.Android(data.Key, data.Scan, data.Flags);
         if (android >= 0) Command?.Invoke(new(CommandKind.Key, Code: android, Down: down, Meta: meta));
         return 1;

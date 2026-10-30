@@ -75,7 +75,7 @@ public sealed class ProcessRunner : IProcessRunner
         }
     }
 }
-public sealed class AdbClient(string executable, IProcessRunner runner, TimeSpan? commandTimeout = null)
+public sealed class AdbClient(string executable, IProcessRunner runner, TimeSpan? commandTimeout = null, Func<CancellationToken, Task>? guard = null)
 {
     private readonly TimeSpan commandTimeout = commandTimeout ?? TimeSpan.FromSeconds(8);
     public AdbClient(string executable) : this(executable, new ProcessRunner()) { }
@@ -83,6 +83,7 @@ public sealed class AdbClient(string executable, IProcessRunner runner, TimeSpan
     internal async Task<string> RunAsync(CancellationToken ct, params string[] arguments)
     {
         ct.ThrowIfCancellationRequested();
+        if (guard is not null) await guard(ct).ConfigureAwait(false);
         using var timeout = new CancellationTokenSource(commandTimeout);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
         ProcessResult result;
@@ -167,6 +168,7 @@ public sealed class AdbClient(string executable, IProcessRunner runner, TimeSpan
         try
         {
             // All shell tokens are constants or internally generated lowercase hexadecimal.
+            if (guard is not null) await guard(cancellationToken).ConfigureAwait(false);
             var process = runner.Start(executable, ["-s", serial, "shell", $"CLASSPATH={RemoteJar} exec app_process / com.deskbridge.server.ServerMain {socket} {token}"]);
             return new ServerLease(this, serial, port, token, process);
         }

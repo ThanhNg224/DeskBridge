@@ -14,6 +14,13 @@ public class AdbTests
     public void ClassifiesWirelessSerials(string serial, bool expected) => Assert.Equal(expected, AdbClient.IsWirelessSerial(serial));
     [Theory] [InlineData("default via 192.168.1.1 dev wlan0 src 192.168.1.12", "192.168.1.12")] [InlineData("inet 10.0.0.2/24 brd 10.0.0.255 scope global wlan0", "10.0.0.2")] [InlineData("default dev rmnet0 src 10.0.0.2", null)]
     public void OnlySelectsWifiAddress(string output, string? expected) => Assert.Equal(expected, AdbClient.ParseWifiAddress(output));
+    [Fact] public async Task RejectedServerGuardDoesNotLaunchAdb()
+    {
+        var runner = new FakeRunner();
+        var adb = new AdbClient("managed-adb", runner, guard: _ => throw new InvalidOperationException("incompatible"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => adb.ListDevicesAsync());
+        Assert.Empty(runner.Calls);
+    }
     [Fact] public async Task CommandsUseArgumentListAndWirelessRequiresReadyDevice()
     {
         var runner = new FakeRunner(); runner.Outputs.Enqueue("connected to 10.0.0.2:5555"); runner.Outputs.Enqueue("List of devices attached\n10.0.0.2:5555 device model:Pixel_8");

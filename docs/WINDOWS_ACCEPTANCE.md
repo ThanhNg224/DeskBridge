@@ -69,6 +69,9 @@ Record PASS/FAIL, evidence and defect issue for each unchecked row. Use a normal
 - [ ] Enter and return across all four edges; click, drag, wheel, horizontal scroll and right-click Back/secondary mode. No input leaks into a PC application while remote.
 - [ ] Secondary monitor left/right/portrait, negative coordinates, 100/150/200% DPI, primary-monitor changes and unplugging a monitor. Internal edges do not enter Android.
 - [ ] Ctrl+C/V/A, arrows/Home/End, function keys, key repeat and modifiers held across handoff. No stuck key/button after return.
+- [ ] Verify Alt+H/B/R/L, Alt+Up/Down, and hold Alt+Tab to switch across several apps; release Alt before Tab as well as after Tab. Verify the Windows task switcher remains available while local and no modifier remains stuck after disconnect or emergency return.
+- [ ] Without an existing ADB installation, select a Google Platform Tools Windows ZIP in Settings; confirm signature validation, USB authorization, connection and preservation of any shared ADB server. Reject modified, unsigned, malformed and incompatible ZIP files.
+- [ ] Check for updates manually with network available and unavailable; verify only stable Windows releases are offered.
 - [ ] Microsoft Vietnamese Telex in Samsung Notes and browser input: words, editing accents, Backspace, punctuation, Enter, shortcuts, switching layout, pointer movement and focus loss.
 - [ ] UniKey **Unicode Telex**, then **Unicode VNI**, in both input targets: the same cases; no duplicate characters or keystrokes landing in a PC application.
 - [ ] Composed mode: pending word followed by mouse movement; committed words followed by pending text and immediate emergency return; rapid exit/re-entry preserves ordering.

@@ -91,6 +91,15 @@ public sealed class AdapterTests
         composer.Close();
     });
     [Fact]
+    public void ShortcutTakesPendingComposedTextExactlyOnce() => Sta(() =>
+    {
+        var sent = new List<InputCommand>(); var composer = new ControlWindow(true, sent.Add);
+        var editor = (TextBox)composer.Content; editor.Text = "tiếng Việt";
+        Assert.True(composer.TryTakeShortcutText(out var text)); Assert.Equal("tiếng Việt", text);
+        Assert.True(composer.TryTakeShortcutText(out var again)); Assert.Null(again); Assert.Empty(sent);
+        composer.Close();
+    });
+    [Fact]
     public void ComposerCancellationDoesNotSendAndOversizeFailsClosed() => Sta(() =>
     {
         var sent = new List<InputCommand>(); var composer = new ControlWindow(true, sent.Add);

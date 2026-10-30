@@ -9,6 +9,7 @@ internal sealed class ControlWindow : Window
 {
     private readonly TextBox editor;
     private bool composing, clearing;
+    private TextComposition? activeComposition;
     private readonly bool composedMode;
     private readonly Action<InputCommand> send;
     private readonly Dictionary<Key, int> forwardedKeys = new();
@@ -32,12 +33,12 @@ internal sealed class ControlWindow : Window
             IsUndoEnabled = false
         };
         Content = editor;
-        editor.AddHandler(TextCompositionManager.PreviewTextInputStartEvent, new TextCompositionEventHandler((_, _) => composing = true), true);
-        editor.AddHandler(TextCompositionManager.PreviewTextInputUpdateEvent, new TextCompositionEventHandler((_, _) => composing = true), true);
+        editor.AddHandler(TextCompositionManager.PreviewTextInputStartEvent, new TextCompositionEventHandler((_, e) => { composing = true; activeComposition = e.TextComposition; }), true);
+        editor.AddHandler(TextCompositionManager.PreviewTextInputUpdateEvent, new TextCompositionEventHandler((_, e) => { composing = true; activeComposition = e.TextComposition; }), true);
         // TextBox handles TextInput itself; observe handled events to finish IME composition.
         editor.AddHandler(TextCompositionManager.TextInputEvent, new TextCompositionEventHandler((_, _) =>
         {
-            composing = false;
+            composing = false; activeComposition = null;
             Dispatcher.BeginInvoke(() => CommitDelimited());
         }), true);
         editor.TextChanged += (_, _) => { if (!clearing && !composing) CommitDelimited(); };
@@ -86,9 +87,24 @@ internal sealed class ControlWindow : Window
         Cancel();
         return text;
     }
+    /// Complete a real IME composition before changing the target app. Never discard it on failure.
+    public bool TryTakeShortcutText(out string? text)
+    {
+        text = null;
+        if (composing)
+        {
+            if (activeComposition is null) return false;
+            try { if (!TextCompositionManager.CompleteComposition(activeComposition)) return false; }
+            catch (ArgumentException) { return false; }
+            if (composing) return false;
+        }
+        text = TakePendingText();
+        return true;
+    }
+
     public void Cancel()
     {
-        clearing = true; editor.Clear(); clearing = false; composing = false;
+        clearing = true; editor.Clear(); clearing = false; composing = false; activeComposition = null;
     }
 
     private void RouteKey(KeyEventArgs e, bool down)
@@ -105,6 +121,7 @@ internal sealed class ControlWindow : Window
             else e.Handled = !localKeys.Remove(key);
             return;
         }
+        if (key is Key.LeftAlt or Key.RightAlt) { localKeys.Add(key); e.Handled = true; return; }
         bool shortcut = (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Windows)) != 0;
         if (key == Key.Escape && editor.Text.Length > 0) { if (down) Cancel(); e.Handled = true; return; }
         bool editing = key == Key.Back && editor.Text.Length > 0;

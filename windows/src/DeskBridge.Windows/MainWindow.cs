@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -77,6 +78,18 @@ internal sealed class MainWindow : Window
             if (dialog.ShowDialog(this) == true) adb.Text = dialog.FileName;
             return Task.CompletedTask;
         }));
+        fields.Children.Add(new TextBlock
+        {
+            Text = T("If Android tools are missing, download Platform Tools for Windows from Google, accept its terms, then select the ZIP. On the phone, tap Build number seven times in About phone, enable USB debugging, connect USB and tap Allow.",
+                     "Nếu thiếu công cụ Android, tải Platform Tools cho Windows từ Google, chấp nhận điều khoản rồi chọn tệp ZIP. Trên điện thoại, chạm Số bản dựng bảy lần trong Giới thiệu điện thoại, bật Gỡ lỗi USB, cắm cáp USB rồi chạm Cho phép."),
+            TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 4)
+        });
+        fields.Children.Add(Button("Download Android tools from Google", "Tải công cụ Android từ Google", () =>
+        {
+            Process.Start(new ProcessStartInfo("https://developer.android.com/tools/releases/platform-tools") { UseShellExecute = true });
+            return Task.CompletedTask;
+        }));
+        fields.Children.Add(Button("Select Platform Tools ZIP…", "Chọn tệp ZIP Platform Tools…", InstallAdbAsync));
         Field("Phone position (screen edge)", "Vị trí điện thoại (cạnh màn hình)", edge);
         Field("Pointer speed (0.1–10)", "Tốc độ con trỏ (0.1–10)", pointer);
         Field("Scroll speed (0.1–10)", "Tốc độ cuộn (0.1–10)", scroll);
@@ -85,6 +98,13 @@ internal sealed class MainWindow : Window
         Check(clipboard, "Share text clipboard", "Chia sẻ clipboard văn bản");
         Check(composed, "Composed text (Microsoft IME / UniKey)", "Nhập văn bản qua bộ gõ (Microsoft / UniKey)");
         fields.Children.Add(new TextBlock { Text = T("A small text preview receives focus while controlling Android. Commit words with space or punctuation.", "Ô xem trước nhận focus khi điều khiển Android. Hoàn tất từ bằng dấu cách hoặc dấu câu."), TextWrapping = TextWrapping.Wrap });
+        Field("Android shortcuts", "Phím tắt Android", new TextBlock
+        {
+            Text = T("Alt+H Home · Alt+B Back · Alt+R Recent apps\nAlt+L Sleep screen · Alt+↑/↓ Volume · Alt+←/→ Brightness\nAlt+N Notifications · Alt+M Mute · Alt+P Play/pause · Alt+Tab Switch apps",
+                     "Alt+H Màn hình chính · Alt+B Quay lại · Alt+R Ứng dụng gần đây\nAlt+L Tắt màn hình · Alt+↑/↓ Âm lượng · Alt+←/→ Độ sáng\nAlt+N Thông báo · Alt+M Tắt tiếng · Alt+P Phát/tạm dừng · Alt+Tab Chuyển ứng dụng"),
+            TextWrapping = TextWrapping.Wrap
+        });
+        fields.Children.Add(Button("Check for updates", "Kiểm tra bản cập nhật", CheckUpdatesAsync));
         Check(startup, "Start with Windows", "Mở cùng Windows");
         Field("Language", "Ngôn ngữ", language);
         Field("Wi-Fi IPv4 address", "Địa chỉ IPv4 Wi-Fi", host);
@@ -111,6 +131,62 @@ internal sealed class MainWindow : Window
         actions.Children.Add(Button("Return control to PC · Ctrl+Alt+Shift+Esc", "Trả điều khiển về PC · Ctrl+Alt+Shift+Esc", () => { model.ReturnLocal(); return Task.CompletedTask; }));
         actions.Children.Add(new TextBlock { Text = T("Experimental · Windows/device acceptance pending", "Bản thử nghiệm · Chưa nghiệm thu Windows/thiết bị"), Foreground = Brushes.DimGray, Margin = new Thickness(0, 8, 0, 0) });
     }
+    private async Task InstallAdbAsync()
+    {
+        if (ManagedAdb.ExistingAdb(model.Settings.AdbPath) || ManagedAdb.ExistingAdb(adb.Text.Trim()))
+        {
+            MessageBox.Show(T("Android tools are already configured. Your existing tools will be kept.",
+                              "Công cụ Android đã được thiết lập. Công cụ hiện có sẽ được giữ nguyên."), "DeskBridge");
+            return;
+        }
+        var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "ZIP|*.zip", CheckFileExists = true };
+        if (dialog.ShowDialog(this) != true) return;
+        try
+        {
+            string installed = await Task.Run(() => PlatformToolsArchive.InstallAsync(dialog.FileName, ManagedAdb.Root,
+                ManagedAdb.VerifyGoogleAsync, ManagedAdb.EnsureCompatibleAsync));
+            await model.ApplyAsync(model.Settings with { AdbPath = installed, PreferredSerial = model.SelectedSerial });
+            adb.Text = model.Settings.AdbPath;
+        }
+        catch (InvalidOperationException)
+        {
+            throw new InvalidOperationException(T("The existing Android tools are incompatible. Close the other tools and try again.",
+                                                  "Công cụ Android đang chạy không tương thích. Hãy đóng công cụ khác rồi thử lại."));
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or OperationCanceledException or System.ComponentModel.Win32Exception)
+        {
+            throw new InvalidOperationException(T("Could not verify the Android tools ZIP. Download it from Google and try again.",
+                                                  "Không thể xác minh tệp ZIP công cụ Android. Hãy tải từ Google và thử lại."));
+        }
+    }
+    private async Task CheckUpdatesAsync()
+    {
+        var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+        string version = assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion
+            ?? assembly.GetName().Version?.ToString(3) ?? "";
+        Uri? url;
+        try { url = await ReleaseChecker.CheckWindowsAsync(version); }
+        catch (InvalidOperationException)
+        {
+            throw new InvalidOperationException(T("GitHub limited or refused the request. Try again later.",
+                                                  "GitHub đã giới hạn hoặc từ chối yêu cầu. Hãy thử lại sau."));
+        }
+        catch (Exception error) when (error is System.Net.Http.HttpRequestException or System.Text.Json.JsonException or IOException or OperationCanceledException)
+        {
+            throw new InvalidOperationException(T("Could not check for updates. Check your connection and try again.",
+                                                  "Không thể kiểm tra cập nhật. Hãy kiểm tra kết nối và thử lại."));
+        }
+        if (url is null)
+        {
+            MessageBox.Show(T("No newer stable Windows release found.", "Không tìm thấy bản Windows ổn định mới hơn."), "DeskBridge");
+            return;
+        }
+        if (MessageBox.Show(T("A new Windows version is available. Open the download page?",
+                              "Đã có phiên bản Windows mới. Mở trang tải về?"), "DeskBridge", MessageBoxButton.YesNo) == MessageBoxResult.Yes)
+            Process.Start(new ProcessStartInfo(url.AbsoluteUri) { UseShellExecute = true });
+    }
+
     private void LoadSettings()
     {
         var value = model.Settings;

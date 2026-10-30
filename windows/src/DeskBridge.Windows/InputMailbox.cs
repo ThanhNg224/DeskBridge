@@ -1,7 +1,7 @@
 namespace DeskBridge.Windows;
 
 internal enum CommandKind { Move, Button, Scroll, Key, Text, Leave }
-internal sealed record InputCommand(CommandKind Kind, float X = 0, float Y = 0, int Code = 0, bool Down = false, int Meta = 0, string? Text = null, int Generation = 0, DeskBridge.Core.DeviceSession? Target = null, TaskCompletionSource? Completion = null);
+internal sealed record InputCommand(CommandKind Kind, float X = 0, float Y = 0, int Code = 0, bool Down = false, int Meta = 0, string? Text = null, int Generation = 0, DeskBridge.Core.DeviceSession? Target = null, TaskCompletionSource? Completion = null, int ShortcutId = 0, bool ShortcutStart = false);
 
 internal sealed class InputMailbox : IDisposable
 {
