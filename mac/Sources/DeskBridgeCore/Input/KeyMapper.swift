@@ -77,8 +77,13 @@ struct ShortcutKeys {
         case kVK_ANSI_B: key = 4 // BACK
         case kVK_ANSI_R: key = 187 // APP_SWITCH
         case kVK_ANSI_L: key = 223 // SLEEP
+        case kVK_ANSI_N: key = 83 // NOTIFICATION
+        case kVK_ANSI_M: key = 164 // VOLUME_MUTE
+        case kVK_ANSI_P: key = 85 // MEDIA_PLAY_PAUSE
         case kVK_UpArrow: key = 24 // VOLUME_UP
         case kVK_DownArrow: key = 25 // VOLUME_DOWN
+        case kVK_RightArrow: key = 221 // BRIGHTNESS_UP
+        case kVK_LeftArrow: key = 220 // BRIGHTNESS_DOWN
         default: return nil
         }
         pressed[code] = key

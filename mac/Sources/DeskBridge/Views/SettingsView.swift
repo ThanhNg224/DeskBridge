@@ -54,6 +54,11 @@ struct SettingsView: View {
                 shortcutRow("Sleep screen", "⌥L")
                 shortcutRow("Volume up", "⌥↑")
                 shortcutRow("Volume down", "⌥↓")
+                shortcutRow("Brightness up", "⌥→")
+                shortcutRow("Brightness down", "⌥←")
+                shortcutRow("Notification panel", "⌥N")
+                shortcutRow("Mute", "⌥M")
+                shortcutRow("Play/pause", "⌥P")
             }
 
             Section("General") {

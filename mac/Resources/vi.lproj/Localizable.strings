@@ -104,7 +104,12 @@
 "Sleep screen" = "Tắt màn hình";
 "Volume up" = "Tăng âm lượng";
 "Volume down" = "Giảm âm lượng";
+"Brightness up" = "Tăng độ sáng";
+"Brightness down" = "Giảm độ sáng";
 "Switch apps" = "Chuyển ứng dụng";
+"Notification panel" = "Bảng thông báo";
+"Mute" = "Tắt tiếng";
+"Play/pause" = "Phát/Tạm dừng";
 
 "Download Platform Tools for Mac from Google, then select the ZIP." = "Tải Platform Tools cho Mac từ Google, sau đó chọn tệp ZIP.";
 "Download from Google" = "Tải từ Google";

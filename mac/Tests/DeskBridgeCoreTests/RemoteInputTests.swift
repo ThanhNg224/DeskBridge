@@ -56,7 +56,9 @@ struct RemoteInputTests {
 
     @Test func shortcutsKeepTheirAndroidKeyUntilRelease() {
         let keys: [(Int, Int32)] = [(kVK_ANSI_H, 3), (kVK_ANSI_B, 4), (kVK_ANSI_R, 187),
-                                    (kVK_ANSI_L, 223), (kVK_UpArrow, 24), (kVK_DownArrow, 25)]
+                                    (kVK_ANSI_L, 223), (kVK_UpArrow, 24), (kVK_DownArrow, 25),
+                                    (kVK_RightArrow, 221), (kVK_LeftArrow, 220), (kVK_ANSI_N, 83),
+                                    (kVK_ANSI_M, 164), (kVK_ANSI_P, 85)]
         var shortcuts = ShortcutKeys()
         for (mac, android) in keys {
             let code = UInt16(mac)

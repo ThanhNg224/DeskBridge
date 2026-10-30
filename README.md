@@ -46,6 +46,29 @@ Push the pointer off the edge of the screen and it appears on the phone. Push it
 
 The DeskBridge window shows what is still missing and turns green when everything is ready. Then move the pointer past the screen edge you picked (Settings lets you choose left, right, top or bottom) and it jumps to the phone.
 
+## Keyboard shortcuts
+
+These shortcuts work while the pointer is on the phone. Hold **Option (⌥)** and press the other key:
+
+| Action on the phone | Shortcut |
+| --- | --- |
+| Home | `Option + H` |
+| Back | `Option + B` |
+| Recent apps | `Option + R` |
+| Switch apps | `Option + Tab` |
+| Turn off the screen | `Option + L` |
+| Volume up / down | `Option + ↑` / `Option + ↓` |
+| Brightness up / down | `Option + →` / `Option + ←` |
+| Open or close notifications | `Option + N` |
+| Mute / unmute | `Option + M` |
+| Play / pause media | `Option + P` |
+
+To switch apps, keep holding **Option**, press **Tab** until the app you want is selected, then release **Option**. The phone controls the appearance of the switcher. `Command + Tab` continues to switch Mac apps.
+
+With **⌘ acts as Ctrl** enabled in DeskBridge settings, use `Command + C`, `Command + V` and `Command + A` on the phone to copy, paste and select all. Right-click also goes Back by default. To immediately return control to your Mac, press **Control + Option + Command + Esc**.
+
+The phone's Android version and manufacturer determine how media, mute, brightness and the notification panel behave. Adjusting brightness may turn off automatic brightness. Turning off the screen does not necessarily require a PIN when you wake it; that depends on your phone's security settings.
+
 ## Questions
 
 **The pointer does not cross.** Open DeskBridge: the checklist tells you which step is missing (Accessibility, `adb`, or the phone not authorized). Make sure the screen edge in Settings is the side where you move the mouse.
