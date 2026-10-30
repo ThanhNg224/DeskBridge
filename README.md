@@ -50,6 +50,8 @@ The DeskBridge window shows what is still missing and turns green when everythin
 
 These shortcuts work while the pointer is on the phone. Hold **Option (⌥)** and press the other key:
 
+Brightness, notifications, mute and play/pause are in the current source and development build; they are not yet in the latest Mac release.
+
 | Action on the phone | Shortcut |
 | --- | --- |
 | Home | `Option + H` |
