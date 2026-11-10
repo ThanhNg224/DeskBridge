@@ -52,6 +52,12 @@ public final class DeviceWatcher: @unchecked Sendable {
         }
     }
 
+    /// Wait until the queued stop has completed before restarting the server.
+    public func stopAndWait() {
+        stop()
+        queue.sync {}
+    }
+
     private func launch() {
         guard !stopped, connection == nil else { return }
         let connection = Connection(port: port, queue: queue)

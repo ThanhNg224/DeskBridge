@@ -84,7 +84,9 @@ private final class ModelFixture {
 
     init(selected: String? = nil, devices: [AdbDevice] = [], deadline: ResultGate? = nil,
          install: (@Sendable (URL) async throws -> Void)? = nil,
-         update: (@Sendable (String) async throws -> URL?)? = nil)
+         update: (@Sendable (String) async throws -> URL?)? = nil,
+         restart: (@Sendable (ADBBridge) async throws -> Void)? = nil,
+         identities: (@Sendable (ADBBridge, [AdbDevice]) async throws -> [AdbDevice])? = nil)
     {
         self.devices = devices
         let defaults = UserDefaults(suiteName: suite)!
@@ -94,6 +96,9 @@ private final class ModelFixture {
         values.preferredSerial = selected
         settings.values = values
         var dependencies = AppDependencies()
+        if let restart {
+            dependencies.restartADB = restart
+        }
         if let install {
             dependencies.installADB = install
         }
@@ -103,6 +108,7 @@ private final class ModelFixture {
         dependencies.installedVersion = { "1.1.7" }
         dependencies.adb = { try ADBBridge(adbPath: "/usr/bin/true") }
         dependencies.devices = { [weak self] _ in await self?.discoveredDevices() ?? [] }
+        dependencies.deviceIdentities = identities ?? { _, devices in devices }
         dependencies.wireless = { [weak self] _, request, _ in
             guard let self else { throw CancellationError() }
             return try await perform(request)
@@ -188,6 +194,107 @@ struct AppModelTests {
         f.devices = [wifi, usb]
         await f.model.refreshNow()
         #expect(f.sessions.map(\.serial) == [usb.serial, usb.serial])
+    }
+
+    @Test func matchedTransportTakesOverOnlyAfterOldSessionStops() async {
+        let usb = AdbDevice(serial: "USB-A", state: "device", model: "Phone", physicalID: "phone-1")
+        let wifi = AdbDevice(serial: "192.168.1.7:5555", state: "device", model: "Phone", physicalID: "phone-1")
+        let other = AdbDevice(serial: "USB-B", state: "device", model: "Phone", physicalID: "phone-2")
+        let f = ModelFixture(selected: usb.serial, devices: [usb, wifi, other])
+        defer { f.close() }
+        await f.model.refreshNow()
+        #expect(f.model.setup.phones.count == 2)
+        #expect(f.model.selectedPhoneHasBothTransports)
+        let first = f.sessions[0]
+        first.emit(.local)
+        await eventually { f.model.activePhone != nil }
+        f.devices = [wifi, other]
+        await f.model.refreshNow()
+        #expect(first.stops == 1)
+        #expect(f.model.prefs.preferredSerial == usb.serial)
+        #expect(f.sessions.count == 1)
+        first.emit(.ended(.stopped))
+        await eventually { f.sessions.count == 2 }
+        #expect(f.model.prefs.preferredSerial == wifi.serial)
+        #expect(f.sessions[1].serial == wifi.serial)
+        f.sessions[1].emit(.local)
+        await eventually { f.model.automaticSwitchMessage != nil }
+        #expect(f.model.automaticSwitchMessage?.contains("Wi-Fi") == true)
+    }
+
+    @Test func neverFailOverToMissingOrConflictingIdentity() async {
+        let usb = AdbDevice(serial: "USB-A", state: "device", physicalID: "phone-1")
+        let wifi = AdbDevice(serial: "192.168.1.7:5555", state: "device", physicalID: "phone-2")
+        let f = ModelFixture(selected: usb.serial, devices: [usb, wifi])
+        defer { f.close() }
+        await f.model.refreshNow()
+        let first = f.sessions[0]
+        f.devices = [wifi]
+        await f.model.refreshNow()
+        first.emit(.ended(.stopped))
+        await settle()
+        await f.model.refreshNow()
+        #expect(f.model.prefs.preferredSerial == usb.serial)
+        #expect(f.sessions.count == 1)
+    }
+
+    @Test func explicitDisconnectDoesNotFailOverToMatchingUSB() async {
+        let usb = AdbDevice(serial: "USB-A", state: "device", physicalID: "phone-1")
+        let wifi = AdbDevice(serial: "192.168.1.7:5555", state: "device", physicalID: "phone-1")
+        let f = ModelFixture(selected: wifi.serial, devices: [usb, wifi])
+        defer { f.close() }
+        await f.model.refreshNow()
+        let session = f.sessions[0]
+        session.emit(.local)
+        await eventually { f.model.activePhone != nil }
+        f.model.disconnectWireless(serial: wifi.serial)
+        session.emit(.ended(.stopped))
+        await eventually { !f.model.isOperatingWireless }
+        f.devices = [usb]
+        await f.model.refreshNow()
+        #expect(f.model.prefs.preferredSerial == wifi.serial)
+        #expect(f.sessions.count == 1)
+    }
+
+    @Test func reusedNetworkAddressWithDifferentPhoneDoesNotStartSession() async throws {
+        let wifi = AdbDevice(serial: "192.168.1.7:5555", state: "device", physicalID: "phone-1")
+        let f = ModelFixture(selected: wifi.serial, devices: [wifi])
+        defer { f.close() }
+        await f.model.refreshNow()
+        let session = f.sessions[0]
+        f.devices = [AdbDevice(serial: wifi.serial, state: "device", physicalID: "phone-2")]
+        await f.model.refreshNow()
+        #expect(session.stops == 1)
+        session.emit(.ended(.stopped))
+        await settle()
+        await f.model.refreshNow()
+        #expect(f.sessions.count == 1)
+        #expect(f.model.selectedPhone?.isReady == false)
+        let detected = try #require(f.model.detectedDifferentPhone)
+        f.model.useDetectedPhone(detected)
+        await eventually { f.sessions.count == 2 }
+        #expect(f.sessions[1].serial == wifi.serial)
+    }
+
+    @Test func missingTransportStopsOldSessionBeforeIdentityLookupFinishes() async {
+        let gate = ResultGate()
+        let usb = AdbDevice(serial: "USB-A", state: "device", physicalID: "phone-1")
+        let wifi = AdbDevice(serial: "192.168.1.7:5555", state: "device", physicalID: "phone-1")
+        let f = ModelFixture(selected: usb.serial, devices: [usb, wifi], identities: { _, devices in
+            if !devices.contains(where: { $0.serial == "USB-A" }) {
+                _ = await gate.wait()
+            }
+            return devices
+        })
+        defer { f.close() }
+        await f.model.refreshNow()
+        let old = f.sessions[0]
+        f.devices = [wifi]
+        let refresh = Task { await f.model.refreshNow() }
+        await eventually { old.stops == 1 }
+        #expect(f.sessions.count == 1)
+        await gate.resolve()
+        await refresh.value
     }
 
     @Test func selectedDeviceKeepsItsNameWhenADBReportsOfflineWithoutModel() async {
@@ -384,6 +491,58 @@ struct AppModelTests {
         await f.model.refreshNow()
         #expect(f.sessions.count == 2)
         #expect(f.requests.allSatisfy { $0 == expected })
+    }
+
+    @Test(arguments: [false, true])
+    func wirelessFailureDisplaysADBOutputAndRouteHint(_ commandFailure: Bool) async {
+        let f = ModelFixture(selected: usb.serial, devices: [usb])
+        defer { f.close() }
+        let output = "failed to connect: No route to host"
+        f.wireless = { _ in
+            if commandFailure {
+                throw ADBError.commandFailed(output)
+            }
+            throw ADBError.wirelessConnectionFailed(output)
+        }
+        f.model.wirelessIP = "192.168.1.7"
+        f.model.connectWireless()
+        await eventually { f.model.wirelessErrorMessage != nil }
+        #expect(f.model.wirelessErrorDetails == output)
+        #expect(f.model.wirelessErrorMessage?.contains("Local Network") == true)
+        #expect(f.model.canRestartADB)
+    }
+
+    @Test func restartADBWaitsForCompletionAndKeepsSelectedDevice() async {
+        let gate = ResultGate()
+        let f = ModelFixture(selected: usb.serial, devices: [usb], restart: { _ in _ = await gate.wait() })
+        defer { f.close() }
+        f.wireless = { _ in throw ADBError.wirelessConnectionFailed("No route to host") }
+        f.model.wirelessIP = "192.168.1.7"
+        f.model.connectWireless()
+        await eventually { f.model.canRestartADB }
+        f.model.restartADB()
+        #expect(f.model.isRestartingADB)
+        #expect(!f.model.canRestartADB)
+        #expect(f.model.prefs.preferredSerial == usb.serial)
+        await gate.resolve()
+        await eventually { !f.model.isRestartingADB }
+        #expect(f.model.prefs.preferredSerial == usb.serial)
+        #expect(f.model.wirelessErrorMessage == nil)
+    }
+
+    @Test func restartADBFailureIsShown() async {
+        let f = ModelFixture(selected: usb.serial, devices: [usb], restart: { _ in
+            throw ADBError.commandFailed("restart failed")
+        })
+        defer { f.close() }
+        f.wireless = { _ in throw ADBError.wirelessConnectionFailed("No route to host") }
+        f.model.wirelessIP = "192.168.1.7"
+        f.model.connectWireless()
+        await eventually { f.model.canRestartADB }
+        f.model.restartADB()
+        await eventually { !f.model.isRestartingADB }
+        #expect(f.model.wirelessErrorDetails?.contains("restart failed") == true)
+        #expect(f.model.prefs.preferredSerial == usb.serial)
     }
 
     @Test(arguments: [false, true])

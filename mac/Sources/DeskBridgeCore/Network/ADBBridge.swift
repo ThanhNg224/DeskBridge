@@ -1,3 +1,4 @@
+import CryptoKit
 import Darwin
 import Foundation
 
@@ -6,11 +7,14 @@ public struct AdbDevice: Equatable, Sendable {
     public let state: String
     /// Model reported by `adb devices -l` (e.g. "SM N770F"), if any.
     public let model: String?
+    /// Hash of a device-reported identity, when it can be read and validated.
+    public let physicalID: String?
 
-    public init(serial: String, state: String, model: String? = nil) {
+    public init(serial: String, state: String, model: String? = nil, physicalID: String? = nil) {
         self.serial = serial
         self.state = state
         self.model = model
+        self.physicalID = physicalID
     }
 
     public var isReady: Bool {
@@ -204,6 +208,25 @@ public struct ADBBridge: Sendable {
         return model.isEmpty ? serial : model
     }
 
+    /// Read through each live transport; unavailable or placeholder identities must never match.
+    public func physicalDeviceID(serial: String) throws -> String? {
+        let output: String
+        do { output = try run(["-s", serial, "shell", "getprop", "ro.serialno"]) }
+        catch ADBError.commandFailed { return nil }
+        return Self.physicalDeviceID(from: output)
+    }
+
+    public static func physicalDeviceID(from output: String) -> String? {
+        let value = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = value.lowercased()
+        guard (6 ... 128).contains(value.utf8.count),
+              value.utf8.allSatisfy({ (48 ... 57).contains($0) || (65 ... 90).contains($0) ||
+                      (97 ... 122).contains($0) || $0 == 45 || $0 == 95 || $0 == 46 }),
+              !["unknown", "0123456789abcdef", "1234567890", "serialno"].contains(lower),
+              Set(value).count > 1 else { return nil }
+        return SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
     public func deviceIP(serial: String) throws -> String {
         let routeOutput = try addressOutput(["-s", serial, "shell", "ip", "route"])
         if let ip = Self.parseIP(from: routeOutput) {
@@ -290,6 +313,12 @@ public struct ADBBridge: Sendable {
     @discardableResult
     public func disconnectWireless(serial: String) throws -> String {
         try run(["disconnect", serial])
+    }
+
+    /// Explicit user action: restarts the shared ADB server and interrupts other ADB clients.
+    public func restartServer() throws {
+        _ = try run(["kill-server"])
+        _ = try run(["start-server"])
     }
 
     public func removeStaleForwards(serial: String) {

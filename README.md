@@ -123,6 +123,14 @@ cd mac && DESKBRIDGE_DEVICE=1 swift test --filter DeviceSmokeTests   # end to en
 scripts/device_matrix.sh                                             # Android 14, 15, 16 emulators
 ```
 
+For Wi-Fi troubleshooting, Settings shows selectable ADB error details. To inspect operation IDs and stages in macOS unified logs, run:
+
+```bash
+log show --last 1h --info --predicate 'subsystem == "com.deskbridge.app" AND category == "wireless"'
+```
+
+ADB output and device addresses in logs are private; review details in Settings before sharing them.
+
 ### Release
 
 `scripts/release.sh` builds `build/DeskBridge.zip`, the file behind the download link (`gh release upload vX.Y.Z build/DeskBridge.zip --clobber`). With a paid Apple Developer account it also signs, notarizes and staples, so users can skip the "Open Anyway" step:

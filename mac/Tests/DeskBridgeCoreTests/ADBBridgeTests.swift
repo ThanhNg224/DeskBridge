@@ -71,6 +71,15 @@ struct ADBBridgeTests {
         #expect(!AdbDevice(serial: "adb-phone._adb-tls-pairing._tcp", state: "device").isWireless)
     }
 
+    @Test func physicalIdentityRejectsMissingAndPlaceholderValues() {
+        #expect(ADBBridge.physicalDeviceID(from: "") == nil)
+        #expect(ADBBridge.physicalDeviceID(from: "unknown\n") == nil)
+        #expect(ADBBridge.physicalDeviceID(from: "0123456789ABCDEF") == nil)
+        #expect(ADBBridge.physicalDeviceID(from: "abc def") == nil)
+        #expect(ADBBridge.physicalDeviceID(from: "RF8NA2EZKZK\n") == ADBBridge.physicalDeviceID(from: "RF8NA2EZKZK"))
+        #expect(ADBBridge.physicalDeviceID(from: "RF8NA2EZKZK") != nil)
+    }
+
     @Test func parseIPExtractsWlanAddress() {
         let routeOutput = """
         192.168.1.0/24 dev wlan0 proto kernel scope link src 192.168.1.120
@@ -198,6 +207,20 @@ struct ADBBridgeTests {
         #expect(target == "192.168.1.10:5555")
         #expect(try fixture.bridge.disconnectWireless(serial: target).contains("disconnected"))
         #expect(try fixture.commands() == ["connect 192.168.1.10:5555", "devices -l", "disconnect 192.168.1.10:5555"])
+    }
+
+    @Test func explicitRestartStopsThenStartsServer() throws {
+        let fixture = try FakeADB(responses: [("kill-server", "", 0), ("start-server", "", 0)])
+        defer { fixture.remove() }
+        try fixture.bridge.restartServer()
+        #expect(try fixture.commands() == ["kill-server", "start-server"])
+    }
+
+    @Test func restartStopsWhenKillServerFails() throws {
+        let fixture = try FakeADB(responses: [("kill-server", "could not stop server", 1)])
+        defer { fixture.remove() }
+        #expect(throws: ADBError.self) { try fixture.bridge.restartServer() }
+        #expect(try fixture.commands() == ["kill-server"])
     }
 
     @Test func connectSurfacesOutputAndProcessFailures() async throws {

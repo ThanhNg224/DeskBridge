@@ -3,6 +3,9 @@ import SwiftUI
 
 struct SettingsView: View {
     @Bindable var model: AppModel
+    @State private var confirmingADBRestart = false
+    @State private var detectedPhoneToConfirm: AppModel.DetectedPhone?
+    @State private var confirmingDetectedPhone = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -10,6 +13,22 @@ struct SettingsView: View {
             form
         }
         .frame(minWidth: 400, idealWidth: 440, maxWidth: 700, minHeight: 420, idealHeight: 680)
+        .alert("Restart ADB server?", isPresented: $confirmingADBRestart) {
+            Button("Cancel", role: .cancel) {}
+            Button("Restart ADB") { model.restartADB() }
+        } message: {
+            Text("This temporarily disconnects all devices and other apps using ADB. They may need to reconnect.")
+        }
+        .alert("Use detected phone?", isPresented: $confirmingDetectedPhone) {
+            Button("Cancel", role: .cancel) {}
+            Button("Use phone") {
+                if let phone = detectedPhoneToConfirm {
+                    model.useDetectedPhone(phone)
+                }
+            }
+        } message: {
+            Text("A different phone is using this connection. Switch control to it?")
+        }
     }
 
     private var form: some View {
@@ -116,6 +135,22 @@ struct SettingsView: View {
                 }
 
                 if let phone = model.selectedPhone {
+                    if let detected = model.detectedDifferentPhone {
+                        Button("Use detected phone…") {
+                            detectedPhoneToConfirm = detected
+                            confirmingDetectedPhone = true
+                        }
+                    }
+                    if let message = model.automaticSwitchMessage {
+                        Text(verbatim: message)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if model.selectedPhoneHasBothTransports {
+                        Text("USB and Wi-Fi available")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     HStack(spacing: 8) {
                         Label(phone.isWireless ? "Wi-Fi" : "USB",
                               systemImage: phone.isWireless ? "wifi" : "cable.connector")
@@ -177,10 +212,21 @@ struct SettingsView: View {
 
                 Group {
                     if let error = model.wirelessErrorMessage ?? model.wirelessInputError {
-                        Label(error, systemImage: "exclamationmark.circle")
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                            .fixedSize(horizontal: false, vertical: true)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label(error, systemImage: "exclamationmark.circle")
+                                .foregroundStyle(.red)
+                            if model.wirelessErrorMessage != nil, let detail = model.wirelessErrorDetails {
+                                Text("ADB details")
+                                    .foregroundStyle(.secondary)
+                                Text(verbatim: detail)
+                                    .textSelection(.enabled)
+                            }
+                            if model.canRestartADB {
+                                Button("Restart ADB…") { confirmingADBRestart = true }
+                            }
+                        }
+                        .font(.caption)
+                        .fixedSize(horizontal: false, vertical: true)
                     } else {
                         Text(" ").font(.caption)
                     }
@@ -198,7 +244,7 @@ struct SettingsView: View {
                     Spacer(minLength: 8)
                     Button("Connect") { model.connectWireless() }
                         .disabled(!model.canConnectWireless)
-                    if model.isOperatingWireless {
+                    if model.isOperatingWireless, !model.isRestartingADB {
                         Button("Cancel") { model.cancelWireless() }
                             .keyboardShortcut(.cancelAction)
                     }
@@ -213,14 +259,18 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var wirelessProgress: some View {
-        switch model.wirelessOperation {
-        case .idle: EmptyView()
-        case .readingAddress: Text("Reading Wi-Fi address…")
-        case .preparing: Text("Preparing Wi-Fi…")
-        case .connecting: Text("Connecting to ADB…")
-        case .checkingDevice: Text("Waiting for device…")
-        case .startingSession: Text("Starting control session…")
-        case .disconnecting: Text("Disconnecting…")
+        if model.isRestartingADB {
+            Text("Restarting ADB…")
+        } else {
+            switch model.wirelessOperation {
+            case .idle: EmptyView()
+            case .readingAddress: Text("Reading Wi-Fi address…")
+            case .preparing: Text("Preparing Wi-Fi…")
+            case .connecting: Text("Connecting to ADB…")
+            case .checkingDevice: Text("Waiting for device…")
+            case .startingSession: Text("Starting control session…")
+            case .disconnecting: Text("Disconnecting…")
+            }
         }
     }
 }

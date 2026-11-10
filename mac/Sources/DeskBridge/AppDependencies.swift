@@ -22,6 +22,10 @@ enum AppConnectionError: Error { case sessionStartFailed }
 /// The connection model's I/O; tests substitute sessions without installing event taps.
 struct AppDependencies {
     var adb: @Sendable () throws -> ADBBridge = { try ADBBridge() }
+    var restartADB: @Sendable (ADBBridge) async throws -> Void = { adb in
+        try await Task.detached { try adb.restartServer() }.value
+    }
+
     var installADB: @Sendable (URL) async throws -> Void = { url in
         try await Task.detached { try ManagedADB.install(from: url) }.value
     }
@@ -36,6 +40,16 @@ struct AppDependencies {
 
     var devices: @Sendable (ADBBridge) async throws -> [AdbDevice] = { adb in
         try await Task.detached { try adb.devices() }.value
+    }
+
+    var deviceIdentities: @Sendable (ADBBridge, [AdbDevice]) async throws -> [AdbDevice] = { adb, devices in
+        try await Task.detached {
+            try devices.map { device in
+                guard device.isReady else { return device }
+                let identity = try adb.physicalDeviceID(serial: device.serial)
+                return AdbDevice(serial: device.serial, state: device.state, model: device.model, physicalID: identity)
+            }
+        }.value
     }
 
     var wireless: @Sendable (

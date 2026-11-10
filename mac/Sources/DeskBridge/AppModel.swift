@@ -1,23 +1,35 @@
 import AppKit
 import DeskBridgeCore
 import Observation
+import os
 
 @MainActor @Observable
 final class AppModel {
+    private static let wirelessLog = Logger(subsystem: "com.deskbridge.app", category: "wireless")
     enum Phase: Equatable { case paused, searching, connected, controlling }
     enum WirelessOperation: Equatable {
         case idle, readingAddress, preparing, connecting, checkingDevice, startingSession, disconnecting
     }
 
+    struct DetectedPhone: Equatable {
+        let serial: String
+        let identity: String
+    }
+
     var phase = Phase.searching
     var status = StatusText.searching
     var setup = SetupState()
+    private(set) var selectedPhoneHasBothTransports = false
+    private(set) var automaticSwitchMessage: String?
+    private(set) var detectedDifferentPhone: DetectedPhone?
     private(set) var activePhone: AdbDevice?
     private(set) var pendingPhone: AdbDevice?
     var wirelessIP = ""
     var wirelessPort = "5555"
     private(set) var wirelessOperation = WirelessOperation.idle
+    private(set) var isRestartingADB = false
     var wirelessErrorMessage: String?
+    private(set) var wirelessErrorDetails: String?
     private(set) var installingADB = false
     private(set) var adbInstallError: String?
     private(set) var checkingUpdates = false
@@ -25,7 +37,12 @@ final class AppModel {
     private(set) var updateURL: URL?
 
     var isOperatingWireless: Bool {
-        wirelessOperation != .idle
+        wirelessOperation != .idle || isRestartingADB
+    }
+
+    var canRestartADB: Bool {
+        !isOperatingWireless && wirelessErrorMessage != nil &&
+            wirelessErrorDetails?.localizedCaseInsensitiveContains("no route to host") == true
     }
 
     var selectedPhone: AdbDevice? {
@@ -57,6 +74,7 @@ final class AppModel {
             settings.values = prefs
             session?.settingsChanged()
             if !updatingPreference, oldValue.preferredSerial != prefs.preferredSerial {
+                prefs.preferredPhysicalID = nil
                 selectionChanged()
             }
         }
@@ -101,6 +119,7 @@ final class AppModel {
     @ObservationIgnored private var retryNotBefore = Date.distantPast
     @ObservationIgnored private var reconnectSuppressed = false
     @ObservationIgnored private var rememberedPhone: AdbDevice?
+    @ObservationIgnored private var pendingAutomaticSwitch: String?
     @ObservationIgnored private var updatingPreference = false
     @ObservationIgnored private var syncingLoginItem = false
     @ObservationIgnored private var discoveryTask: Task<Void, Never>?
@@ -229,15 +248,30 @@ final class AppModel {
     }
 
     private func selectionChanged() {
+        automaticSwitchMessage = nil
+        pendingAutomaticSwitch = nil
+        detectedDifferentPhone = nil
         selectionGeneration &+= 1
         cancelWireless(restoreSelection: false)
         reconnectSuppressed = false
         wirelessErrorMessage = nil
+        wirelessErrorDetails = nil
         failedWirelessRequest = nil
         resetRetry()
         stopSession()
         phase = isEnabled ? .searching : .paused
         status = isEnabled ? StatusText.searching : StatusText.paused
+        wakeDiscovery()
+    }
+
+    func useDetectedPhone(_ phone: DetectedPhone) {
+        guard detectedDifferentPhone == phone, prefs.preferredSerial == phone.serial else { return }
+        selectionGeneration &+= 1
+        prefs.preferredPhysicalID = phone.identity
+        detectedDifferentPhone = nil
+        reconnectSuppressed = false
+        resetRetry()
+        stopSession()
         wakeDiscovery()
     }
 
@@ -287,7 +321,7 @@ final class AppModel {
     // MARK: - Discovery
 
     private func wakeDiscovery() {
-        guard !isShuttingDown else { return }
+        guard !isShuttingDown, !isRestartingADB else { return }
         discoveryGeneration &+= 1
         discoveryTask?.cancel()
         let generation = discoveryGeneration
@@ -334,11 +368,18 @@ final class AppModel {
                 try await dependencies.devices(adb)
             } onCancel: { context.cancel() }
             guard !Task.isCancelled, generation == discoveryGeneration else { return }
+            if let phone = sessionPhone, !stoppingSession,
+               !devices.contains(where: { $0.serial == phone.serial && $0.isReady })
+            {
+                stopSession()
+            }
+            devices = try await withTaskCancellationHandler {
+                try await dependencies.deviceIdentities(adb, devices)
+            } onCancel: { context.cancel() }
+            guard !Task.isCancelled, generation == discoveryGeneration else { return }
             var pick = updateDevices(devices)
-            if let phone = sessionPhone,
-               phone.serial != prefs.preferredSerial || !devices.contains(where: {
-                   $0.serial == phone.serial && $0.isReady
-               })
+            if let phone = sessionPhone, !stoppingSession,
+               phone.serial != prefs.preferredSerial || selectedPhone?.isReady != true
             {
                 stopSession()
                 phase = isEnabled ? .searching : .paused
@@ -369,7 +410,10 @@ final class AppModel {
                     try await dependencies.wireless(adb, .connect(endpoint.ip, endpoint.port)) { _ in }
                 } onCancel: { context.cancel() }
                 guard !Task.isCancelled, generation == discoveryGeneration else { return }
-                devices = try await dependencies.devices(adb)
+                devices = try await withTaskCancellationHandler {
+                    let raw = try await dependencies.devices(adb)
+                    return try await dependencies.deviceIdentities(adb, raw)
+                } onCancel: { context.cancel() }
                 guard !Task.isCancelled, generation == discoveryGeneration else { return }
                 pick = updateDevices(devices)
             }
@@ -413,13 +457,49 @@ final class AppModel {
         {
             setPreference(phone.serial)
         }
-        var currentDevices = devices
-        var phones = devices.filter(\.isReady)
+        if let serial = prefs.preferredSerial,
+           let selected = devices.first(where: { $0.serial == serial && $0.isReady }),
+           prefs.preferredPhysicalID == nil, let identity = selected.physicalID
+        {
+            prefs.preferredPhysicalID = identity
+        }
+        if let serial = prefs.preferredSerial, let expected = prefs.preferredPhysicalID,
+           let detected = devices.first(where: { $0.serial == serial && $0.isReady }),
+           let identity = detected.physicalID, identity != expected
+        {
+            detectedDifferentPhone = DetectedPhone(serial: serial, identity: identity)
+        } else {
+            detectedDifferentPhone = nil
+        }
+        let checkedDevices = devices.map { device in
+            guard device.serial == prefs.preferredSerial, let identity = prefs.preferredPhysicalID,
+                  device.isReady, device.physicalID != identity else { return device }
+            return AdbDevice(serial: device.serial, state: "offline", model: device.model)
+        }
+        if let serial = prefs.preferredSerial, session == nil, isEnabled, !reconnectSuppressed,
+           !isOperatingWireless, !checkedDevices.contains(where: { $0.serial == serial && $0.isReady }),
+           let alternate = DevicePicker.alternate(for: serial, identity: prefs.preferredPhysicalID, in: devices)
+        {
+            selectionGeneration &+= 1
+            pendingAutomaticSwitch = alternate.serial
+            detectedDifferentPhone = nil
+            setPreference(alternate.serial)
+        }
+        var currentDevices = checkedDevices
+        var phones = DevicePicker.phones(from: checkedDevices, preferredSerial: prefs.preferredSerial)
+        if let identity = prefs.preferredPhysicalID {
+            let matches = checkedDevices.filter { $0.isReady && $0.physicalID == identity }
+            selectedPhoneHasBothTransports = matches.count == 2 && matches.filter(\.isWireless).count == 1 &&
+                matches.contains { $0.serial == prefs.preferredSerial }
+        } else {
+            selectedPhoneHasBothTransports = false
+        }
         if let serial = prefs.preferredSerial {
-            let discovered = devices.first { $0.serial == serial }
+            let discovered = checkedDevices.first { $0.serial == serial }
             let selected = AdbDevice(
                 serial: serial, state: discovered?.state ?? "offline",
-                model: discovered?.model ?? (rememberedPhone?.serial == serial ? rememberedPhone?.model : nil)
+                model: discovered?.model ?? (rememberedPhone?.serial == serial ? rememberedPhone?.model : nil),
+                physicalID: discovered?.physicalID
             )
             rememberedPhone = selected
             if let index = currentDevices
@@ -493,6 +573,12 @@ final class AppModel {
         case .local, .remote:
             activePhone = phone
             pendingPhone = nil
+            if state == .local, pendingAutomaticSwitch == phone.serial {
+                automaticSwitchMessage = phone.isWireless
+                    ? String(localized: "Automatically switched to Wi-Fi")
+                    : String(localized: "Automatically switched to USB")
+                pendingAutomaticSwitch = nil
+            }
             resetRetry()
             phase = state == .local ? .connected : .controlling
             status = state == .local ? StatusText.connected(phone.connectionLabel) : StatusText
@@ -505,6 +591,46 @@ final class AppModel {
     }
 
     // MARK: - Wireless
+
+    func restartADB() {
+        guard canRestartADB else { return }
+        isRestartingADB = true
+        discoveryGeneration &+= 1
+        let oldDiscovery = discoveryTask
+        oldDiscovery?.cancel()
+        let oldWatcher = watcher
+        watcher = nil
+        let oldSession = session
+        stopSession()
+        Self.wirelessLog.info("User requested ADB server restart")
+        Task {
+            do {
+                await oldDiscovery?.value
+                await Task.detached {
+                    oldWatcher?.stopAndWait()
+                    oldSession?.stopAndWait()
+                }.value
+                let adb = try dependencies.adb()
+                try await dependencies.restartADB(adb)
+                Self.wirelessLog.info("ADB server restart completed")
+                if !isShuttingDown {
+                    wirelessErrorMessage = nil
+                    wirelessErrorDetails = nil
+                    failedWirelessRequest = nil
+                    reconnectSuppressed = false
+                    resetRetry()
+                }
+            } catch {
+                Self.wirelessLog.error("ADB server restart failed: \(String(describing: error), privacy: .private)")
+                if !isShuttingDown {
+                    wirelessErrorMessage = String(localized: "Could not restart ADB. Check the details, then retry.")
+                    wirelessErrorDetails = String(describing: error)
+                }
+            }
+            isRestartingADB = false
+            wakeDiscovery()
+        }
+    }
 
     func switchToWireless(serial: String) {
         guard !isOperatingWireless, selectedPhone?.serial == serial,
@@ -526,6 +652,8 @@ final class AppModel {
     }
 
     private func beginWireless(_ request: WirelessRequest) {
+        automaticSwitchMessage = nil
+        pendingAutomaticSwitch = nil
         selectionGeneration &+= 1
         cancelWireless(restoreSelection: false)
         resetRetry()
@@ -537,6 +665,14 @@ final class AppModel {
         currentWirelessRequest = request
         failedWirelessRequest = nil
         wirelessErrorMessage = nil
+        wirelessErrorDetails = nil
+        let action = switch request {
+        case .switchFromUSB: "switchFromUSB"
+        case .connect: "connect"
+        case .disconnect: "disconnect"
+        }
+        Self.wirelessLog
+            .info("Wireless operation started: \(action, privacy: .public); id=\(id.uuidString, privacy: .public)")
         reconnectSuppressed = true
         switch request {
         case .switchFromUSB: wirelessOperation = .readingAddress
@@ -559,6 +695,10 @@ final class AppModel {
                         Task { @MainActor in
                             guard let model = self, model.wirelessID == id,
                                   model.wirelessOperation != .startingSession else { return }
+                            Self.wirelessLog
+                                .info(
+                                    "Wireless stage: \(String(describing: stage), privacy: .public); id=\(id.uuidString, privacy: .public)"
+                                )
                             switch stage {
                             case .readingAddress: model.wirelessOperation = .readingAddress
                             case .preparing: model.wirelessOperation = .preparing
@@ -569,6 +709,7 @@ final class AppModel {
                     }
                 } onCancel: { context.cancel() }
                 guard !Task.isCancelled, wirelessID == id else { return }
+                Self.wirelessLog.info("ADB wireless preparation succeeded; id=\(id.uuidString, privacy: .public)")
                 if case .disconnect = request {
                     finishWireless(clearInput: false)
                     reconnectSuppressed = true
@@ -618,6 +759,9 @@ final class AppModel {
     }
 
     private func finishWireless(clearInput: Bool = true) {
+        let id = wirelessID?.uuidString ?? "unknown"
+        Self.wirelessLog
+            .info("Wireless operation completed; id=\(id, privacy: .public)")
         if clearInput {
             wirelessIP = ""; wirelessPort = "5555"
         }
@@ -631,9 +775,26 @@ final class AppModel {
 
     private func failWireless(_ error: Error) {
         let request = currentWirelessRequest, message = wirelessMessage(for: error)
+        let detail: String?
+        switch error as? ADBError {
+        case let .commandFailed(output), let .wirelessConnectionFailed(output):
+            let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            detail = trimmed.isEmpty ? nil : String(trimmed.prefix(2048))
+        default: detail = nil
+        }
+        let id = wirelessID?.uuidString ?? "unknown"
+        let stage = String(describing: wirelessOperation)
+        if detail?.localizedCaseInsensitiveContains("no route to host") == true {
+            Self.wirelessLog.error("ADB reported No route to host; id=\(id, privacy: .public)")
+        }
+        Self.wirelessLog
+            .error(
+                "Wireless operation failed; id=\(id, privacy: .public); stage=\(stage, privacy: .public); error=\(String(describing: error), privacy: .private)"
+            )
         cancelWireless(restoreSelection: true)
         failedWirelessRequest = request
         wirelessErrorMessage = message
+        wirelessErrorDetails = detail
         reconnectSuppressed = true
         stopSession()
         phase = isEnabled ? .searching : .paused
@@ -662,6 +823,11 @@ final class AppModel {
         case .adbNotFound: return String(localized: "Android tools (adb) are missing. Install them to connect.")
         case .operationTimedOut, .commandTimedOut:
             return String(localized: "The connection timed out. Check the phone and Wi-Fi, then retry.")
+        case let .wirelessConnectionFailed(output) where output.localizedCaseInsensitiveContains("no route to host"),
+             let .commandFailed(output) where output.localizedCaseInsensitiveContains("no route to host"):
+            return String(
+                localized: "ADB cannot reach the phone. Check the network and the Local Network permission of the app that started the ADB server."
+            )
         case .wirelessConnectionFailed, .wirelessDeviceNotReady:
             return String(localized: "The Wi-Fi device is not reachable. Check its address and network, then retry.")
         default: return String(localized: "The Wi-Fi action failed. Check the phone and your network, then try again.")

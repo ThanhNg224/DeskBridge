@@ -23,6 +23,8 @@ public final class Settings: @unchecked Sendable {
         public var shareClipboard = true
         /// Serial of the phone to use when several are attached.
         public var preferredSerial: String?
+        /// Hash of the last verified physical phone identity; never used alone to select a new phone.
+        public var preferredPhysicalID: String?
     }
 
     private let lock: OSAllocatedUnfairLock<Values>
@@ -59,6 +61,7 @@ public final class Settings: @unchecked Sendable {
             values.shareClipboard = share
         }
         values.preferredSerial = defaults.string(forKey: "preferredSerial")
+        values.preferredPhysicalID = defaults.string(forKey: "preferredPhysicalID")
         lock = OSAllocatedUnfairLock(initialState: values)
     }
 
@@ -76,6 +79,7 @@ public final class Settings: @unchecked Sendable {
             defaults.set(newValue.showDockIcon, forKey: "showDockIcon")
             defaults.set(newValue.shareClipboard, forKey: "shareClipboard")
             defaults.set(newValue.preferredSerial, forKey: "preferredSerial")
+            defaults.set(newValue.preferredPhysicalID, forKey: "preferredPhysicalID")
         }
     }
 }
