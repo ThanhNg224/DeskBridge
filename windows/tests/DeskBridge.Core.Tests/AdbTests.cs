@@ -2,6 +2,34 @@ using Xunit;
 namespace DeskBridge.Core.Tests;
 public class AdbTests
 {
+    [Fact] public void GroupsAndFailsOverOnlyUnambiguousIdentityMatches()
+    {
+        var usb = new AdbDevice("usb", "device", "Phone", "one");
+        var wifi = new AdbDevice("10.0.0.2:5555", "device", "Phone", "one");
+        var unknown = new AdbDevice("other", "device", "Phone");
+        Assert.Equal(new[] { wifi }, AdbClient.GroupPhones([usb, wifi], wifi.Serial));
+        Assert.Equal(2, AdbClient.GroupPhones([usb, wifi, unknown], null).Count);
+        Assert.Equal(wifi, AdbClient.Alternate(usb.Serial, "one", [wifi]));
+        Assert.Null(AdbClient.Alternate(usb.Serial, null, [wifi]));
+        Assert.Null(AdbClient.Alternate(usb.Serial, "one", [wifi, usb with { Serial = "usb2" }]));
+    }
+    [Theory] [InlineData("")] [InlineData("unknown")] [InlineData("0123456789ABCDEF")] [InlineData("invalid space")]
+    public void InvalidPhysicalIdentitiesAreNotMatched(string value) => Assert.Null(AdbClient.PhysicalId(value));
+    [Fact] public void PhysicalIdentityIsStableAcrossTransports()
+    {
+        Assert.Equal(AdbClient.PhysicalId("RF8NA2EZKZK"), AdbClient.PhysicalId("RF8NA2EZKZK\n"));
+        Assert.NotNull(AdbClient.PhysicalId("RF8NA2EZKZK"));
+    }
+    [Fact] public async Task ReadsIdentityOnlyFromReadyTransports()
+    {
+        var runner = new FakeRunner();
+        runner.Outputs.Enqueue("RF8NA2EZKZK\n");
+        var adb = new AdbClient("adb", runner);
+        var result = await adb.ReadDeviceIdentitiesAsync([new("usb", "device", "Phone"), new("offline", "offline", "Phone")]);
+        Assert.Equal(AdbClient.PhysicalId("RF8NA2EZKZK"), result[0].PhysicalId);
+        Assert.Null(result[1].PhysicalId);
+        Assert.Equal(new[] { "-s", "usb", "shell", "getprop", "ro.serialno" }, Assert.Single(runner.Calls));
+    }
     [Fact] public void ParsesDevicesAndModels()
     {
         var devices = AdbClient.ParseDevices("* daemon started successfully *\nList of devices attached\nusb1 device product:p model:Pixel_8 transport_id:1\nusb2 unauthorized\n10.0.0.2:5555 offline\n");
@@ -10,6 +38,8 @@ public class AdbTests
     [Theory] [InlineData("127.0.0.1;whoami", 5555)] [InlineData("localhost", 5555)] [InlineData("256.1.1.1", 5555)] [InlineData("1.2.3", 5555)] [InlineData("1.2.3.4", 0)] [InlineData("1.2.3.4", 65536)]
     public void RejectsUntrustedEndpoint(string host, int port) => Assert.ThrowsAny<ArgumentException>(() => AdbClient.WifiTarget(host, port));
     [Fact] public void NormalizesIpv4() => Assert.Equal("192.168.1.2:5555", AdbClient.WifiTarget(" 192.168.001.002 ", 5555));
+    [Theory] [InlineData("192.168.1.2:5555", true)] [InlineData("adb-phone._adb-tls-connect._tcp", false)] [InlineData("256.1.1.1:5555", false)] [InlineData("192.168.1.2:0", false)]
+    public void ReconnectEndpointRequiresIpv4AndValidPort(string serial, bool expected) => Assert.Equal(expected, AdbClient.TryWifiEndpoint(serial, out _, out _));
     [Theory] [InlineData("10.0.0.2:5555", true)] [InlineData("adb-123._adb-tls-connect._tcp", true)] [InlineData("adb-123._adb._tcp.", true)] [InlineData("usb-123", false)]
     public void ClassifiesWirelessSerials(string serial, bool expected) => Assert.Equal(expected, AdbClient.IsWirelessSerial(serial));
     [Theory] [InlineData("default via 192.168.1.1 dev wlan0 src 192.168.1.12", "192.168.1.12")] [InlineData("inet 10.0.0.2/24 brd 10.0.0.255 scope global wlan0", "10.0.0.2")] [InlineData("default dev rmnet0 src 10.0.0.2", null)]

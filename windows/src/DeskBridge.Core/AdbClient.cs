@@ -1,9 +1,11 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace DeskBridge.Core;
 
-public record AdbDevice(string Serial, string State, string Description);
+public record AdbDevice(string Serial, string State, string Description, string? PhysicalId = null);
 public record ProcessResult(int ExitCode, string Output);
 public interface IRunningProcess : IAsyncDisposable { bool HasExited { get; } }
 public interface IProcessRunner
@@ -100,6 +102,49 @@ public sealed class AdbClient(string executable, IProcessRunner runner, TimeSpan
         return result.Output;
     }
     public async Task<IReadOnlyList<AdbDevice>> ListDevicesAsync(CancellationToken cancellationToken = default) => ParseDevices(await RunAsync(cancellationToken, "devices", "-l").ConfigureAwait(false));
+    public async Task<IReadOnlyList<AdbDevice>> ReadDeviceIdentitiesAsync(IReadOnlyList<AdbDevice> devices, CancellationToken ct = default)
+    {
+        List<AdbDevice> result = [];
+        foreach (var device in devices)
+        {
+            if (device.State != "device") { result.Add(device); continue; }
+            string? identity;
+            try { identity = PhysicalId(await RunAsync(ct, "-s", device.Serial, "shell", "getprop", "ro.serialno").ConfigureAwait(false)); }
+            catch (IOException) { identity = null; }
+            result.Add(device with { PhysicalId = identity });
+        }
+        return result;
+    }
+    public static string? PhysicalId(string output)
+    {
+        string value = output.Trim(), lower = value.ToLowerInvariant();
+        if (value.Length is < 6 or > 128 || value.Any(c => !char.IsAsciiLetterOrDigit(c) && c is not ('-' or '_' or '.')) ||
+            lower is "unknown" or "0123456789abcdef" or "1234567890" or "serialno" || value.Distinct().Count() <= 1) return null;
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
+    }
+    public static IReadOnlyList<AdbDevice> GroupPhones(IReadOnlyList<AdbDevice> devices, string? selected)
+    {
+        var ready = devices.Where(d => d.State == "device").ToArray();
+        HashSet<string> consumed = []; List<AdbDevice> result = [];
+        foreach (var device in ready)
+        {
+            if (consumed.Contains(device.Serial)) continue;
+            var matches = ready.Where(d => device.PhysicalId is not null && d.PhysicalId == device.PhysicalId).ToArray();
+            if (matches.Length == 2 && matches.Count(d => IsWirelessSerial(d.Serial)) == 1)
+            {
+                result.Add(matches.FirstOrDefault(d => d.Serial == selected) ?? matches.First(d => !IsWirelessSerial(d.Serial)));
+                foreach (var match in matches) consumed.Add(match.Serial);
+            }
+            else { result.Add(device); consumed.Add(device.Serial); }
+        }
+        return result;
+    }
+    public static AdbDevice? Alternate(string serial, string? identity, IReadOnlyList<AdbDevice> devices)
+    {
+        if (string.IsNullOrEmpty(identity)) return null;
+        var matches = devices.Where(d => d.State == "device" && d.PhysicalId == identity).ToArray();
+        return matches.Length == 1 && matches[0].Serial != serial && IsWirelessSerial(matches[0].Serial) != IsWirelessSerial(serial) ? matches[0] : null;
+    }
     public static IReadOnlyList<AdbDevice> ParseDevices(string output)
     {
         List<AdbDevice> devices = [];
@@ -119,6 +164,14 @@ public sealed class AdbClient(string executable, IProcessRunner runner, TimeSpan
         if (parts.Length != 4 || parts.Any(p => p.Length == 0 || p.Any(c => c is < '0' or > '9') || !byte.TryParse(p, out _))) throw new ArgumentException("Enter a valid IPv4 address.", nameof(host));
         if (port is < 1 or > 65535) throw new ArgumentOutOfRangeException(nameof(port), "Port must be between 1 and 65535.");
         return string.Join('.', parts.Select(p => byte.Parse(p, CultureInfo.InvariantCulture))) + ":" + port.ToString(CultureInfo.InvariantCulture);
+    }
+    public static bool TryWifiEndpoint(string serial, out string host, out int port)
+    {
+        host = ""; port = 0;
+        int colon = serial.LastIndexOf(':');
+        if (colon <= 0 || !int.TryParse(serial[(colon + 1)..], NumberStyles.None, CultureInfo.InvariantCulture, out port)) return false;
+        try { host = WifiTarget(serial[..colon], port).Split(':')[0]; return true; }
+        catch (ArgumentException) { port = 0; return false; }
     }
     public async Task<string> ConnectWifiAsync(string host, int port, CancellationToken cancellationToken = default)
     {

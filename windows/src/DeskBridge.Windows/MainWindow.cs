@@ -12,6 +12,8 @@ internal sealed class MainWindow : Window
     private readonly AppModel model;
     private readonly TextBlock status = new() { FontSize = 20, FontWeight = FontWeights.SemiBold };
     private readonly TextBlock error = new() { TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Firebrick, Margin = new Thickness(0, 8, 0, 8) };
+    private readonly TextBlock transportHint = new() { Margin = new Thickness(0, 4, 0, 0) };
+    private Button? useDetectedDevice;
     private readonly ComboBox device = new() { DisplayMemberPath = "Label", SelectedValuePath = "Serial", MinHeight = 32 };
     private readonly TextBox adb = new(), pointer = new(), scroll = new(), host = new(), port = new() { Text = "5555" };
     private readonly ComboBox edge = new() { ItemsSource = Enum.GetValues<Edge>(), MinHeight = 32 };
@@ -70,6 +72,14 @@ internal sealed class MainWindow : Window
     {
         fields.Children.Clear(); actions.Children.Clear();
         Field("Android device", "Thiết bị Android", device);
+        fields.Children.Add(transportHint);
+        useDetectedDevice = Button("Use detected phone…", "Dùng điện thoại vừa phát hiện…", async () =>
+        {
+            var detected = model.DetectedPhone;
+            if (detected is { } phone && MessageBox.Show(this, T("A different phone is using this connection. Switch control to it?", "Một điện thoại khác đang dùng kết nối này. Chuyển quyền điều khiển sang máy đó?"), "DeskBridge", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes)
+                await model.UseDetectedDeviceAsync(phone.Serial, phone.Identity);
+        });
+        fields.Children.Add(useDetectedDevice);
         Check(enabled, "Enable DeskBridge", "Bật DeskBridge");
         Field("ADB executable", "Đường dẫn ADB", adb);
         fields.Children.Add(Button("Choose adb.exe…", "Chọn adb.exe…", () =>
@@ -220,7 +230,7 @@ internal sealed class MainWindow : Window
         loading = true;
         if (key != devicesKey || device.ItemsSource is null)
         {
-            var choices = model.Devices.Select(d => new DeviceChoice(d.Serial, $"{d.Description} — {d.Serial} ({d.State})")).ToList();
+            var choices = model.Devices.Select(d => new DeviceChoice(d.Serial, $"{d.Description} — {(AdbClient.IsWirelessSerial(d.Serial) ? "Wi-Fi" : "USB")} · {d.Serial} ({d.State})")).ToList();
             if (model.SelectedSerial is { } serial && choices.All(d => d.Serial != serial))
                 choices.Add(new(serial, $"{serial} — {T("unavailable", "chưa sẵn sàng")}"));
             device.ItemsSource = choices;
@@ -228,12 +238,18 @@ internal sealed class MainWindow : Window
         }
         device.SelectedValue = model.SelectedSerial;
         loading = false;
+        transportHint.Text = model.SelectedHasBothTransports ? T("USB and Wi-Fi available", "Có thể kết nối qua USB và Wi-Fi") : "";
+        if (useDetectedDevice is not null) useDetectedDevice.Visibility = model.DetectedDifferentDevice ? Visibility.Visible : Visibility.Collapsed;
         status.Text = model.Settings.Language == "vi" ? model.Status switch
         {
             "Starting" => "Đang khởi động", "Disabled" => "Đã tắt", "No authorized device" => "Chưa có thiết bị được cấp quyền",
             "Ready" => "Sẵn sàng", "Selected device unavailable" => "Thiết bị đã chọn chưa sẵn sàng", "Connecting" => "Đang kết nối", "Connected" => "Đã kết nối",
+            "Reconnecting" => "Đang kết nối lại",
+            "Switched to Wi-Fi" => "Đã tự chuyển sang Wi-Fi", "Switched to USB" => "Đã tự chuyển sang USB",
             "Controlling Android" => "Đang điều khiển Android", "Disconnected" => "Đã ngắt kết nối", "Error" => "Có lỗi", _ => model.Status
         } : model.Status;
+        if (model.Connected && model.Status == "Connected" && model.SelectedSerial is { } active)
+            status.Text += AdbClient.IsWirelessSerial(active) ? " · Wi-Fi" : " · USB";
         error.Text = model.Error ?? "";
     }
     private void LoadIcon()

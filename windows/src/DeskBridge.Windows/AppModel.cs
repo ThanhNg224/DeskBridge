@@ -12,6 +12,7 @@ internal sealed class AppModel : IAsyncDisposable
     private readonly Func<string, AdbClient> makeAdb;
     private readonly Func<AdbClient, DeviceSession> makeSession;
     private readonly string serverJar;
+    private readonly Action<Settings> saveSelection;
     private readonly InputMailbox mailbox = new();
     private readonly CancellationTokenSource lifetime = new();
     private readonly DispatcherTimer discovery = new() { Interval = TimeSpan.FromSeconds(2) };
@@ -35,22 +36,30 @@ internal sealed class AppModel : IAsyncDisposable
     public Settings Settings { get; private set; }
     public IReadOnlyList<AdbDevice> Devices { get; private set; } = [];
     public string? SelectedSerial { get; private set; }
+    public bool SelectedHasBothTransports { get; private set; }
+    public bool DetectedDifferentDevice => pendingDeviceIdentity is not null;
+    public (string Serial, string Identity)? DetectedPhone => pendingDeviceIdentity is { } identity && SelectedSerial is { } serial ? (serial, identity) : null;
     public string Status { get; private set; } = "Starting";
     public string? Error { get; private set; }
     public bool Connected => session?.Connected == true && sessionSerial == SelectedSerial;
     private string? sessionSerial;
+    private string? selectedPhysicalId;
+    private string? pendingDeviceIdentity;
     public bool Remote => input.Remote;
     public event Action? Changed;
     public AppModel(Settings settings) : this(settings, new InputController(), ManagedAdb.Client, adb => new DeviceSession(adb),
         Environment.GetEnvironmentVariable("DESKBRIDGE_SERVER_JAR") ?? Path.Combine(AppContext.BaseDirectory, "deskbridge-server.jar"), Application.Current.Dispatcher) { }
 
     internal AppModel(Settings settings, IInputController input, Func<string, AdbClient> makeAdb,
-        Func<AdbClient, DeviceSession> makeSession, string serverJar, Dispatcher dispatcher)
+        Func<AdbClient, DeviceSession> makeSession, string serverJar, Dispatcher dispatcher,
+        Action<Settings>? saveSelection = null)
     {
         this.input = input; this.makeAdb = makeAdb; this.makeSession = makeSession;
         this.serverJar = serverJar; this.dispatcher = dispatcher;
+        this.saveSelection = saveSelection ?? SettingsStore.Save;
         operations = new(lifetime.Token);
         Settings = settings; SelectedSerial = settings.PreferredSerial;
+        selectedPhysicalId = settings.PreferredPhysicalId;
         input.Crossing += (display, point) =>
         {
             if (!Connected) { input.CancelCrossing(); return; }
@@ -101,11 +110,57 @@ internal sealed class AppModel : IAsyncDisposable
     public Task RefreshAsync() => RunConnectionAsync(RefreshCoreAsync, supersede: false);
     private async Task RefreshCoreAsync(CancellationToken ct)
     {
-        var devices = await makeAdb(Settings.AdbPath).ListDevicesAsync(ct);
+        var adb = makeAdb(Settings.AdbPath);
+        var rawDevices = await adb.ListDevicesAsync(ct);
         ct.ThrowIfCancellationRequested();
-        Devices = devices;
+        if (session is not null && !rawDevices.Any(d => d.Serial == sessionSerial && d.State == "device")) ReturnLocal();
+        var devices = await adb.ReadDeviceIdentitiesAsync(rawDevices, ct);
+        ct.ThrowIfCancellationRequested();
+        var phones = AdbClient.GroupPhones(devices, SelectedSerial);
+        if (SelectedSerial is null && phones.Count == 1) SelectedSerial = phones[0].Serial;
+        var selected = devices.FirstOrDefault(d => d.Serial == SelectedSerial && d.State == "device");
+        if (selectedPhysicalId is null && selected?.PhysicalId is not null) selectedPhysicalId = selected.PhysicalId;
+        bool verified = selected is not null && (selectedPhysicalId is null || selected.PhysicalId == selectedPhysicalId);
+        pendingDeviceIdentity = selected?.PhysicalId is { } observed && selectedPhysicalId is not null && observed != selectedPhysicalId ? observed : null;
+        string? switched = null;
+        if (!verified && session is not null)
+        {
+            ReturnLocal();
+            await DisconnectCoreAsync();
+            ct.ThrowIfCancellationRequested();
+        }
+        if (!verified && Settings.Enabled && nextAttempt != DateTimeOffset.MaxValue && SelectedSerial is not null)
+        {
+            var alternate = AdbClient.Alternate(SelectedSerial, selectedPhysicalId, devices);
+            if (alternate is not null)
+            {
+                SelectedSerial = alternate.Serial;
+                pendingDeviceIdentity = null;
+                verified = true;
+                nextAttempt = DateTimeOffset.MinValue;
+                switched = AdbClient.IsWirelessSerial(alternate.Serial) ? "Switched to Wi-Fi" : "Switched to USB";
+            }
+        }
+        if (!verified && Settings.Enabled && SelectedSerial is { } endpoint && DateTimeOffset.UtcNow >= nextAttempt &&
+            !rawDevices.Any(d => d.Serial == endpoint && d.State == "device") &&
+            AdbClient.TryWifiEndpoint(endpoint, out var host, out var port))
+        {
+            Status = "Reconnecting"; Notify();
+            await adb.ConnectWifiAsync(host, port, ct);
+            ct.ThrowIfCancellationRequested();
+            await RefreshCoreAsync(ct);
+            return;
+        }
+        var checkedDevices = devices.Select(d => d.Serial == SelectedSerial && !verified ? d with { State = "offline" } : d).ToArray();
+        var samePhone = checkedDevices.Where(d => d.State == "device" && d.PhysicalId is not null && d.PhysicalId == selectedPhysicalId).ToArray();
+        SelectedHasBothTransports = samePhone.Length == 2 && samePhone.Count(d => AdbClient.IsWirelessSerial(d.Serial)) == 1 && samePhone.Any(d => d.Serial == SelectedSerial);
+        Devices = AdbClient.GroupPhones(checkedDevices, SelectedSerial).Concat(checkedDevices.Where(d => d.State != "device")).ToArray();
+        if (Settings.PreferredSerial != SelectedSerial || Settings.PreferredPhysicalId != selectedPhysicalId)
+        {
+            Settings = Settings with { PreferredSerial = SelectedSerial, PreferredPhysicalId = selectedPhysicalId };
+            saveSelection(Settings);
+        }
         var ready = Devices.Where(d => d.State == "device").ToArray();
-        if (SelectedSerial is null && ready.Length == 1) SelectedSerial = ready[0].Serial;
         if (!Connected)
         {
             Status = !Settings.Enabled ? "Disabled" : SelectedSerial is not null && !ready.Any(d => d.Serial == SelectedSerial)
@@ -114,14 +169,22 @@ internal sealed class AppModel : IAsyncDisposable
             {
                 await DisconnectCoreAsync();
                 await ConnectCoreAsync(ct);
+                if (switched is not null) Status = switched;
             }
         }
     }
     public Task SelectDeviceAsync(string? serial)
     {
         if (serial == SelectedSerial) return Task.CompletedTask;
-        SelectedSerial = serial; nextAttempt = DateTimeOffset.MinValue;
+        SelectedSerial = serial; selectedPhysicalId = null; pendingDeviceIdentity = null; nextAttempt = DateTimeOffset.MinValue;
         ReturnLocal(); Notify();
+        return RunConnectionAsync(async ct => { await DisconnectCoreAsync(); ct.ThrowIfCancellationRequested(); await RefreshCoreAsync(ct); });
+    }
+    public Task UseDetectedDeviceAsync(string serial, string identity)
+    {
+        if (SelectedSerial != serial || pendingDeviceIdentity != identity) return Task.CompletedTask;
+        selectedPhysicalId = identity; pendingDeviceIdentity = null; nextAttempt = DateTimeOffset.MinValue;
+        ReturnLocal();
         return RunConnectionAsync(async ct => { await DisconnectCoreAsync(); ct.ThrowIfCancellationRequested(); await RefreshCoreAsync(ct); });
     }
     public Task ConnectAsync() => RunConnectionAsync(async ct =>
@@ -129,7 +192,7 @@ internal sealed class AppModel : IAsyncDisposable
         if (Connected) return;
         nextAttempt = DateTimeOffset.MinValue;
         await DisconnectCoreAsync(); ct.ThrowIfCancellationRequested();
-        await ConnectCoreAsync(ct);
+        await RefreshCoreAsync(ct);
     });
     private async Task ConnectCoreAsync(CancellationToken ct)
     {
@@ -338,13 +401,14 @@ internal sealed class AppModel : IAsyncDisposable
     }
     public Task ApplyAsync(Settings value)
     {
+        if (value.PreferredSerial != SelectedSerial) value = value with { PreferredPhysicalId = null };
         value.Validate();
         ReturnLocal();
         return RunConnectionAsync(async ct =>
         {
             await DisconnectCoreAsync(); ct.ThrowIfCancellationRequested();
             SettingsStore.SetStartup(value.StartWithWindows); SettingsStore.Save(value);
-            Settings = value; SelectedSerial = value.PreferredSerial;
+            Settings = value; SelectedSerial = value.PreferredSerial; selectedPhysicalId = value.PreferredPhysicalId;
             input.Configure(value, DesktopGeometry.Read());
             nextAttempt = DateTimeOffset.MinValue;
             await RefreshCoreAsync(ct);
@@ -359,7 +423,7 @@ internal sealed class AppModel : IAsyncDisposable
         {
             await DisconnectCoreAsync(); ct.ThrowIfCancellationRequested();
             var serial = await makeAdb(Settings.AdbPath).ConnectWifiAsync(host, port, ct);
-            ct.ThrowIfCancellationRequested(); SelectedSerial = serial;
+            ct.ThrowIfCancellationRequested(); SelectedSerial = serial; selectedPhysicalId = null;
             nextAttempt = DateTimeOffset.MinValue;
             await RefreshCoreAsync(ct);
         });

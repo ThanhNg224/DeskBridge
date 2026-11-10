@@ -56,6 +56,59 @@ public sealed class AppModelTests
     });
 
     [Fact]
+    public void MatchingWifiTakesOverAfterUsbDisappears() => Sta(async () =>
+    {
+        await using var app = new Harness();
+        app.Runner.Devices = "A device\n10.0.0.2:5555 device";
+        app.Runner.Identities["A"] = "PHONE-123";
+        app.Runner.Identities["10.0.0.2:5555"] = "PHONE-123";
+        await app.Model.RefreshAsync();
+        Assert.Single(app.Model.Devices); Assert.True(app.Model.Connected);
+        var old = app.Backends[0];
+        app.Runner.Devices = "10.0.0.2:5555 device";
+        await app.Model.RefreshAsync();
+        Assert.True(old.Lease.Disposed);
+        Assert.Equal("10.0.0.2:5555", app.Model.SelectedSerial);
+        Assert.Equal(new[] { "A", "10.0.0.2:5555" }, app.Launched);
+        Assert.Equal("Switched to Wi-Fi", app.Model.Status);
+    });
+
+    [Fact]
+    public void ExplicitDisconnectDoesNotFailOver() => Sta(async () =>
+    {
+        await using var app = new Harness();
+        app.Runner.Devices = "A device\n10.0.0.2:5555 device";
+        app.Runner.Identities["A"] = "PHONE-123";
+        app.Runner.Identities["10.0.0.2:5555"] = "PHONE-123";
+        await app.Model.RefreshAsync();
+        await app.Model.DisconnectAsync();
+        app.Runner.Devices = "10.0.0.2:5555 device";
+        await app.Model.RefreshAsync();
+        Assert.Equal("A", app.Model.SelectedSerial);
+        Assert.Single(app.Launched); Assert.False(app.Model.Connected);
+    });
+
+    [Fact]
+    public void ExplicitConnectDoesNotTrustReusedSerial() => Sta(async () =>
+    {
+        await using var app = new Harness();
+        app.Runner.Devices = "A device";
+        app.Runner.Identities["A"] = "PHONE-123";
+        await app.Model.RefreshAsync();
+        await app.Model.DisconnectAsync();
+        app.Runner.Identities["A"] = "OTHER-456";
+        await app.Model.ConnectAsync();
+        Assert.Single(app.Launched);
+        Assert.False(app.Model.Connected);
+        Assert.Equal("Selected device unavailable", app.Model.Status);
+        Assert.True(app.Model.DetectedDifferentDevice);
+        var detected = app.Model.DetectedPhone!.Value;
+        await app.Model.UseDetectedDeviceAsync(detected.Serial, detected.Identity);
+        Assert.Equal(2, app.Launched.Count);
+        Assert.True(app.Model.Connected);
+    });
+
+    [Fact]
     public void CancelledWirelessResultCannotReplaceANewerDeviceSelection() => Sta(async () =>
     {
         await using var app = new Harness();
@@ -119,7 +172,7 @@ public sealed class AppModelTests
                 var backend = NextBackend ?? new Backend(); NextBackend = null;
                 backend.OnLaunch = Launched.Add; Backends.Add(backend);
                 return LastSession = new DeviceSession(backend, options: new() { HeartbeatInterval = TimeSpan.FromMinutes(1) });
-            }, jar, Dispatcher.CurrentDispatcher);
+            }, jar, Dispatcher.CurrentDispatcher, _ => { });
         }
         public async ValueTask DisposeAsync() { try { await Model.DisposeAsync(); } finally { File.Delete(jar); } }
     }
@@ -141,6 +194,7 @@ public sealed class AppModelTests
     {
         public string Devices = "A device\nB device";
         public int ListCalls;
+        public readonly Dictionary<string, string> Identities = [];
         public TaskCompletionSource? WifiGate;
         public readonly TaskCompletionSource WifiStarted = Signal();
         public async Task<ProcessResult> RunAsync(string executable, IReadOnlyList<string> arguments, CancellationToken ct)
@@ -151,7 +205,10 @@ public sealed class AppModelTests
                 if (WifiGate is not null) await WifiGate.Task; // Deliberately late success after cancellation.
                 return new(0, "connected to 10.0.0.2:5555");
             }
-            ct.ThrowIfCancellationRequested(); ListCalls++;
+            ct.ThrowIfCancellationRequested();
+            if (arguments[0] == "-s" && arguments.Count > 4 && arguments[2] == "shell")
+                return new(0, Identities.GetValueOrDefault(arguments[1], ""));
+            ListCalls++;
             return new(0, Devices);
         }
         public IRunningProcess Start(string executable, IReadOnlyList<string> arguments) => throw new NotSupportedException();
