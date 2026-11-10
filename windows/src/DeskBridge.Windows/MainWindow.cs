@@ -12,8 +12,12 @@ internal sealed class MainWindow : Window
     private readonly AppModel model;
     private readonly TextBlock status = new() { FontSize = 20, FontWeight = FontWeights.SemiBold };
     private readonly TextBlock error = new() { TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Firebrick, Margin = new Thickness(0, 8, 0, 8) };
-    private readonly TextBlock transportHint = new() { Margin = new Thickness(0, 4, 0, 0) };
+    private readonly StackPanel transportPanel = new() { Margin = new Thickness(0, 8, 0, 0) };
+    private readonly TextBlock transportLabel = new() { FontWeight = FontWeights.SemiBold };
+    private readonly RadioButton usbTransport = new() { Content = "USB", GroupName = "PhoneTransport", Margin = new Thickness(0, 4, 16, 0) };
+    private readonly RadioButton wifiTransport = new() { Content = "Wi-Fi", GroupName = "PhoneTransport", Margin = new Thickness(0, 4, 0, 0) };
     private Button? useDetectedDevice;
+    private Button? switchWifiButton, disconnectWifiButton;
     private readonly ComboBox device = new() { DisplayMemberPath = "Label", SelectedValuePath = "Serial", MinHeight = 32 };
     private readonly TextBox adb = new(), pointer = new(), scroll = new(), host = new(), port = new() { Text = "5555" };
     private readonly ComboBox edge = new() { ItemsSource = Enum.GetValues<Edge>(), MinHeight = 32 };
@@ -45,9 +49,20 @@ internal sealed class MainWindow : Window
         {
             if (!loading) await model.SelectDeviceAsync(device.SelectedValue as string);
         };
+        var transportOptions = new StackPanel { Orientation = Orientation.Horizontal };
+        transportOptions.Children.Add(usbTransport); transportOptions.Children.Add(wifiTransport);
+        transportPanel.Children.Add(transportLabel); transportPanel.Children.Add(transportOptions);
+        usbTransport.Checked += async (_, _) => await SelectTransportAsync(false);
+        wifiTransport.Checked += async (_, _) => await SelectTransportAsync(true);
         Closing += (_, e) => { if (!((App)Application.Current).Exiting) { e.Cancel = true; Hide(); } };
         model.Changed += Render;
         BuildFields(); LoadSettings(); Render();
+    }
+    private async Task SelectTransportAsync(bool wireless)
+    {
+        if (loading) return;
+        var selected = model.SelectedPhoneTransports.FirstOrDefault(d => AdbClient.IsWirelessSerial(d.Serial) == wireless);
+        if (selected is not null) await model.SelectTransportAsync(selected.Serial);
     }
     private void Field(string en, string vi, UIElement control)
     {
@@ -72,7 +87,7 @@ internal sealed class MainWindow : Window
     {
         fields.Children.Clear(); actions.Children.Clear();
         Field("Android device", "Thiết bị Android", device);
-        fields.Children.Add(transportHint);
+        fields.Children.Add(transportPanel);
         useDetectedDevice = Button("Use detected phone…", "Dùng điện thoại vừa phát hiện…", async () =>
         {
             var detected = model.DetectedPhone;
@@ -135,8 +150,10 @@ internal sealed class MainWindow : Window
             if (!int.TryParse(port.Text, out int value)) throw new InvalidDataException(T("Invalid port.", "Cổng không hợp lệ."));
             return model.ConnectWifiAsync(host.Text, value);
         }));
-        wireless.Children.Add(Button("Switch to Wi-Fi", "Chuyển sang Wi-Fi", model.SwitchWifiAsync));
-        wireless.Children.Add(Button("Disconnect Wi-Fi", "Ngắt Wi-Fi", model.DisconnectWifiAsync));
+        switchWifiButton = Button("Switch to Wi-Fi", "Chuyển sang Wi-Fi", model.SwitchWifiAsync);
+        disconnectWifiButton = Button("Disconnect Wi-Fi", "Ngắt Wi-Fi", model.DisconnectWifiAsync);
+        wireless.Children.Add(switchWifiButton);
+        wireless.Children.Add(disconnectWifiButton);
         actions.Children.Add(wireless);
         actions.Children.Add(Button("Return control to PC · Ctrl+Alt+Shift+Esc", "Trả điều khiển về PC · Ctrl+Alt+Shift+Esc", () => { model.ReturnLocal(); return Task.CompletedTask; }));
         actions.Children.Add(new TextBlock { Text = T("Experimental · Windows/device acceptance pending", "Bản thử nghiệm · Chưa nghiệm thu Windows/thiết bị"), Foreground = Brushes.DimGray, Margin = new Thickness(0, 8, 0, 0) });
@@ -237,9 +254,16 @@ internal sealed class MainWindow : Window
             devicesKey = key;
         }
         device.SelectedValue = model.SelectedSerial;
+        transportPanel.Visibility = model.SelectedHasBothTransports ? Visibility.Visible : Visibility.Collapsed;
+        transportPanel.IsEnabled = model.Settings.Enabled;
+        transportLabel.Text = T("Connection", "Kết nối");
+        usbTransport.IsChecked = model.SelectedSerial is { } usb && !AdbClient.IsWirelessSerial(usb);
+        wifiTransport.IsChecked = model.SelectedSerial is { } wifi && AdbClient.IsWirelessSerial(wifi);
         loading = false;
-        transportHint.Text = model.SelectedHasBothTransports ? T("USB and Wi-Fi available", "Có thể kết nối qua USB và Wi-Fi") : "";
         if (useDetectedDevice is not null) useDetectedDevice.Visibility = model.DetectedDifferentDevice ? Visibility.Visible : Visibility.Collapsed;
+        bool selectedWifi = model.SelectedSerial is { } selected && AdbClient.IsWirelessSerial(selected);
+        if (switchWifiButton is not null) switchWifiButton.Visibility = model.SelectedSerial is not null && !selectedWifi && !model.SelectedHasBothTransports ? Visibility.Visible : Visibility.Collapsed;
+        if (disconnectWifiButton is not null) disconnectWifiButton.Visibility = selectedWifi ? Visibility.Visible : Visibility.Collapsed;
         status.Text = model.Settings.Language == "vi" ? model.Status switch
         {
             "Starting" => "Đang khởi động", "Disabled" => "Đã tắt", "No authorized device" => "Chưa có thiết bị được cấp quyền",

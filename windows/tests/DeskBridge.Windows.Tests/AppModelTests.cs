@@ -74,6 +74,62 @@ public sealed class AppModelTests
     });
 
     [Fact]
+    public void CanSelectBothTransportsWithoutChangingPhoneIdentity() => Sta(async () =>
+    {
+        await using var app = new Harness();
+        app.Runner.Devices = "A device\n10.0.0.2:5555 device";
+        app.Runner.Identities["A"] = "PHONE-123";
+        app.Runner.Identities["10.0.0.2:5555"] = "PHONE-123";
+        await app.Model.RefreshAsync();
+        var identity = app.Model.Settings.PreferredPhysicalId;
+        Assert.Equal(2, app.Model.SelectedPhoneTransports.Count);
+        var old = app.Backends[0];
+        await app.Model.SelectTransportAsync("10.0.0.2:5555");
+        Assert.True(old.Lease.Disposed);
+        Assert.Equal("10.0.0.2:5555", app.Model.SelectedSerial);
+        Assert.Equal(identity, app.Model.Settings.PreferredPhysicalId);
+        await app.Model.SelectTransportAsync("A");
+        Assert.Equal(new[] { "A", "10.0.0.2:5555", "A" }, app.Launched);
+        Assert.Equal(identity, app.Model.Settings.PreferredPhysicalId);
+    });
+
+    [Fact]
+    public void CannotSelectTransportFromAnotherOrStalePhone() => Sta(async () =>
+    {
+        await using var app = new Harness();
+        app.Runner.Devices = "A device\n10.0.0.2:5555 device\nB device";
+        app.Runner.Identities["A"] = "PHONE-123";
+        app.Runner.Identities["10.0.0.2:5555"] = "PHONE-123";
+        app.Runner.Identities["B"] = "PHONE-456";
+        await app.Model.RefreshAsync();
+        var changePhone = app.Model.SelectDeviceAsync("B");
+        await app.Model.SelectTransportAsync("10.0.0.2:5555");
+        await changePhone;
+        Assert.Equal("B", app.Model.SelectedSerial);
+        Assert.DoesNotContain("10.0.0.2:5555", app.Launched);
+    });
+
+    [Fact]
+    public void RapidTransportChangesDoNotReviveAnOldSession() => Sta(async () =>
+    {
+        await using var app = new Harness();
+        app.Runner.Devices = "A device\n10.0.0.2:5555 device";
+        app.Runner.Identities["A"] = "PHONE-123";
+        app.Runner.Identities["10.0.0.2:5555"] = "PHONE-123";
+        await app.Model.RefreshAsync();
+        var blocked = new Backend { LaunchGate = Signal() };
+        app.NextBackend = blocked;
+        var toWifi = app.Model.SelectTransportAsync("10.0.0.2:5555");
+        await blocked.Started.Task;
+        var toUsb = app.Model.SelectTransportAsync("A");
+        blocked.LaunchGate.SetResult();
+        await Task.WhenAll(toWifi, toUsb);
+        Assert.True(blocked.Lease.Disposed);
+        Assert.Equal("A", app.Model.SelectedSerial);
+        Assert.True(app.Model.Connected);
+    });
+
+    [Fact]
     public void ExplicitDisconnectDoesNotFailOver() => Sta(async () =>
     {
         await using var app = new Harness();

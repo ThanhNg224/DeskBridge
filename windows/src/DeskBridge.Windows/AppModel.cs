@@ -37,6 +37,7 @@ internal sealed class AppModel : IAsyncDisposable
     public IReadOnlyList<AdbDevice> Devices { get; private set; } = [];
     public string? SelectedSerial { get; private set; }
     public bool SelectedHasBothTransports { get; private set; }
+    public IReadOnlyList<AdbDevice> SelectedPhoneTransports { get; private set; } = [];
     public bool DetectedDifferentDevice => pendingDeviceIdentity is not null;
     public (string Serial, string Identity)? DetectedPhone => pendingDeviceIdentity is { } identity && SelectedSerial is { } serial ? (serial, identity) : null;
     public string Status { get; private set; } = "Starting";
@@ -154,6 +155,7 @@ internal sealed class AppModel : IAsyncDisposable
         var checkedDevices = devices.Select(d => d.Serial == SelectedSerial && !verified ? d with { State = "offline" } : d).ToArray();
         var samePhone = checkedDevices.Where(d => d.State == "device" && d.PhysicalId is not null && d.PhysicalId == selectedPhysicalId).ToArray();
         SelectedHasBothTransports = samePhone.Length == 2 && samePhone.Count(d => AdbClient.IsWirelessSerial(d.Serial)) == 1 && samePhone.Any(d => d.Serial == SelectedSerial);
+        SelectedPhoneTransports = SelectedHasBothTransports ? samePhone.OrderBy(d => AdbClient.IsWirelessSerial(d.Serial)).ToArray() : [];
         Devices = AdbClient.GroupPhones(checkedDevices, SelectedSerial).Concat(checkedDevices.Where(d => d.State != "device")).ToArray();
         if (Settings.PreferredSerial != SelectedSerial || Settings.PreferredPhysicalId != selectedPhysicalId)
         {
@@ -176,7 +178,19 @@ internal sealed class AppModel : IAsyncDisposable
     public Task SelectDeviceAsync(string? serial)
     {
         if (serial == SelectedSerial) return Task.CompletedTask;
+        SelectedPhoneTransports = []; SelectedHasBothTransports = false;
         SelectedSerial = serial; selectedPhysicalId = null; pendingDeviceIdentity = null; nextAttempt = DateTimeOffset.MinValue;
+        ReturnLocal(); Notify();
+        return RunConnectionAsync(async ct => { await DisconnectCoreAsync(); ct.ThrowIfCancellationRequested(); await RefreshCoreAsync(ct); });
+    }
+    public Task SelectTransportAsync(string serial)
+    {
+        if (!Settings.Enabled || selectedPhysicalId is null || serial == SelectedSerial || SelectedPhoneTransports.Count != 2 ||
+            SelectedPhoneTransports.Any(d => d.PhysicalId != selectedPhysicalId) ||
+            !SelectedPhoneTransports.Any(d => d.Serial == SelectedSerial) ||
+            !SelectedPhoneTransports.Any(d => d.Serial == serial && d.State == "device")) return Task.CompletedTask;
+        SelectedSerial = serial; pendingDeviceIdentity = null; nextAttempt = DateTimeOffset.MinValue;
+        Status = "Connecting"; Error = null;
         ReturnLocal(); Notify();
         return RunConnectionAsync(async ct => { await DisconnectCoreAsync(); ct.ThrowIfCancellationRequested(); await RefreshCoreAsync(ct); });
     }
