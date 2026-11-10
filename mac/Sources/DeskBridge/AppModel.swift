@@ -20,6 +20,7 @@ final class AppModel {
     var status = StatusText.searching
     var setup = SetupState()
     private(set) var selectedPhoneHasBothTransports = false
+    private(set) var selectedPhoneTransports: [AdbDevice] = []
     private(set) var automaticSwitchMessage: String?
     private(set) var detectedDifferentPhone: DetectedPhone?
     private(set) var activePhone: AdbDevice?
@@ -237,8 +238,21 @@ final class AppModel {
         if prefs.preferredSerial == serial {
             selectionChanged()
         } else {
+            selectedPhoneTransports = []
+            selectedPhoneHasBothTransports = false
             prefs.preferredSerial = serial
         }
+    }
+
+    func selectTransport(serial: String) {
+        guard !isOperatingWireless, isEnabled, let identity = prefs.preferredPhysicalID,
+              serial != prefs.preferredSerial,
+              selectedPhoneTransports.count == 2,
+              selectedPhoneTransports.allSatisfy({ $0.physicalID == identity }),
+              selectedPhoneTransports.contains(where: { $0.serial == prefs.preferredSerial }),
+              selectedPhoneTransports.contains(where: { $0.serial == serial && $0.isReady }) else { return }
+        setPreference(serial)
+        selectionChanged()
     }
 
     private func setPreference(_ serial: String?) {
@@ -491,8 +505,11 @@ final class AppModel {
             let matches = checkedDevices.filter { $0.isReady && $0.physicalID == identity }
             selectedPhoneHasBothTransports = matches.count == 2 && matches.filter(\.isWireless).count == 1 &&
                 matches.contains { $0.serial == prefs.preferredSerial }
+            selectedPhoneTransports = selectedPhoneHasBothTransports
+                ? matches.sorted { !$0.isWireless && $1.isWireless } : []
         } else {
             selectedPhoneHasBothTransports = false
+            selectedPhoneTransports = []
         }
         if let serial = prefs.preferredSerial {
             let discovered = checkedDevices.first { $0.serial == serial }

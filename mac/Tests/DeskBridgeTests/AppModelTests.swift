@@ -222,6 +222,56 @@ struct AppModelTests {
         #expect(f.model.automaticSwitchMessage?.contains("Wi-Fi") == true)
     }
 
+    @Test func manualTransportSelectionKeepsPhoneIdentityAndWaitsForTeardown() async {
+        let usb = AdbDevice(serial: "USB-A", state: "device", model: "Phone", physicalID: "phone-1")
+        let wifi = AdbDevice(serial: "192.168.1.7:5555", state: "device", model: "Phone", physicalID: "phone-1")
+        let f = ModelFixture(selected: wifi.serial, devices: [usb, wifi])
+        defer { f.close() }
+        await f.model.refreshNow()
+        let old = f.sessions[0]
+        old.emit(.local)
+        await eventually { f.model.activePhone != nil }
+        f.model.selectTransport(serial: usb.serial)
+        #expect(f.model.prefs.preferredSerial == usb.serial)
+        #expect(f.model.prefs.preferredPhysicalID == "phone-1")
+        #expect(old.stops == 1)
+        #expect(f.sessions.count == 1)
+        old.emit(.ended(.stopped))
+        await eventually { f.sessions.count == 2 }
+        #expect(f.sessions[1].serial == usb.serial)
+        f.sessions[1].emit(.local)
+        await eventually { f.model.activePhone != nil }
+        f.model.selectTransport(serial: wifi.serial)
+        f.sessions[1].emit(.ended(.stopped))
+        await eventually { f.sessions.count == 3 }
+        #expect(f.sessions[2].serial == wifi.serial)
+        #expect(f.model.prefs.preferredPhysicalID == "phone-1")
+    }
+
+    @Test func manualTransportSelectionRejectsUnmatchedOrUnavailableDevice() async {
+        let usb = AdbDevice(serial: "USB-A", state: "device", physicalID: "phone-1")
+        let other = AdbDevice(serial: "192.168.1.7:5555", state: "device", physicalID: "phone-2")
+        let f = ModelFixture(selected: usb.serial, devices: [usb, other])
+        defer { f.close() }
+        await f.model.refreshNow()
+        f.model.selectTransport(serial: other.serial)
+        #expect(f.model.prefs.preferredSerial == usb.serial)
+        #expect(f.sessions[0].stops == 0)
+    }
+
+    @Test func selectingAnotherPhoneInvalidatesOldTransportChoicesImmediately() async {
+        let usb = AdbDevice(serial: "USB-A", state: "device", physicalID: "phone-1")
+        let wifi = AdbDevice(serial: "192.168.1.7:5555", state: "device", physicalID: "phone-1")
+        let other = AdbDevice(serial: "USB-B", state: "device", physicalID: "phone-2")
+        let f = ModelFixture(selected: usb.serial, devices: [usb, wifi, other])
+        defer { f.close() }
+        await f.model.refreshNow()
+        f.model.selectDevice(serial: other.serial)
+        f.model.selectTransport(serial: wifi.serial)
+        #expect(f.model.prefs.preferredSerial == other.serial)
+        #expect(f.model.selectedPhoneTransports.isEmpty)
+    }
+
     @Test func neverFailOverToMissingOrConflictingIdentity() async {
         let usb = AdbDevice(serial: "USB-A", state: "device", physicalID: "phone-1")
         let wifi = AdbDevice(serial: "192.168.1.7:5555", state: "device", physicalID: "phone-2")

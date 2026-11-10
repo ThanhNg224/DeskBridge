@@ -147,9 +147,16 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                     if model.selectedPhoneHasBothTransports {
-                        Text("USB and Wi-Fi available")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        Picker("Connection", selection: Binding(
+                            get: { model.prefs.preferredSerial ?? "" },
+                            set: { model.selectTransport(serial: $0) }
+                        )) {
+                            ForEach(model.selectedPhoneTransports, id: \.serial) { transport in
+                                Text(transport.isWireless ? "Wi-Fi" : "USB").tag(transport.serial)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .disabled(model.isOperatingWireless || !model.isEnabled)
                     }
                     HStack(spacing: 8) {
                         Label(phone.isWireless ? "Wi-Fi" : "USB",
@@ -161,7 +168,7 @@ struct SettingsView: View {
                                 model.disconnectWireless(serial: phone.serial)
                             }
                             .disabled(model.isOperatingWireless)
-                        } else {
+                        } else if !model.selectedPhoneHasBothTransports {
                             Button("Switch to Wi-Fi") {
                                 model.switchToWireless(serial: phone.serial)
                             }
