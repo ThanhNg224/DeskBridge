@@ -15,10 +15,36 @@ Push the pointer off the edge of the screen and it appears on the phone. Push it
 
 ---
 
-## Platform branches
+## Get started
 
-- **macOS ARM64:** this `main` branch is the supported Mac source and release line.
-- **Windows 11 x64:** an independent native application is developed on the permanent [`windows` branch](https://github.com/ThanhNg224/DeskBridge/tree/windows). Windows automated CI and packaging have passed; interactive Windows/Android acceptance is still pending. See its [progress and setup guide](https://github.com/ThanhNg224/DeskBridge/blob/windows/windows/README.md) and [three milestones](https://github.com/ThanhNg224/DeskBridge/milestones?state=all).
+You'll need an Apple Silicon Mac running macOS 14 or later, an Android phone or tablet running Android 13 or later, and a USB cable that supports data.
+
+### 1. Install DeskBridge on your Mac
+
+[**Download DeskBridge.zip**](https://github.com/ThanhNg224/DeskBridge/releases/latest/download/DeskBridge.zip), double-click the ZIP, then drag **DeskBridge** into **Applications**.
+
+If you already use Homebrew, run this in Terminal instead:
+
+```sh
+brew install --cask thanhng224/deskbridge/deskbridge
+```
+
+Open DeskBridge from **Applications**. If macOS blocks the first launch because the app isn't notarized, follow [Apple's first-launch instructions](https://support.apple.com/en-us/102445#openanyway).
+
+### 2. Follow the setup checklist on your Mac
+
+1. Under **Accessibility access**, click **Open Settings** and turn on **DeskBridge** so it can use your mouse and keyboard to control the phone.
+2. If **Android tools (adb)** is missing, click **Download from Google**, choose **SDK Platform-Tools for Mac**, then return to DeskBridge and click **Select ZIP…**. Choose the ZIP you just downloaded.
+
+### 3. Connect your phone by USB
+
+1. On your phone, open **Settings → About phone** and tap **Build number** seven times. On some phones, **Build number** is under **Software information**.
+2. In **Settings**, search for **Developer options** and turn on **USB debugging**. On Xiaomi/HyperOS, also turn on **USB debugging (Security settings)** if available.
+3. Plug the phone into your Mac, unlock it and tap **Allow** when asked to allow USB debugging. If multiple phones are connected, pick yours in DeskBridge.
+
+When DeskBridge shows **Connected**, open **Controls**, choose the screen edge closest to your phone, then move the pointer past that edge. Press **Control + Option + Command + Esc** to bring it back to the Mac.
+
+Once USB works, you can [switch to Wi-Fi](#questions).
 
 ## What it does
 
@@ -29,22 +55,6 @@ Push the pointer off the edge of the screen and it appears on the phone. Push it
 - **Right click goes Back**, like on a phone (you can switch it to a real right click).
 - **Type Vietnamese** with your Mac's input method (Telex, VNI): compose the word on the Mac, it appears on the phone when you press space.
 - **Always a way out.** Press **⌃⌥⌘⎋** (Control+Option+Command+Esc) to get the pointer back on the Mac instantly.
-
-## What you need
-
-- A Mac with Apple Silicon, macOS 14 or newer.
-- An Android phone or tablet, Android 13 or newer, connected via a USB cable or Wi-Fi (wireless debugging).
-- Android Platform Tools (`adb`). If missing, DeskBridge guides you through downloading the official ZIP from Google and selecting it in the app.
-
-## Get started
-
-1. **Download** [DeskBridge.zip](https://github.com/ThanhNg224/DeskBridge/releases/latest/download/DeskBridge.zip), unzip it and drag **DeskBridge** to your Applications folder.
-2. **Open it the first time.** The app is not yet notarized by Apple, so macOS blocks it once: open **System Settings > Privacy & Security**, scroll down and click **Open Anyway** next to DeskBridge.
-3. **Allow Accessibility and prepare Android tools.** Follow the checklist in DeskBridge. If Android tools are missing, download Platform Tools for Mac from Google and select the ZIP in the app.
-4. **Prepare the phone.** Turn on *Developer options* (tap **Build number** seven times in *Settings > About phone*), then switch on **USB debugging**. Xiaomi/HyperOS phones also need **USB debugging (Security settings)**.
-5. **Connect the phone.** Plug it in and tap **Allow** on the phone. To go wireless, put the Mac and phone on the same network and enable **Automatically prepare Wi-Fi** in **Connection**. Select **Wi-Fi** once it appears next to **USB**. If ADB over TCP/IP is already enabled or the phone was paired outside DeskBridge, you can enter its address and connection port under **Manual Wi-Fi**.
-
-The DeskBridge window shows what is still missing and turns green when everything is ready. Then move the pointer past the screen edge you picked in **Controls** and it jumps to the phone.
 
 ## Keyboard shortcuts
 
@@ -95,6 +105,8 @@ The phone's Android version and manufacturer determine how media, mute, brightne
 
 ## For developers
 
+The `main` branch is the macOS release line. The independent Windows 11 x64 app is developed on the [`windows` branch](https://github.com/ThanhNg224/DeskBridge/tree/windows). See the [Windows setup and acceptance guide](https://github.com/ThanhNg224/DeskBridge/blob/windows/windows/README.md).
+
 DeskBridge is a Swift 6 menu bar app (`mac/`) plus a plain-Java server (`server/`) that the Mac starts on the phone through `adb shell app_process`. No APK, no Gradle, no Kotlin. Mouse and keyboard travel over an adb-forwarded abstract socket with a small binary protocol; the server injects them through Android's `InputManager` and draws its own pointer.
 
 Start with **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** (decisions, protocol, security model, risks) and **[CLAUDE.md](CLAUDE.md)** (commands, rules and gotchas for people and AI agents).
@@ -136,6 +148,8 @@ ADB output and device addresses in logs are private; review details in Settings 
 ```bash
 DEVELOPER_ID="Developer ID Application: Name (TEAMID)" NOTARY_PROFILE=deskbridge scripts/release.sh
 ```
+
+After publishing the ZIP, update the version and SHA-256 in the [Homebrew cask](https://github.com/ThanhNg224/homebrew-deskbridge/blob/main/Casks/deskbridge.rb).
 
 (The one-time `notarytool store-credentials` step is described at the top of the script.)
 
