@@ -1,5 +1,8 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Windows.Automation;
+using System.Windows.Controls.Primitives;
+using System.Windows.Data;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -10,9 +13,10 @@ namespace DeskBridge.Windows;
 internal sealed class MainWindow : Window
 {
     private readonly AppModel model;
-    private readonly TextBlock status = new() { FontSize = 20, FontWeight = FontWeights.SemiBold };
-    private readonly TextBlock error = new() { TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Firebrick, Margin = new Thickness(0, 8, 0, 8) };
-    private readonly TextBlock autoWifiStatus = new() { TextWrapping = TextWrapping.Wrap, Foreground = Brushes.DimGray };
+    private readonly TextBlock status = new() { FontSize = 16, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap };
+    private readonly TextBlock error = new() { TextWrapping = TextWrapping.Wrap, Foreground = SystemColors.ControlTextBrush, Margin = new Thickness(0, 8, 0, 8) };
+    private readonly ScrollViewer errorDetails;
+    private readonly TextBlock autoWifiStatus = new() { TextWrapping = TextWrapping.Wrap, Foreground = SystemColors.ControlTextBrush };
     private readonly CheckBox autoWifi = new();
     private readonly StackPanel transportPanel = new() { Margin = new Thickness(0, 8, 0, 0) };
     private readonly TextBlock transportLabel = new() { FontWeight = FontWeights.SemiBold };
@@ -23,10 +27,15 @@ internal sealed class MainWindow : Window
     private Button? retryAutoWifiButton, restartAdbButton, resumeAutoWifiButton;
     private readonly ComboBox device = new() { DisplayMemberPath = "Label", SelectedValuePath = "Serial", MinHeight = 32 };
     private readonly TextBox adb = new(), pointer = new(), scroll = new(), host = new(), port = new() { Text = "5555" };
-    private readonly ComboBox edge = new() { ItemsSource = Enum.GetValues<Edge>(), MinHeight = 32 };
+    private readonly ComboBox edge = new() { MinHeight = 32 };
     private readonly ComboBox language = new() { ItemsSource = new[] { "English", "Tiếng Việt" }, MinHeight = 32 };
     private readonly CheckBox enabled = new(), back = new(), invert = new(), clipboard = new(), composed = new(), startup = new();
-    private readonly StackPanel fields = new(), actions = new();
+    private readonly TabControl tabs = new();
+    private readonly StackPanel setupTools = new();
+    private readonly TextBlock setupPhone = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly TextBlock backgroundWifiStatus = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 4) };
+    private readonly List<Action> translate = [];
+    private bool missingAdb;
     private bool loading;
     private string devicesKey = "";
     private sealed record DeviceChoice(string Serial, string Label);
@@ -37,16 +46,30 @@ internal sealed class MainWindow : Window
         this.model = model;
         Title = "DeskBridge — Windows (experimental)";
         LoadIcon();
-        Width = 640; Height = 840; MinWidth = 520; MinHeight = 640;
-        Background = new SolidColorBrush(Color.FromRgb(246, 248, 252));
-        var root = new DockPanel { Margin = new Thickness(24) };
-        actions.Orientation = Orientation.Vertical;
-        DockPanel.SetDock(actions, Dock.Bottom); root.Children.Add(actions);
-        var header = new StackPanel();
-        header.Children.Add(new TextBlock { Text = "DeskBridge", FontSize = 28, FontWeight = FontWeights.Bold });
-        header.Children.Add(status); header.Children.Add(error);
+        Width = 680; Height = 620; MinWidth = 520; MinHeight = 540;
+        Background = SystemColors.ControlBrush;
+        Foreground = SystemColors.ControlTextBrush;
+        var root = new DockPanel { Margin = new Thickness(16) };
+        var footer = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
+        var footerActions = new WrapPanel();
+        footerActions.Children.Add(Button("Apply & reconnect", "Áp dụng và kết nối lại", ApplyAsync));
+        footerActions.Children.Add(Button("Return control to PC", "Trả điều khiển về PC", () =>
+        {
+            model.ReturnLocal();
+            return Task.CompletedTask;
+        }));
+        footer.Children.Add(footerActions);
+        footer.Children.Add(Caption("Release shortcut: Ctrl+Alt+Shift+Esc", "Phím trả điều khiển: Ctrl+Alt+Shift+Esc"));
+        footer.Children.Add(Caption("Experimental · Windows/device acceptance pending", "Bản thử nghiệm · Chưa nghiệm thu Windows/thiết bị"));
+        DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer);
+        var header = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
+        header.Children.Add(new TextBlock { Text = "DeskBridge", FontSize = 24, FontWeight = FontWeights.SemiBold });
+        header.Children.Add(status);
+        header.Children.Add(backgroundWifiStatus);
+        errorDetails = new ScrollViewer { Content = error, MaxHeight = 88, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        header.Children.Add(errorDetails);
         DockPanel.SetDock(header, Dock.Top); root.Children.Add(header);
-        root.Children.Add(new ScrollViewer { Content = fields, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
+        root.Children.Add(tabs);
         Content = root;
         device.SelectionChanged += async (_, _) =>
         {
@@ -61,7 +84,12 @@ internal sealed class MainWindow : Window
         autoWifi.Unchecked += async (_, _) => await ChangeAutoWifiAsync(false);
         Closing += (_, e) => { if (!((App)Application.Current).Exiting) { e.Cancel = true; Hide(); } };
         model.Changed += Render;
-        BuildFields(); LoadSettings(); Render();
+        BuildPages();
+        tabs.SelectionChanged += (_, args) =>
+        {
+            if (ReferenceEquals(args.Source, tabs)) UpdateWifiSummary();
+        };
+        LoadSettings(); Render();
     }
     private async Task ChangeAutoWifiAsync(bool enabled)
     {
@@ -80,16 +108,65 @@ internal sealed class MainWindow : Window
         var selected = model.SelectedPhoneTransports.FirstOrDefault(d => AdbClient.IsWirelessSerial(d.Serial) == wireless);
         if (selected is not null) await model.SelectTransportAsync(selected.Serial);
     }
-    private void Field(string en, string vi, UIElement control)
+    private void Localize(string en, string vi, Action<string> update)
     {
-        fields.Children.Add(new TextBlock { Text = T(en, vi), Margin = new Thickness(0, 16, 0, 4), FontWeight = FontWeights.SemiBold });
-        fields.Children.Add(control);
+        void Translate() => update(T(en, vi));
+        translate.Add(Translate);
+        Translate();
     }
-    private void Check(CheckBox control, string en, string vi)
-    { control.Content = T(en, vi); fields.Children.Add(control); }
+
+    private TextBlock Caption(string en, string vi)
+    {
+        var text = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) };
+        Localize(en, vi, value => text.Text = value);
+        return text;
+    }
+
+    private GroupBox Group(string en, string vi, UIElement content)
+    {
+        var box = new GroupBox { Content = content, Padding = new Thickness(12, 4, 12, 8), Margin = new Thickness(0, 0, 0, 12) };
+        Localize(en, vi, value => box.Header = value);
+        return box;
+    }
+
+    private StackPanel Page(string en, string vi)
+    {
+        var panel = new StackPanel { Margin = new Thickness(12) };
+        var tab = new TabItem
+        {
+            Padding = new Thickness(12, 6, 12, 6),
+            Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }
+        };
+        Localize(en, vi, value => tab.Header = value);
+        tabs.Items.Add(tab);
+        return panel;
+    }
+
+    private StackPanel Field(string en, string vi, Control control, bool inline = false)
+    {
+        var field = new StackPanel { Orientation = inline ? Orientation.Horizontal : Orientation.Vertical };
+        var label = new Label { Target = control, Padding = new Thickness(0, 4, 8, 4), VerticalAlignment = VerticalAlignment.Center };
+        if (inline) label.Width = 232;
+        Localize(en, vi, value =>
+        {
+            label.Content = value;
+            AutomationProperties.SetName(control, value);
+        });
+        field.Children.Add(label);
+        field.Children.Add(control);
+        return field;
+    }
+
+    private void Check(StackPanel section, CheckBox control, string en, string vi)
+    {
+        Localize(en, vi, value => control.Content = value);
+        section.Children.Add(control);
+    }
+
     private Button Button(string en, string vi, Func<Task> action)
     {
-        var button = new Button { Content = T(en, vi) };
+        var button = new Button();
+        Localize(en, vi, text => button.Content = text);
         button.Click += async (_, _) =>
         {
             button.IsEnabled = false;
@@ -99,75 +176,44 @@ internal sealed class MainWindow : Window
         };
         return button;
     }
-    private void BuildFields()
+    private void BuildPages()
     {
-        fields.Children.Clear(); actions.Children.Clear();
-        Field("Android device", "Thiết bị Android", device);
-        fields.Children.Add(transportPanel);
+        var connection = Page("Connection", "Kết nối");
+        var controls = Page("Controls", "Điều khiển");
+        var shortcuts = Page("Shortcuts", "Phím tắt");
+        var general = Page("General", "Chung");
+
+        var phone = new StackPanel();
+        Check(phone, enabled, "Enable DeskBridge", "Bật DeskBridge");
+        phone.Children.Add(Field("Android device", "Thiết bị Android", device));
+        phone.Children.Add(transportPanel);
+        var connectionActions = new WrapPanel();
+        connectionActions.Children.Add(Button("Connect", "Kết nối", model.ConnectAsync));
+        connectionActions.Children.Add(Button("Disconnect", "Ngắt kết nối", model.DisconnectAsync));
         useDetectedDevice = Button("Use detected phone…", "Dùng điện thoại vừa phát hiện…", async () =>
         {
             var detected = model.DetectedPhone;
             if (detected is { } phone && MessageBox.Show(this, T("A different phone is using this connection. Switch control to it?", "Một điện thoại khác đang dùng kết nối này. Chuyển quyền điều khiển sang máy đó?"), "DeskBridge", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes)
                 await model.UseDetectedDeviceAsync(phone.Serial, phone.Identity);
         });
-        fields.Children.Add(useDetectedDevice);
-        Check(enabled, "Enable DeskBridge", "Bật DeskBridge");
-        Field("ADB executable", "Đường dẫn ADB", adb);
-        fields.Children.Add(Button("Choose adb.exe…", "Chọn adb.exe…", () =>
+        connectionActions.Children.Add(useDetectedDevice);
+        phone.Children.Add(connectionActions);
+        connection.Children.Add(Group("Phone", "Điện thoại", phone));
+
+        setupTools.Children.Add(Caption("Android tools are missing. Set them up to connect.", "Thiếu công cụ Android. Hãy thiết lập để kết nối."));
+        setupTools.Children.Add(Button("Open Android tools settings", "Mở cài đặt công cụ Android", () =>
         {
-            var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "ADB|adb.exe", CheckFileExists = true };
-            if (dialog.ShowDialog(this) == true) adb.Text = dialog.FileName;
+            tabs.SelectedIndex = 3;
+            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() => adb.Focus()));
             return Task.CompletedTask;
         }));
-        fields.Children.Add(new TextBlock
-        {
-            Text = T("If Android tools are missing, download Platform Tools for Windows from Google, accept its terms, then select the ZIP. On the phone, tap Build number seven times in About phone, enable USB debugging, connect USB and tap Allow.",
-                     "Nếu thiếu công cụ Android, tải Platform Tools cho Windows từ Google, chấp nhận điều khoản rồi chọn tệp ZIP. Trên điện thoại, chạm Số bản dựng bảy lần trong Giới thiệu điện thoại, bật Gỡ lỗi USB, cắm cáp USB rồi chạm Cho phép."),
-            TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 4)
-        });
-        fields.Children.Add(Button("Download Android tools from Google", "Tải công cụ Android từ Google", () =>
-        {
-            Process.Start(new ProcessStartInfo("https://developer.android.com/tools/releases/platform-tools") { UseShellExecute = true });
-            return Task.CompletedTask;
-        }));
-        fields.Children.Add(Button("Select Platform Tools ZIP…", "Chọn tệp ZIP Platform Tools…", InstallAdbAsync));
-        Field("Phone position (screen edge)", "Vị trí điện thoại (cạnh màn hình)", edge);
-        Field("Pointer speed (0.1–10)", "Tốc độ con trỏ (0.1–10)", pointer);
-        Field("Scroll speed (0.1–10)", "Tốc độ cuộn (0.1–10)", scroll);
-        Check(back, "Right click goes Back", "Chuột phải để quay lại");
-        Check(invert, "Invert scrolling", "Đảo hướng cuộn");
-        Check(clipboard, "Share text clipboard", "Chia sẻ clipboard văn bản");
-        Check(composed, "Composed text (Microsoft IME / UniKey)", "Nhập văn bản qua bộ gõ (Microsoft / UniKey)");
-        fields.Children.Add(new TextBlock { Text = T("A small text preview receives focus while controlling Android. Commit words with space or punctuation.", "Ô xem trước nhận focus khi điều khiển Android. Hoàn tất từ bằng dấu cách hoặc dấu câu."), TextWrapping = TextWrapping.Wrap });
-        Field("Android shortcuts", "Phím tắt Android", new TextBlock
-        {
-            Text = T("Alt+H Home · Alt+B Back · Alt+R Recent apps\nAlt+L Sleep screen · Alt+↑/↓ Volume · Alt+←/→ Brightness\nAlt+N Notifications · Alt+M Mute · Alt+P Play/pause · Alt+Tab Switch apps",
-                     "Alt+H Màn hình chính · Alt+B Quay lại · Alt+R Ứng dụng gần đây\nAlt+L Tắt màn hình · Alt+↑/↓ Âm lượng · Alt+←/→ Độ sáng\nAlt+N Thông báo · Alt+M Tắt tiếng · Alt+P Phát/tạm dừng · Alt+Tab Chuyển ứng dụng"),
-            TextWrapping = TextWrapping.Wrap
-        });
-        fields.Children.Add(Button("Check for updates", "Kiểm tra bản cập nhật", CheckUpdatesAsync));
-        Check(startup, "Start with Windows", "Mở cùng Windows");
-        Field("Language", "Ngôn ngữ", language);
-        autoWifi.Content = T("Automatically prepare Wi-Fi", "Tự chuẩn bị Wi-Fi");
-        fields.Children.Add(autoWifi); fields.Children.Add(autoWifiStatus);
-        Field("Wi-Fi IPv4 address", "Địa chỉ IPv4 Wi-Fi", host);
-        Field("Connection port", "Cổng kết nối", port);
-        fields.Children.Add(new TextBlock
-        {
-            Text = T("Use the same Wi-Fi network. Enable automatic preparation over USB, or pair the phone outside DeskBridge.", "Dùng cùng mạng Wi-Fi. Bật tự chuẩn bị khi cắm USB, hoặc ghép đôi điện thoại bên ngoài DeskBridge."),
-            TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 16)
-        });
-        var primary = new WrapPanel();
-        primary.Children.Add(Button("Apply & reconnect", "Áp dụng và kết nối lại", ApplyAsync));
-        primary.Children.Add(Button("Connect", "Kết nối", model.ConnectAsync));
-        primary.Children.Add(Button("Disconnect", "Ngắt kết nối", model.DisconnectAsync));
-        actions.Children.Add(primary);
+        connection.Children.Add(setupTools);
+        connection.Children.Add(setupPhone);
+
+        var wifi = new StackPanel();
+        Check(wifi, autoWifi, "Automatically prepare Wi-Fi", "Tự chuẩn bị Wi-Fi");
+        wifi.Children.Add(autoWifiStatus);
         var wireless = new WrapPanel();
-        wireless.Children.Add(Button("Connect Wi-Fi", "Kết nối Wi-Fi", () =>
-        {
-            if (!int.TryParse(port.Text, out int value)) throw new InvalidDataException(T("Invalid port.", "Cổng không hợp lệ."));
-            return model.ConnectWifiAsync(host.Text, value);
-        }));
         disconnectWifiButton = Button("Disconnect Wi-Fi", "Ngắt Wi-Fi", model.DisconnectWifiAsync);
         retryAutoWifiButton = Button("Retry Wi-Fi", "Thử lại Wi-Fi", model.RetryAutoWifiAsync);
         resumeAutoWifiButton = Button("Reconnect Wi-Fi", "Kết nối lại Wi-Fi", model.ResumeAutoWifiAsync);
@@ -178,10 +224,148 @@ internal sealed class MainWindow : Window
         });
         wireless.Children.Add(disconnectWifiButton);
         wireless.Children.Add(retryAutoWifiButton); wireless.Children.Add(resumeAutoWifiButton); wireless.Children.Add(restartAdbButton);
-        actions.Children.Add(wireless);
-        actions.Children.Add(Button("Return control to PC · Ctrl+Alt+Shift+Esc", "Trả điều khiển về PC · Ctrl+Alt+Shift+Esc", () => { model.ReturnLocal(); return Task.CompletedTask; }));
-        actions.Children.Add(new TextBlock { Text = T("Experimental · Windows/device acceptance pending", "Bản thử nghiệm · Chưa nghiệm thu Windows/thiết bị"), Foreground = Brushes.DimGray, Margin = new Thickness(0, 8, 0, 0) });
+        wifi.Children.Add(wireless);
+
+        var manual = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
+        var endpoint = new WrapPanel();
+        host.Width = 152; port.Width = 100;
+        var addressField = Field("IPv4 address", "Địa chỉ IPv4", host);
+        var portField = Field("Connection port", "Cổng kết nối", port);
+        addressField.Margin = portField.Margin = new Thickness(0, 0, 8, 0);
+        endpoint.Children.Add(addressField); endpoint.Children.Add(portField);
+        var connectWifi = Button("Connect Wi-Fi", "Kết nối Wi-Fi", () =>
+        {
+            if (!int.TryParse(port.Text, out int value)) throw new InvalidDataException(T("Invalid port.", "Cổng không hợp lệ."));
+            return model.ConnectWifiAsync(host.Text, value);
+        });
+        connectWifi.VerticalAlignment = VerticalAlignment.Bottom;
+        connectWifi.Margin = new Thickness(0, 0, 0, 8);
+        endpoint.Children.Add(connectWifi);
+        manual.Children.Add(endpoint);
+        manual.Children.Add(Caption(
+            "Use the same Wi-Fi network. Enable automatic preparation over USB, or pair the phone outside DeskBridge.",
+            "Dùng cùng mạng Wi-Fi. Bật tự chuẩn bị khi cắm USB, hoặc ghép đôi điện thoại bên ngoài DeskBridge."));
+        var manualWifi = new ToggleButton
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            MinHeight = 32,
+            Padding = new Thickness(8, 4, 8, 4),
+            Margin = new Thickness(0, 8, 0, 0)
+        };
+        void UpdateManualWifiLabel()
+        {
+            var label = T("Manual Wi-Fi", "Wi-Fi thủ công");
+            manualWifi.Content = (manualWifi.IsChecked == true ? "⌄  " : "›  ") + label;
+            AutomationProperties.SetName(manualWifi, label);
+        }
+        translate.Add(UpdateManualWifiLabel);
+        UpdateManualWifiLabel();
+        manualWifi.Checked += (_, _) => UpdateManualWifiLabel();
+        manualWifi.Unchecked += (_, _) => UpdateManualWifiLabel();
+        manual.SetBinding(VisibilityProperty, new Binding(nameof(ToggleButton.IsChecked))
+        {
+            Source = manualWifi,
+            Converter = new BooleanToVisibilityConverter()
+        });
+        wifi.Children.Add(manualWifi);
+        wifi.Children.Add(manual);
+        connection.Children.Add(Group("Wi-Fi", "Wi-Fi", wifi));
+
+        edge.Width = 120;
+        var edges = Enum.GetValues<Edge>().Select(value => new ComboBoxItem { Tag = value }).ToArray();
+        edge.ItemsSource = edges;
+        edge.SelectedValuePath = nameof(ComboBoxItem.Tag);
+        void TranslateEdges()
+        {
+            foreach (var item in edges)
+                item.Content = (Edge)item.Tag switch
+                {
+                    Edge.Left => T("Left", "Trái"), Edge.Right => T("Right", "Phải"),
+                    Edge.Top => T("Top", "Trên"), Edge.Bottom => T("Bottom", "Dưới"),
+                    _ => item.Tag.ToString()
+                };
+        }
+        translate.Add(TranslateEdges);
+        TranslateEdges();
+        controls.Children.Add(Group("Phone position", "Vị trí điện thoại", Field("Screen edge", "Cạnh màn hình", edge, inline: true)));
+        var mouse = new StackPanel();
+        pointer.Width = scroll.Width = 88;
+        mouse.Children.Add(Field("Pointer speed (0.1–10)", "Tốc độ con trỏ (0.1–10)", pointer, inline: true));
+        mouse.Children.Add(Field("Scroll speed (0.1–10)", "Tốc độ cuộn (0.1–10)", scroll, inline: true));
+        Check(mouse, back, "Right click goes Back", "Chuột phải để quay lại");
+        Check(mouse, invert, "Invert scrolling", "Đảo hướng cuộn");
+        controls.Children.Add(Group("Mouse & scrolling", "Chuột và cuộn", mouse));
+        var keyboard = new StackPanel();
+        Check(keyboard, clipboard, "Share text clipboard", "Chia sẻ clipboard văn bản");
+        Check(keyboard, composed, "Composed text (Microsoft IME / UniKey)", "Nhập văn bản qua bộ gõ (Microsoft / UniKey)");
+        keyboard.Children.Add(Caption("A small text preview receives focus while controlling Android. Commit words with space or punctuation.",
+            "Ô xem trước nhận focus khi điều khiển Android. Hoàn tất từ bằng dấu cách hoặc dấu câu."));
+        controls.Children.Add(Group("Keyboard & clipboard", "Bàn phím và clipboard", keyboard));
+
+        shortcuts.Children.Add(Group("Android navigation", "Điều hướng Android", ShortcutRows(
+            ("Home", "Màn hình chính", "Alt+H"), ("Back", "Quay lại", "Alt+B"),
+            ("Recent apps", "Ứng dụng gần đây", "Alt+R"), ("Switch apps", "Chuyển ứng dụng", "Alt+Tab"),
+            ("Notifications", "Thông báo", "Alt+N"))));
+        shortcuts.Children.Add(Group("Screen", "Màn hình", ShortcutRows(
+            ("Sleep screen", "Tắt màn hình", "Alt+L"), ("Brightness", "Độ sáng", "Alt+←/→"))));
+        shortcuts.Children.Add(Group("Audio & media", "Âm thanh và media", ShortcutRows(
+            ("Volume", "Âm lượng", "Alt+↑/↓"), ("Mute", "Tắt tiếng", "Alt+M"), ("Play/pause", "Phát/tạm dừng", "Alt+P"))));
+
+        var preferences = new StackPanel();
+        Check(preferences, startup, "Start with Windows", "Mở cùng Windows");
+        language.Width = 120;
+        preferences.Children.Add(Field("Language", "Ngôn ngữ", language, inline: true));
+        general.Children.Add(Group("Preferences", "Tùy chọn", preferences));
+
+        var tools = new StackPanel();
+        tools.Children.Add(Field("ADB executable", "Đường dẫn ADB", adb));
+        var chooseAdb = new WrapPanel();
+        chooseAdb.Children.Add(Button("Choose adb.exe…", "Chọn adb.exe…", () =>
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "ADB|adb.exe", CheckFileExists = true };
+            if (dialog.ShowDialog(this) == true) adb.Text = dialog.FileName;
+            return Task.CompletedTask;
+        }));
+        tools.Children.Add(chooseAdb);
+        tools.Children.Add(Caption("To install Android tools, download Platform Tools for Windows from Google, accept its terms, then select the ZIP.",
+            "Để cài công cụ Android, tải Platform Tools cho Windows từ Google, chấp nhận điều khoản rồi chọn tệp ZIP."));
+        var toolsActions = new WrapPanel();
+        toolsActions.Children.Add(Button("Download Android tools from Google", "Tải công cụ Android từ Google", () =>
+        {
+            Process.Start(new ProcessStartInfo("https://developer.android.com/tools/releases/platform-tools") { UseShellExecute = true });
+            return Task.CompletedTask;
+        }));
+        toolsActions.Children.Add(Button("Select Platform Tools ZIP…", "Chọn tệp ZIP Platform Tools…", InstallAdbAsync));
+        tools.Children.Add(toolsActions);
+        general.Children.Add(Group("Android tools", "Công cụ Android", tools));
+        general.Children.Add(Group("Updates", "Cập nhật", new WrapPanel
+        {
+            Children = { Button("Check for updates", "Kiểm tra bản cập nhật", CheckUpdatesAsync) }
+        }));
+
+        Localize(
+            "On your phone, tap Build number seven times in About phone, enable USB debugging, connect USB and tap Allow.",
+            "Trên điện thoại, chạm Số bản dựng bảy lần trong Giới thiệu điện thoại, bật Gỡ lỗi USB, cắm cáp USB rồi chạm Cho phép.",
+            value => setupPhone.Text = value);
+        tabs.SelectedIndex = 0;
     }
+
+    private StackPanel ShortcutRows(params (string En, string Vi, string Keys)[] shortcuts)
+    {
+        var panel = new StackPanel();
+        foreach (var (en, vi, keys) in shortcuts)
+        {
+            var row = new DockPanel { Margin = new Thickness(0, 4, 0, 4) };
+            var chord = new TextBlock { Text = keys, Margin = new Thickness(8, 4, 0, 0) };
+            DockPanel.SetDock(chord, Dock.Right);
+            row.Children.Add(chord);
+            row.Children.Add(Caption(en, vi));
+            panel.Children.Add(row);
+        }
+        return panel;
+    }
+
     private async Task InstallAdbAsync()
     {
         if (ManagedAdb.ExistingAdb(model.Settings.AdbPath) || ManagedAdb.ExistingAdb(adb.Text.Trim()))
@@ -198,6 +382,8 @@ internal sealed class MainWindow : Window
                 ManagedAdb.VerifyGoogleAsync, ManagedAdb.EnsureCompatibleAsync));
             await model.ApplyAsync(model.Settings with { AdbPath = installed, PreferredSerial = model.SelectedSerial });
             adb.Text = model.Settings.AdbPath;
+            missingAdb = !ManagedAdb.ExistingAdb(model.Settings.AdbPath);
+            Render();
         }
         catch (InvalidOperationException)
         {
@@ -241,8 +427,9 @@ internal sealed class MainWindow : Window
     private void LoadSettings()
     {
         var value = model.Settings;
+        missingAdb = !ManagedAdb.ExistingAdb(value.AdbPath);
         adb.Text = value.AdbPath; pointer.Text = value.PointerSpeed.ToString(CultureInfo.InvariantCulture);
-        scroll.Text = value.ScrollSpeed.ToString(CultureInfo.InvariantCulture); edge.SelectedItem = value.Edge;
+        scroll.Text = value.ScrollSpeed.ToString(CultureInfo.InvariantCulture); edge.SelectedValue = value.Edge;
         enabled.IsChecked = value.Enabled; back.IsChecked = value.RightClickIsBack; invert.IsChecked = value.InvertScroll;
         clipboard.IsChecked = value.ShareClipboard; composed.IsChecked = value.ComposedText;
         startup.IsChecked = value.StartWithWindows; language.SelectedIndex = value.Language == "vi" ? 1 : 0;
@@ -255,19 +442,18 @@ internal sealed class MainWindow : Window
         await model.ApplyAsync(model.Settings with
         {
             AdbPath = adb.Text.Trim(), PointerSpeed = pointerSpeed, ScrollSpeed = scrollSpeed,
-            Edge = edge.SelectedItem is Edge selected ? selected : Edge.Right,
+            Edge = edge.SelectedValue is Edge selected ? selected : Edge.Right,
             Enabled = enabled.IsChecked == true, RightClickIsBack = back.IsChecked == true,
             InvertScroll = invert.IsChecked == true, ShareClipboard = clipboard.IsChecked == true,
             ComposedText = composed.IsChecked == true, StartWithWindows = startup.IsChecked == true,
             PreferredSerial = model.SelectedSerial, Language = language.SelectedIndex == 1 ? "vi" : "en"
         });
-        // Controls must be detached from their old parents before rebuilding the translated fields.
-        fields.Children.Clear();
-        BuildFields(); LoadSettings(); Render();
+        foreach (var update in translate) update();
+        LoadSettings(); Render();
     }
     private void Render()
     {
-        string key = model.SelectedSerial + "\n" + string.Join('\n', model.Devices.Select(d => d.Serial + d.State + d.Description));
+        string key = model.Settings.Language + "\n" + model.SelectedSerial + "\n" + string.Join('\n', model.Devices.Select(d => d.Serial + d.State + d.Description));
         loading = true;
         if (key != devicesKey || device.ItemsSource is null)
         {
@@ -310,6 +496,20 @@ internal sealed class MainWindow : Window
         if (model.Connected && model.Status == "Connected" && model.SelectedSerial is { } active)
             status.Text += AdbClient.IsWirelessSerial(active) ? " · Wi-Fi" : " · USB";
         error.Text = model.Error ?? "";
+        errorDetails.Visibility = string.IsNullOrEmpty(error.Text) ? Visibility.Collapsed : Visibility.Visible;
+        setupTools.Visibility = missingAdb ? Visibility.Visible : Visibility.Collapsed;
+        setupPhone.Visibility = !missingAdb && (model.Status == "No authorized device"
+            || model.Devices.Any(phone => phone.Serial == model.SelectedSerial && phone.State == "unauthorized"))
+            ? Visibility.Visible : Visibility.Collapsed;
+        autoWifiStatus.Visibility = string.IsNullOrEmpty(autoWifiStatus.Text) ? Visibility.Collapsed : Visibility.Visible;
+        UpdateWifiSummary();
+    }
+
+    private void UpdateWifiSummary()
+    {
+        backgroundWifiStatus.Text = autoWifiStatus.Text;
+        backgroundWifiStatus.Visibility = tabs.SelectedIndex > 0 && !string.IsNullOrEmpty(backgroundWifiStatus.Text)
+            ? Visibility.Visible : Visibility.Collapsed;
     }
     private void LoadIcon()
     {
