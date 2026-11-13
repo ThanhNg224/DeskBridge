@@ -22,6 +22,20 @@ struct RemoteInputTests {
         #expect(action(.button(.other, down: false)) == .send(ProtocolEncoder.button(4, down: false)))
     }
 
+    @Test func sideButtonsKeepTheirIdentityAndPressState() {
+        for (number, button, android): (Int64, MouseButton, Int32) in [
+            (3, .back, 4), (4, .forward, 125),
+        ] {
+            #expect(MouseButton.otherButton(number: number) == button)
+            for down in [true, false] {
+                let expected = ProtocolEncoder.key(code: android, down: down, meta: 0)
+                #expect(action(.button(button, down: down)) == .send(expected))
+            }
+        }
+        #expect(MouseButton.otherButton(number: 2) == .other)
+        #expect(MouseButton.otherButton(number: 5) == nil)
+    }
+
     @Test func rightClickIsBackOrSecondaryButton() {
         #expect(action(.button(.right, down: true)) == .send(ProtocolEncoder.key(code: 4, down: true, meta: 0)))
         #expect(action(.button(.right, down: false)) { $0.rightClickIsBack = false }

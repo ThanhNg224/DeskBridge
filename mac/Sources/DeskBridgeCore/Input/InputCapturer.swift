@@ -2,7 +2,16 @@ import CoreGraphics
 import Foundation
 
 public enum MouseButton: Sendable {
-    case left, right, other
+    case left, right, other, back, forward
+
+    static func otherButton(number: Int64) -> MouseButton? {
+        switch number {
+        case 2: .other
+        case 3: .back
+        case 4: .forward
+        default: nil
+        }
+    }
 }
 
 public enum CapturedEvent: Sendable {
@@ -135,7 +144,11 @@ public final class InputCapturer: @unchecked Sendable {
 
         case .otherMouseDown, .otherMouseUp:
             guard remote else { return pass }
-            onEvent(.button(.other, down: type == .otherMouseDown))
+            let number = event.getIntegerValueField(.mouseEventButtonNumber)
+            guard let button = MouseButton.otherButton(number: number) else {
+                return nil
+            }
+            onEvent(.button(button, down: type == .otherMouseDown))
             return nil
 
         case .scrollWheel:

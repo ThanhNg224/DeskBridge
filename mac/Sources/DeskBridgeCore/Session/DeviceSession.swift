@@ -245,7 +245,7 @@ public final class DeviceSession: @unchecked Sendable {
             return
         }
         let startsShortcut = switch event {
-        case .androidKey(_, true), .switchKey(57, true, _): true
+        case .androidKey(_, true), .switchKey(57, true, _), .button(.back, true), .button(.forward, true): true
         default: false
         }
         if state == .remote, startsShortcut {

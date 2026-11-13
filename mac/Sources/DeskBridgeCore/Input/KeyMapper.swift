@@ -3,6 +3,7 @@ import CoreGraphics
 
 public enum KeyMapper {
     public static let backKeyCode: Int32 = 4 // KEYCODE_BACK
+    public static let forwardKeyCode: Int32 = 125 // KEYCODE_FORWARD
 
     /// Mac virtual keycode -> Android KEYCODE_*. Keys not listed are not forwarded.
     static let table: [Int: Int32] = [

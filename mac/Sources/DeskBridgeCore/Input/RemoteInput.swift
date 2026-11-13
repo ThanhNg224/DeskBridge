@@ -47,6 +47,8 @@ public enum RemoteInput {
         case .right where rightClickIsBack: ProtocolEncoder.key(code: KeyMapper.backKeyCode, down: down, meta: 0)
         case .right: ProtocolEncoder.button(secondary, down: down)
         case .other: ProtocolEncoder.button(tertiary, down: down)
+        case .back: ProtocolEncoder.key(code: KeyMapper.backKeyCode, down: down, meta: 0)
+        case .forward: ProtocolEncoder.key(code: KeyMapper.forwardKeyCode, down: down, meta: 0)
         }
     }
 }
