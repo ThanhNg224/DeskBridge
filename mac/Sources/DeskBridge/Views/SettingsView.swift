@@ -6,6 +6,7 @@ struct SettingsView: View {
     @State private var confirmingADBRestart = false
     @State private var detectedPhoneToConfirm: AppModel.DetectedPhone?
     @State private var confirmingDetectedPhone = false
+    @State private var confirmingAutoWifi = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -28,6 +29,14 @@ struct SettingsView: View {
             }
         } message: {
             Text("A different phone is using this connection. Switch control to it?")
+        }
+        .alert("Automatically prepare Wi-Fi?", isPresented: $confirmingAutoWifi) {
+            Button("Cancel", role: .cancel) {}
+            Button("Enable") { model.prefs.autoPrepareWifi = true }
+        } message: {
+            Text(
+                "This may briefly restart Android debugging and enables unencrypted ADB on the local network. The phone can keep that access enabled after this setting is off. Use only on trusted networks."
+            )
         }
     }
 
@@ -146,6 +155,12 @@ struct SettingsView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+                    if let message = model.autoWifiStatus {
+                        Text(verbatim: message).font(.caption).foregroundStyle(.secondary)
+                        if !model.autoWifiInProgress {
+                            Button("Retry Wi-Fi") { model.retryAutoWifi() }
+                        }
+                    }
                     if model.selectedPhoneHasBothTransports {
                         Picker("Connection", selection: Binding(
                             get: { model.prefs.preferredSerial ?? "" },
@@ -168,11 +183,6 @@ struct SettingsView: View {
                                 model.disconnectWireless(serial: phone.serial)
                             }
                             .disabled(model.isOperatingWireless)
-                        } else if !model.selectedPhoneHasBothTransports {
-                            Button("Switch to Wi-Fi") {
-                                model.switchToWireless(serial: phone.serial)
-                            }
-                            .disabled(!phone.isReady || model.isOperatingWireless)
                         }
                     }
                 }
@@ -186,6 +196,16 @@ struct SettingsView: View {
     private var wirelessSection: some View {
         Section("Connect via Wi-Fi") {
             VStack(alignment: .leading, spacing: 16) {
+                Toggle("Automatically prepare Wi-Fi", isOn: Binding(
+                    get: { model.prefs.autoPrepareWifi },
+                    set: { enabled in
+                        if enabled {
+                            confirmingAutoWifi = true
+                        } else {
+                            model.prefs.autoPrepareWifi = false
+                        }
+                    }
+                ))
                 HStack(alignment: .top, spacing: 16) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("IP Address").font(.callout)
@@ -211,7 +231,7 @@ struct SettingsView: View {
                 }
 
                 Text(
-                    "Use the same Wi-Fi network. First use Switch to Wi-Fi over USB, or pair the phone outside DeskBridge."
+                    "Use the same Wi-Fi network. Enable automatic preparation over USB, or pair the phone outside DeskBridge."
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -251,7 +271,7 @@ struct SettingsView: View {
                     Spacer(minLength: 8)
                     Button("Connect") { model.connectWireless() }
                         .disabled(!model.canConnectWireless)
-                    if model.isOperatingWireless, !model.isRestartingADB {
+                    if model.isOperatingWireless, !model.isRestartingADB, !model.autoWifiInProgress {
                         Button("Cancel") { model.cancelWireless() }
                             .keyboardShortcut(.cancelAction)
                     }
@@ -266,7 +286,9 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var wirelessProgress: some View {
-        if model.isRestartingADB {
+        if model.autoWifiInProgress {
+            Text("Preparing Wi-Fi…")
+        } else if model.isRestartingADB {
             Text("Restarting ADB…")
         } else {
             switch model.wirelessOperation {

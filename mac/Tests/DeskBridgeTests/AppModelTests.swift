@@ -71,6 +71,8 @@ private final class ModelFixture {
     var devices: [AdbDevice] = []
     var sessions: [FakeSession] = []
     var requests: [WirelessRequest] = []
+    var preparations: [String] = []
+    var prepareWifi: (String) async throws -> String = { _ in "192.168.1.7:5555" }
     var discovery: (() async -> [AdbDevice])?
     var wireless: (WirelessRequest) async throws -> String = { request in
         switch request {
@@ -86,7 +88,8 @@ private final class ModelFixture {
          install: (@Sendable (URL) async throws -> Void)? = nil,
          update: (@Sendable (String) async throws -> URL?)? = nil,
          restart: (@Sendable (ADBBridge) async throws -> Void)? = nil,
-         identities: (@Sendable (ADBBridge, [AdbDevice]) async throws -> [AdbDevice])? = nil)
+         identities: (@Sendable (ADBBridge, [AdbDevice]) async throws -> [AdbDevice])? = nil,
+         needsWifiRestart: (@Sendable (ADBBridge, String) async throws -> Bool)? = nil)
     {
         self.devices = devices
         let defaults = UserDefaults(suiteName: suite)!
@@ -109,6 +112,11 @@ private final class ModelFixture {
         dependencies.adb = { try ADBBridge(adbPath: "/usr/bin/true") }
         dependencies.devices = { [weak self] _ in await self?.discoveredDevices() ?? [] }
         dependencies.deviceIdentities = identities ?? { _, devices in devices }
+        dependencies.wifiNeedsRestart = needsWifiRestart ?? { _, _ in true }
+        dependencies.prepareWifi = { [weak self] _, serial, _ in
+            guard let self else { throw CancellationError() }
+            return try await performPreparation(serial)
+        }
         dependencies.wireless = { [weak self] _, request, _ in
             guard let self else { throw CancellationError() }
             return try await perform(request)
@@ -145,6 +153,11 @@ private final class ModelFixture {
         return try await wireless(request)
     }
 
+    private func performPreparation(_ serial: String) async throws -> String {
+        preparations.append(serial)
+        return try await prepareWifi(serial)
+    }
+
     func close() {
         model.shutdown()
         UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
@@ -173,6 +186,157 @@ struct AppModelTests {
         for _ in 0 ..< 20 {
             await Task.yield()
         }
+    }
+
+    @Test func automaticWifiIsOptInAndKeepsUSBSelected() async {
+        let usb = AdbDevice(serial: "USB-A", state: "device", physicalID: "phone-1")
+        let wifi = AdbDevice(serial: "192.168.1.7:5555", state: "device", physicalID: "phone-1")
+        let f = ModelFixture(selected: usb.serial, devices: [usb])
+        defer { f.close() }
+        await f.model.refreshNow()
+        #expect(f.preparations.isEmpty)
+        let old = f.sessions[0]
+        old.emit(.local)
+        await eventually { f.model.activePhone != nil }
+        let gate = ResultGate()
+        f.prepareWifi = { _ in await gate.wait() }
+        f.model.prefs.autoPrepareWifi = true
+        await eventually { f.preparations.count == 1 }
+        #expect(old.stops > 0)
+        #expect(f.model.prefs.preferredSerial == usb.serial)
+        f.devices = [usb, wifi]
+        old.emit(.ended(.stopped))
+        await gate.resolve("192.168.1.7:5555")
+        await eventually { !f.model.autoWifiInProgress }
+        await f.model.refreshNow()
+        #expect(f.model.prefs.preferredSerial == usb.serial)
+        #expect(f.model.selectedPhoneHasBothTransports)
+    }
+
+    @Test func automaticWifiDoesNotInterruptRemoteControl() async {
+        let usb = AdbDevice(serial: "USB-A", state: "device", physicalID: "phone-1")
+        let f = ModelFixture(selected: usb.serial, devices: [usb])
+        defer { f.close() }
+        await f.model.refreshNow()
+        let session = f.sessions[0]
+        session.emit(.remote)
+        await eventually { f.model.phase == .controlling }
+        f.model.prefs.autoPrepareWifi = true
+        await f.model.refreshNow()
+        #expect(f.preparations.isEmpty)
+        #expect(session.stops == 0)
+    }
+
+    @Test func existingMatchedWirelessTransportAvoidsLegacyPreparation() async {
+        let usb = AdbDevice(serial: "USB-A", state: "device", physicalID: "phone-1")
+        let paired = AdbDevice(serial: "adb-phone._adb-tls-connect._tcp", state: "device", physicalID: "phone-1")
+        let legacy = AdbDevice(serial: "192.168.1.7:5555", state: "device", physicalID: "phone-1")
+        let f = ModelFixture(selected: usb.serial, devices: [usb, paired, legacy])
+        defer { f.close() }
+        f.model.prefs.autoPrepareWifi = true
+        await f.model.refreshNow()
+        await settle()
+        #expect(f.preparations.isEmpty)
+        #expect(f.model.prefs.preferredSerial == usb.serial)
+    }
+
+    @Test func existingWifiListenerDoesNotStopTheUSBSession() async {
+        let usb = AdbDevice(serial: "USB-A", state: "device", physicalID: "phone-1")
+        let f = ModelFixture(selected: usb.serial, devices: [usb], needsWifiRestart: { _, _ in false })
+        defer { f.close() }
+        await f.model.refreshNow()
+        let session = f.sessions[0]
+        session.emit(.local)
+        await eventually { f.model.activePhone != nil }
+        let gate = ResultGate()
+        f.prepareWifi = { _ in await gate.wait() }
+        f.model.prefs.autoPrepareWifi = true
+        await eventually { f.preparations.count == 1 }
+        #expect(session.stops == 0)
+        #expect(f.model.activePhone?.serial == usb.serial)
+        await gate.resolve("192.168.1.7:5555")
+        await eventually { !f.model.autoWifiInProgress }
+    }
+
+    @Test func automaticWifiFailureKeepsUSBAndDoesNotRetryImmediately() async {
+        let usb = AdbDevice(serial: "USB-A", state: "device", physicalID: "phone-1")
+        let f = ModelFixture(selected: usb.serial, devices: [usb])
+        defer { f.close() }
+        f.prepareWifi = { _ in throw ADBError.noWifiIPFound }
+        f.model.prefs.autoPrepareWifi = true
+        await eventually { f.model.autoWifiStatus != nil && !f.model.autoWifiInProgress }
+        #expect(f.preparations.count == 1)
+        #expect(f.model.prefs.preferredSerial == usb.serial)
+        await f.model.refreshNow()
+        #expect(f.preparations.count == 1)
+        f.clock.advance(31)
+        await f.model.refreshNow()
+        await eventually { f.preparations.count == 2 && !f.model.autoWifiInProgress }
+        f.clock.advance(121)
+        await f.model.refreshNow()
+        await eventually { f.preparations.count == 3 && !f.model.autoWifiInProgress }
+        f.clock.advance(1000)
+        await f.model.refreshNow()
+        #expect(f.preparations.count == 3)
+    }
+
+    @Test func automaticWifiSurfacesAdbRouteFailureWithoutDisconnectingUSB() async {
+        let usb = AdbDevice(serial: "USB-A", state: "device", physicalID: "phone-1")
+        let f = ModelFixture(selected: usb.serial, devices: [usb])
+        defer { f.close() }
+        f.prepareWifi = { _ in throw ADBError.wirelessConnectionFailed("No route to host") }
+        f.model.prefs.autoPrepareWifi = true
+        await eventually { f.model.wirelessErrorDetails != nil && !f.model.autoWifiInProgress }
+        #expect(f.model.wirelessErrorDetails == "No route to host")
+        #expect(f.model.wirelessErrorMessage?.contains("Local Network") == true)
+        #expect(f.model.prefs.preferredSerial == usb.serial)
+        #expect(f.model.canRestartADB)
+    }
+
+    @Test func disablingAutomaticWifiCancelsLateResult() async {
+        let usb = AdbDevice(serial: "USB-A", state: "device", physicalID: "phone-1")
+        let f = ModelFixture(selected: usb.serial, devices: [usb])
+        defer { f.close() }
+        let gate = ResultGate()
+        f.prepareWifi = { _ in await gate.wait() }
+        f.model.prefs.autoPrepareWifi = true
+        await eventually { f.preparations.count == 1 }
+        f.model.prefs.autoPrepareWifi = false
+        await gate.resolve("192.168.1.7:5555")
+        await eventually { !f.model.autoWifiInProgress }
+        #expect(f.model.autoWifiStatus == nil)
+        #expect(f.model.prefs.preferredSerial == usb.serial)
+        #expect(f.preparations.count == 1)
+    }
+
+    @Test func manuallyDisconnectingWifiSuppressesAutomaticReconnectionOnUSB() async {
+        let usb = AdbDevice(serial: "USB-A", state: "device", physicalID: "phone-1")
+        let wifi = AdbDevice(serial: "192.168.1.7:5555", state: "device", physicalID: "phone-1")
+        let f = ModelFixture(selected: wifi.serial, devices: [usb, wifi])
+        defer { f.close() }
+        f.model.prefs.autoPrepareWifi = true
+        await f.model.refreshNow()
+        let session = f.sessions[0]
+        session.emit(.local)
+        await eventually { f.model.activePhone != nil }
+        f.model.disconnectWireless(serial: wifi.serial)
+        session.emit(.ended(.stopped))
+        await eventually { !f.model.isOperatingWireless }
+        f.devices = [usb]
+        f.model.selectDevice(serial: usb.serial)
+        await f.model.refreshNow()
+        #expect(f.preparations.isEmpty)
+        #expect(f.model.prefs.autoWifiSuppressedPhysicalID == "phone-1")
+    }
+
+    @Test func reenablingAutomaticWifiClearsPersistedSuppression() throws {
+        let f = ModelFixture()
+        defer { f.close() }
+        f.model.prefs.autoWifiSuppressedPhysicalID = "phone-1"
+        f.model.prefs.autoPrepareWifi = true
+        let defaults = try #require(UserDefaults(suiteName: f.suite))
+        #expect(defaults.string(forKey: "autoWifiSuppressedPhysicalID") == nil)
+        #expect(defaults.bool(forKey: "autoPrepareWifi"))
     }
 
     @Test func pinnedUSBWaitsForItsReturnInsteadOfUsingUnrelatedWiFi() async {

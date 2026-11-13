@@ -81,6 +81,14 @@
 "Switch to Wi-Fi" = "Chuyển sang Wi-Fi";
 "Disconnect Wi-Fi" = "Ngắt kết nối Wi-Fi";
 "Connect via Wi-Fi" = "Kết nối qua Wi-Fi";
+"Automatically prepare Wi-Fi" = "Tự chuẩn bị Wi-Fi";
+"Automatically prepare Wi-Fi?" = "Tự chuẩn bị Wi-Fi?";
+"Enable" = "Bật";
+"This may briefly restart Android debugging and enables unencrypted ADB on the local network. The phone can keep that access enabled after this setting is off. Use only on trusted networks." = "Thao tác này có thể tạm khởi động lại gỡ lỗi Android và bật ADB không mã hóa qua mạng cục bộ. Điện thoại có thể vẫn cho phép truy cập sau khi tắt cài đặt này. Chỉ dùng trên mạng tin cậy.";
+"Preparing Wi-Fi in the background…" = "Đang chuẩn bị Wi-Fi…";
+"Wi-Fi will be prepared after control returns to the Mac." = "Wi-Fi sẽ được chuẩn bị sau khi trả điều khiển về Mac.";
+"Wi-Fi could not be prepared. Check the phone and network." = "Không thể chuẩn bị Wi-Fi. Hãy kiểm tra điện thoại và mạng.";
+"Retry Wi-Fi" = "Thử lại Wi-Fi";
 "IP Address" = "Địa chỉ IP";
 "Port" = "Cổng";
 "Connect" = "Kết nối";
@@ -106,7 +114,7 @@
 "Restarting ADB…" = "Đang khởi động lại ADB…";
 "Could not restart ADB. Check the details, then retry." = "Không thể khởi động lại ADB. Hãy kiểm tra chi tiết rồi thử lại.";
 "Reconnect the selected device or choose another one." = "Kết nối lại thiết bị đã chọn hoặc chọn thiết bị khác.";
-"Use the same Wi-Fi network. First use Switch to Wi-Fi over USB, or pair the phone outside DeskBridge." = "Dùng cùng mạng Wi-Fi. Trước tiên, chọn Chuyển sang Wi-Fi khi cắm USB, hoặc ghép đôi điện thoại bên ngoài DeskBridge.";
+"Use the same Wi-Fi network. Enable automatic preparation over USB, or pair the phone outside DeskBridge." = "Dùng cùng mạng Wi-Fi. Bật tự chuẩn bị khi cắm USB, hoặc ghép đôi điện thoại bên ngoài DeskBridge.";
 "Enter a valid IPv4 address, such as 192.168.1.75." = "Nhập địa chỉ IPv4 hợp lệ, ví dụ 192.168.1.75.";
 "Enter a port between 1 and 65535." = "Nhập cổng từ 1 đến 65535.";
 "No Wi-Fi address found. Connect the phone to Wi-Fi, then try again." = "Không tìm thấy địa chỉ Wi-Fi. Kết nối điện thoại với Wi-Fi rồi thử lại.";

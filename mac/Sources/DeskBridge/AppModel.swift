@@ -20,6 +20,7 @@ final class AppModel {
     var status = StatusText.searching
     var setup = SetupState()
     private(set) var selectedPhoneHasBothTransports = false
+    private var selectedPhoneHasWifiTransport = false
     private(set) var selectedPhoneTransports: [AdbDevice] = []
     private(set) var automaticSwitchMessage: String?
     private(set) var detectedDifferentPhone: DetectedPhone?
@@ -29,6 +30,8 @@ final class AppModel {
     var wirelessPort = "5555"
     private(set) var wirelessOperation = WirelessOperation.idle
     private(set) var isRestartingADB = false
+    private(set) var autoWifiInProgress = false
+    private(set) var autoWifiStatus: String?
     var wirelessErrorMessage: String?
     private(set) var wirelessErrorDetails: String?
     private(set) var installingADB = false
@@ -38,7 +41,7 @@ final class AppModel {
     private(set) var updateURL: URL?
 
     var isOperatingWireless: Bool {
-        wirelessOperation != .idle || isRestartingADB
+        wirelessOperation != .idle || isRestartingADB || autoWifiInProgress
     }
 
     var canRestartADB: Bool {
@@ -74,6 +77,20 @@ final class AppModel {
         didSet {
             settings.values = prefs
             session?.settingsChanged()
+            if oldValue.autoPrepareWifi != prefs.autoPrepareWifi {
+                if !prefs.autoPrepareWifi {
+                    cancelAutoWifi()
+                }
+                autoWifiAttemptSerial = nil
+                autoWifiAttempts = 0
+                autoWifiRetryAfter = .distantPast
+                if prefs.autoPrepareWifi {
+                    prefs.autoWifiSuppressedPhysicalID = nil
+                    settings.values = prefs
+                }
+                autoWifiStatus = nil
+                wakeDiscovery()
+            }
             if !updatingPreference, oldValue.preferredSerial != prefs.preferredSerial {
                 prefs.preferredPhysicalID = nil
                 selectionChanged()
@@ -87,6 +104,7 @@ final class AppModel {
             guard prefs.enabled != newValue else { return }
             prefs.enabled = newValue
             selectionGeneration &+= 1
+            cancelAutoWifi()
             cancelWireless(restoreSelection: true)
             reconnectSuppressed = !newValue
             resetRetry()
@@ -119,6 +137,12 @@ final class AppModel {
     @ObservationIgnored private var backoff = Backoff()
     @ObservationIgnored private var retryNotBefore = Date.distantPast
     @ObservationIgnored private var reconnectSuppressed = false
+    @ObservationIgnored private var autoWifiTask: Task<Void, Never>?
+    @ObservationIgnored private var autoWifiContext: ADBOperation?
+    @ObservationIgnored private var autoWifiAttemptSerial: String?
+    @ObservationIgnored private var autoWifiAttempts = 0
+    @ObservationIgnored private var autoWifiRetryAfter = Date.distantPast
+    @ObservationIgnored private var autoWifiFailureShown = false
     @ObservationIgnored private var rememberedPhone: AdbDevice?
     @ObservationIgnored private var pendingAutomaticSwitch: String?
     @ObservationIgnored private var updatingPreference = false
@@ -175,6 +199,7 @@ final class AppModel {
 
     func shutdown() {
         isShuttingDown = true
+        cancelAutoWifi()
         discoveryGeneration &+= 1
         discoveryTask?.cancel()
         wirelessTask?.cancel()
@@ -262,6 +287,8 @@ final class AppModel {
     }
 
     private func selectionChanged() {
+        cancelAutoWifi()
+        autoWifiStatus = nil
         automaticSwitchMessage = nil
         pendingAutomaticSwitch = nil
         detectedDifferentPhone = nil
@@ -400,7 +427,10 @@ final class AppModel {
                 status = isEnabled ? StatusText
                     .waiting(selectedPhone?.connectionLabel ?? phone.connectionLabel) : StatusText.paused
             }
-            guard session == nil else { return }
+            if startAutoWifiIfNeeded() {
+                return
+            }
+            guard session == nil, !autoWifiInProgress else { return }
             guard isEnabled else { phase = .paused; status = StatusText.paused; return }
             guard !isOperatingWireless || wirelessOperation == .startingSession else { return }
             guard !reconnectSuppressed else {
@@ -503,12 +533,17 @@ final class AppModel {
         var phones = DevicePicker.phones(from: checkedDevices, preferredSerial: prefs.preferredSerial)
         if let identity = prefs.preferredPhysicalID {
             let matches = checkedDevices.filter { $0.isReady && $0.physicalID == identity }
+            selectedPhoneHasWifiTransport = matches.contains(where: \.isWireless)
             selectedPhoneHasBothTransports = matches.count == 2 && matches.filter(\.isWireless).count == 1 &&
                 matches.contains { $0.serial == prefs.preferredSerial }
+            if selectedPhoneHasBothTransports {
+                autoWifiAttempts = 0
+            }
             selectedPhoneTransports = selectedPhoneHasBothTransports
                 ? matches.sorted { !$0.isWireless && $1.isWireless } : []
         } else {
             selectedPhoneHasBothTransports = false
+            selectedPhoneHasWifiTransport = false
             selectedPhoneTransports = []
         }
         if let serial = prefs.preferredSerial {
@@ -603,11 +638,113 @@ final class AppModel {
             if wirelessOperation == .startingSession {
                 finishWireless()
             }
+            if state == .local, prefs.autoPrepareWifi, !selectedPhoneHasWifiTransport,
+               autoWifiAttempts < 3, dependencies.now() >= autoWifiRetryAfter
+            {
+                wakeDiscovery()
+            }
         case .ended: break
         }
     }
 
     // MARK: - Wireless
+
+    private func cancelAutoWifi() {
+        autoWifiContext?.cancel()
+        autoWifiTask?.cancel()
+        autoWifiStatus = nil
+        clearAutoWifiFailure()
+    }
+
+    private func clearAutoWifiFailure() {
+        guard autoWifiFailureShown else { return }
+        autoWifiFailureShown = false
+        wirelessErrorMessage = nil
+        wirelessErrorDetails = nil
+    }
+
+    func retryAutoWifi() {
+        guard prefs.autoPrepareWifi, !autoWifiInProgress else { return }
+        autoWifiAttempts = 0
+        autoWifiRetryAfter = .distantPast
+        autoWifiStatus = nil
+        wakeDiscovery()
+    }
+
+    private func startAutoWifiIfNeeded() -> Bool {
+        guard prefs.autoPrepareWifi, isEnabled, !reconnectSuppressed,
+              !autoWifiInProgress, !isOperatingWireless, phase != .controlling,
+              !selectedPhoneHasWifiTransport, let phone = selectedPhone,
+              phone.isReady, !phone.isWireless, let identity = prefs.preferredPhysicalID,
+              prefs.autoWifiSuppressedPhysicalID != "*",
+              prefs.autoWifiSuppressedPhysicalID != identity else { return false }
+        if autoWifiAttemptSerial != phone.serial {
+            autoWifiAttemptSerial = phone.serial
+            autoWifiAttempts = 0
+            autoWifiRetryAfter = .distantPast
+        }
+        guard autoWifiAttempts < 3, dependencies.now() >= autoWifiRetryAfter else { return false }
+        autoWifiAttempts += 1
+        autoWifiInProgress = true
+        clearAutoWifiFailure()
+        autoWifiStatus = String(localized: "Preparing Wi-Fi in the background…")
+        let context = ADBOperation(timeout: 30)
+        autoWifiContext = context
+        Self.wirelessLog.info("Automatic Wi-Fi preparation started")
+        autoWifiTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let adb = try dependencies.adb().withOperation(context)
+                let needsRestart = try await withTaskCancellationHandler {
+                    try await dependencies.wifiNeedsRestart(adb, phone.serial)
+                } onCancel: { context.cancel() }
+                try context.checkCancellation()
+                if needsRestart {
+                    if phase == .controlling {
+                        autoWifiAttempts -= 1
+                        autoWifiStatus = String(localized: "Wi-Fi will be prepared after control returns to the Mac.")
+                        autoWifiInProgress = false
+                        autoWifiContext = nil
+                        autoWifiTask = nil
+                        return
+                    }
+                    let oldSession = session
+                    stopSession()
+                    await Task.detached { oldSession?.stopAndWait() }.value
+                    try context.checkCancellation()
+                }
+                _ = try await withTaskCancellationHandler {
+                    try await dependencies.prepareWifi(adb, phone.serial, needsRestart)
+                } onCancel: { context.cancel() }
+                try context.checkCancellation()
+                autoWifiStatus = nil
+                clearAutoWifiFailure()
+                // Wait for discovery to verify the paired transport before allowing another attempt.
+                autoWifiAttempts = 3
+                Self.wirelessLog.info("Automatic Wi-Fi preparation completed")
+            } catch {
+                if !Task.isCancelled {
+                    autoWifiStatus = String(localized: "Wi-Fi could not be prepared. Check the phone and network.")
+                    wirelessErrorMessage = wirelessMessage(for: error)
+                    autoWifiFailureShown = true
+                    switch error as? ADBError {
+                    case let .commandFailed(output), let .wirelessConnectionFailed(output):
+                        let detail = output.trimmingCharacters(in: .whitespacesAndNewlines)
+                        wirelessErrorDetails = detail.isEmpty ? nil : String(detail.prefix(2048))
+                    default: wirelessErrorDetails = nil
+                    }
+                    autoWifiRetryAfter = dependencies.now().addingTimeInterval(autoWifiAttempts == 1 ? 30 : 120)
+                    Self.wirelessLog
+                        .error("Automatic Wi-Fi preparation failed: \(String(describing: error), privacy: .private)")
+                }
+            }
+            autoWifiInProgress = false
+            autoWifiContext = nil
+            autoWifiTask = nil
+            wakeDiscovery()
+        }
+        return true
+    }
 
     func restartADB() {
         guard canRestartADB else { return }
@@ -652,6 +789,7 @@ final class AppModel {
     func switchToWireless(serial: String) {
         guard !isOperatingWireless, selectedPhone?.serial == serial,
               selectedPhone?.isReady == true, selectedPhone?.isWireless == false else { return }
+        prefs.autoWifiSuppressedPhysicalID = nil
         beginWireless(.switchFromUSB(serial))
     }
 
@@ -659,12 +797,14 @@ final class AppModel {
         guard !isOperatingWireless else { return }
         do {
             let input = try wirelessInput()
+            prefs.autoWifiSuppressedPhysicalID = nil
             beginWireless(.connect(input.ip, input.port))
         } catch { wirelessErrorMessage = wirelessMessage(for: error) }
     }
 
     func disconnectWireless(serial: String) {
         guard !isOperatingWireless, selectedPhone?.serial == serial, selectedPhone?.isWireless == true else { return }
+        prefs.autoWifiSuppressedPhysicalID = prefs.preferredPhysicalID ?? "*"
         beginWireless(.disconnect(serial))
     }
 

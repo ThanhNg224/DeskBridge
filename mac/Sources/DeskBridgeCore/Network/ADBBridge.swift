@@ -42,6 +42,7 @@ public enum ADBError: Error, CustomStringConvertible {
     case invalidWirelessIP
     case invalidWirelessPort
     case wirelessConnectionFailed(String)
+    case wirelessPreparationChanged
 
     public var description: String {
         switch self {
@@ -55,6 +56,7 @@ public enum ADBError: Error, CustomStringConvertible {
         case .invalidWirelessIP: "Enter a valid IPv4 address."
         case .invalidWirelessPort: "Enter a port between 1 and 65535."
         case let .wirelessConnectionFailed(output): "Failed to connect to phone over Wi-Fi: \(output.trimmingCharacters(in: .whitespacesAndNewlines))"
+        case .wirelessPreparationChanged: "The Wi-Fi listener changed while preparing the connection."
         }
     }
 }
@@ -256,6 +258,32 @@ public struct ADBBridge: Sendable {
         progress(.preparing)
         _ = try bridge.run(["-s", serial, "tcpip", "\(port)"])
         return try await bridge.awaitWireless(target: target, retryConnection: true, progress: progress)
+    }
+
+    /// Prepare an additional transport without changing the selected device.
+    /// Avoid restarting adbd when its legacy TCP listener is already enabled.
+    public func prepareWireless(serial: String, port: Int = 5555, allowRestart: Bool = true) async throws -> String {
+        guard (1 ... 65535).contains(port) else { throw ADBError.invalidWirelessPort }
+        let bridge = withOperation(operation ?? ADBOperation())
+        let ip = try bridge.deviceIP(serial: serial)
+        let current = try bridge.run(["-s", serial, "shell", "getprop", "service.adb.tcp.port"])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let existingPort = Int(current).flatMap { (1 ... 65535).contains($0) ? $0 : nil }
+        if existingPort == nil {
+            guard allowRestart else { throw ADBError.wirelessPreparationChanged }
+            _ = try bridge.run(["-s", serial, "tcpip", "\(port)"])
+        }
+        let target = try Self.wirelessTarget(ip: ip, port: existingPort ?? port)
+        return try await bridge.awaitWireless(target: target, retryConnection: true, progress: { _ in })
+    }
+
+    /// Non-disruptive preflight before deciding whether an active USB session must stop.
+    public func wirelessPreparationNeedsRestart(serial: String) throws -> Bool {
+        _ = try deviceIP(serial: serial)
+        let output = try run(["-s", serial, "shell", "getprop", "service.adb.tcp.port"])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let port = Int(output) else { return true }
+        return !(1 ... 65535).contains(port)
     }
 
     public func connectWireless(

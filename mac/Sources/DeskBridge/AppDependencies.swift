@@ -26,6 +26,14 @@ struct AppDependencies {
         try await Task.detached { try adb.restartServer() }.value
     }
 
+    var prepareWifi: @Sendable (ADBBridge, String, Bool) async throws -> String = { adb, serial, allowRestart in
+        try await Task.detached { try await adb.prepareWireless(serial: serial, allowRestart: allowRestart) }.value
+    }
+
+    var wifiNeedsRestart: @Sendable (ADBBridge, String) async throws -> Bool = { adb, serial in
+        try await Task.detached { try adb.wirelessPreparationNeedsRestart(serial: serial) }.value
+    }
+
     var installADB: @Sendable (URL) async throws -> Void = { url in
         try await Task.detached { try ManagedADB.install(from: url) }.value
     }

@@ -159,6 +159,56 @@ struct ADBBridgeTests {
         ])
     }
 
+    @Test func backgroundPreparationDoesNotRestartAnExistingTcpListener() async throws {
+        let fixture = try FakeADB(responses: [
+            ("-s USB shell ip route", "default dev wlan0 src 192.168.1.120", 0),
+            ("-s USB shell getprop service.adb.tcp.port", "5555", 0),
+            ("connect 192.168.1.120:5555", "connected to 192.168.1.120:5555", 0),
+            ("devices -l", "192.168.1.120:5555 device", 0),
+        ])
+        defer { fixture.remove() }
+        #expect(try await fixture.bridge.prepareWireless(serial: "USB") == "192.168.1.120:5555")
+        #expect(try !(fixture.commands()).contains { $0.contains("tcpip") })
+    }
+
+    @Test func backgroundPreparationPreservesAnotherExistingTcpPort() async throws {
+        let fixture = try FakeADB(responses: [
+            ("-s USB shell ip route", "default dev wlan0 src 192.168.1.120", 0),
+            ("-s USB shell getprop service.adb.tcp.port", "7777", 0),
+            ("connect 192.168.1.120:7777", "connected to 192.168.1.120:7777", 0),
+            ("devices -l", "192.168.1.120:7777 device", 0),
+        ])
+        defer { fixture.remove() }
+        #expect(try await fixture.bridge.prepareWireless(serial: "USB") == "192.168.1.120:7777")
+        #expect(try !(fixture.commands()).contains { $0.contains("tcpip") })
+    }
+
+    @Test func backgroundPreparationEnablesTcpOnlyWhenNoListenerExists() async throws {
+        let fixture = try FakeADB(responses: [
+            ("-s USB shell ip route", "default dev wlan0 src 192.168.1.120", 0),
+            ("-s USB shell getprop service.adb.tcp.port", "0", 0),
+            ("-s USB tcpip 5555", "restarting in TCP mode port: 5555", 0),
+            ("connect 192.168.1.120:5555", "connected to 192.168.1.120:5555", 0),
+            ("devices -l", "192.168.1.120:5555 device", 0),
+        ])
+        defer { fixture.remove() }
+        #expect(try await fixture.bridge.prepareWireless(serial: "USB") == "192.168.1.120:5555")
+        #expect(try (fixture.commands()).filter { $0.contains("tcpip") }.count == 1)
+    }
+
+    @Test func backgroundPreparationNeverRestartsIfPreflightForbadeIt() async throws {
+        let fixture = try FakeADB(responses: [
+            ("-s USB shell ip route", "default dev wlan0 src 192.168.1.120", 0),
+            ("-s USB shell getprop service.adb.tcp.port", "0", 0),
+        ])
+        defer { fixture.remove() }
+        do {
+            _ = try await fixture.bridge.prepareWireless(serial: "USB", allowRestart: false)
+            Issue.record("Expected the changed listener to be rejected")
+        } catch ADBError.wirelessPreparationChanged {} catch { Issue.record("Unexpected error: \(error)") }
+        #expect(try !(fixture.commands()).contains { $0.contains("tcpip") })
+    }
+
     @Test func noWifiAddressStopsBeforeTcpip() async throws {
         let fixture = try FakeADB(responses: [
             ("-s USB shell ip route", "route failed", 1),

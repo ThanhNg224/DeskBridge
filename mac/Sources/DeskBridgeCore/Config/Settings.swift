@@ -21,6 +21,10 @@ public final class Settings: @unchecked Sendable {
         public var showDockIcon = true
         /// Share the clipboard (text) when the pointer crosses between Mac and phone.
         public var shareClipboard = true
+        /// Opt-in to legacy ADB-over-TCP preparation on a trusted network.
+        public var autoPrepareWifi = false
+        /// A manually disconnected phone must not be reconnected automatically.
+        public var autoWifiSuppressedPhysicalID: String?
         /// Serial of the phone to use when several are attached.
         public var preferredSerial: String?
         /// Hash of the last verified physical phone identity; never used alone to select a new phone.
@@ -60,8 +64,12 @@ public final class Settings: @unchecked Sendable {
         if let share = defaults.object(forKey: "shareClipboard") as? Bool {
             values.shareClipboard = share
         }
+        if let automatic = defaults.object(forKey: "autoPrepareWifi") as? Bool {
+            values.autoPrepareWifi = automatic
+        }
         values.preferredSerial = defaults.string(forKey: "preferredSerial")
         values.preferredPhysicalID = defaults.string(forKey: "preferredPhysicalID")
+        values.autoWifiSuppressedPhysicalID = defaults.string(forKey: "autoWifiSuppressedPhysicalID")
         lock = OSAllocatedUnfairLock(initialState: values)
     }
 
@@ -78,8 +86,10 @@ public final class Settings: @unchecked Sendable {
             defaults.set(newValue.enabled, forKey: "enabled")
             defaults.set(newValue.showDockIcon, forKey: "showDockIcon")
             defaults.set(newValue.shareClipboard, forKey: "shareClipboard")
+            defaults.set(newValue.autoPrepareWifi, forKey: "autoPrepareWifi")
             defaults.set(newValue.preferredSerial, forKey: "preferredSerial")
             defaults.set(newValue.preferredPhysicalID, forKey: "preferredPhysicalID")
+            defaults.set(newValue.autoWifiSuppressedPhysicalID, forKey: "autoWifiSuppressedPhysicalID")
         }
     }
 }
