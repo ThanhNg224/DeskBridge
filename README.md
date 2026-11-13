@@ -42,15 +42,13 @@ Push the pointer off the edge of the screen and it appears on the phone. Push it
 2. **Open it the first time.** The app is not yet notarized by Apple, so macOS blocks it once: open **System Settings > Privacy & Security**, scroll down and click **Open Anyway** next to DeskBridge.
 3. **Allow Accessibility and prepare Android tools.** Follow the checklist in DeskBridge. If Android tools are missing, download Platform Tools for Mac from Google and select the ZIP in the app.
 4. **Prepare the phone.** Turn on *Developer options* (tap **Build number** seven times in *Settings > About phone*), then switch on **USB debugging**. Xiaomi/HyperOS phones also need **USB debugging (Security settings)**.
-5. **Connect the phone.** Plug it in and tap **Allow** on the phone. To go wireless, connect the Mac and phone to the same Wi-Fi network, click **Switch to Wi-Fi** in DeskBridge, and wait until it connects before unplugging the cable. To enter an IP and port manually, the phone must already have ADB over TCP/IP enabled or have been paired with this Mac outside DeskBridge. DeskBridge does not perform pairing itself.
+5. **Connect the phone.** Plug it in and tap **Allow** on the phone. To go wireless, put the Mac and phone on the same network and enable **Automatically prepare Wi-Fi** in **Connection**. Select **Wi-Fi** once it appears next to **USB**. If ADB over TCP/IP is already enabled or the phone was paired outside DeskBridge, you can enter its address and connection port under **Manual Wi-Fi**.
 
-The DeskBridge window shows what is still missing and turns green when everything is ready. Then move the pointer past the screen edge you picked (Settings lets you choose left, right, top or bottom) and it jumps to the phone.
+The DeskBridge window shows what is still missing and turns green when everything is ready. Then move the pointer past the screen edge you picked in **Controls** and it jumps to the phone.
 
 ## Keyboard shortcuts
 
 These shortcuts work while the pointer is on the phone. Hold **Option (⌥)** and press the other key:
-
-Brightness, notifications, mute and play/pause are in the current source and development build; they are not yet in the latest Mac release.
 
 | Action on the phone | Shortcut |
 | --- | --- |
@@ -75,11 +73,11 @@ The phone's Android version and manufacturer determine how media, mute, brightne
 
 **The pointer does not cross.** Open DeskBridge: the checklist tells you which step is missing (Accessibility, `adb`, or the phone not authorized). Make sure the screen edge in Settings is the side where you move the mouse.
 
-**Can I use it without a cable?** Yes. With the Mac and phone on the same Wi-Fi network, plug in via USB and click **Switch to Wi-Fi**. Once connected, unplug the cable. For an already configured phone, enter its IPv4 address and connection port in **Connect via Wi-Fi**; the port must be between 1 and 65535. Android's Wireless Debugging connection port can differ from its pairing port. **Disconnect Wi-Fi** disconnects this Mac from that ADB endpoint; it does not turn off debugging on the phone.
+**Can I use it without a cable?** Yes. With the Mac and phone on the same Wi-Fi network, plug in via USB and enable **Automatically prepare Wi-Fi**. Select **Wi-Fi** when available, or unplug USB to let DeskBridge switch to the prepared connection. For an already configured phone, enter its IPv4 address and connection port in **Manual Wi-Fi**; the port must be between 1 and 65535. Android's Wireless Debugging connection port can differ from its pairing port. **Disconnect Wi-Fi** disconnects this Mac from that ADB endpoint; it does not turn off debugging on the phone.
 
-**Which device is being controlled?** The header names the active phone and its USB or Wi-Fi connection. The dropdown keeps your chosen connection when it goes offline; DeskBridge waits for that connection instead of switching to another phone. Choose a different entry to change phones or return to USB. A temporary Wi-Fi loss retries the selected IP and port automatically. **Disconnect Wi-Fi**, **Cancel**, and turning **Enabled** off stop automatic reconnection until you explicitly retry, select a connection, or enable control again. A Wi-Fi connection attempt has a 30-second limit; success means the control session is ready, not just that ADB accepted the connection.
+**Which device is being controlled?** The header names the active phone and its USB or Wi-Fi connection. DeskBridge can fall back to another connection for the same phone. If neither connection is available, it keeps your phone selected. Use the phone picker to choose another device or the USB/Wi-Fi selector to change transport. A temporary Wi-Fi loss retries the selected IP and port automatically. **Disconnect Wi-Fi**, **Cancel**, and turning **Enabled** off stop automatic reconnection until you explicitly retry, select a connection, or enable control again. A Wi-Fi connection attempt has a 30-second limit; success means the control session is ready, not just that ADB accepted the connection.
 
-**Is it safe?** Every DeskBridge session uses a one-time token. **Switch to Wi-Fi** enables legacy ADB TCP/IP, which does not encrypt traffic; use it only on a trusted network and turn off network debugging on the phone when finished. Android's paired Wireless Debugging uses TLS instead and requires pairing outside DeskBridge. The session token does not encrypt keyboard or clipboard data. Details in [the architecture notes](docs/ARCHITECTURE.md).
+**Is it safe?** Every DeskBridge session uses a one-time token. **Automatically prepare Wi-Fi** can enable legacy ADB TCP/IP, which does not encrypt traffic; use it only on a trusted network and turn off network debugging on the phone when finished. Android's paired Wireless Debugging uses TLS instead and requires pairing outside DeskBridge. The session token does not encrypt keyboard or clipboard data. Details in [the architecture notes](docs/ARCHITECTURE.md).
 
 ## Known limits
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0 (2026-11-13)
+
+- Settings now has four visible tabs: Connection, Controls, Shortcuts, and General. Click anywhere on the Manual Wi-Fi row to open or close its address and port fields.
+- Opt in to automatic Wi-Fi preparation from USB. Choose USB or Wi-Fi when both connections to the same phone are available. If the active connection drops, DeskBridge can switch to the other connection for the same phone and asks before switching to a different phone.
+- Wi-Fi troubleshooting shows progress and selectable ADB error details, with retry and a confirmed ADB restart when applicable.
+- Use new Option shortcuts for Android brightness, notifications, mute, and media playback. Mouse side buttons send Android Back and Forward after committing any text being composed on the Mac.
+
 ## 1.1.6 (2026-10-16)
 
 - Added in-app Switch to Wi-Fi, manual IPv4/port connection, and Disconnect Wi-Fi actions, with USB/Wi-Fi indicators in the phone selector.
