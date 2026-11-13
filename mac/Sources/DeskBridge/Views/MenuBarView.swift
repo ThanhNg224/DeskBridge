@@ -3,6 +3,7 @@ import SwiftUI
 /// The popover of the menu bar item: status, the master switch and the way to Settings. Nothing else.
 struct MenuBarView: View {
     @Bindable var model: AppModel
+    let openSetup: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -24,7 +25,7 @@ struct MenuBarView: View {
             }
 
             if !model.setup.isComplete {
-                Button("Finish setup…") { AppWindow.show() }
+                Button("Finish setup…", action: openSetup)
             }
 
             Divider()

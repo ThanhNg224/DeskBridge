@@ -1,8 +1,23 @@
 import DeskBridgeCore
 import SwiftUI
 
+enum SettingsPane: CaseIterable {
+    case connection, controls, shortcuts, general
+
+    var title: LocalizedStringKey {
+        switch self {
+        case .connection: "Connection"
+        case .controls: "Controls"
+        case .shortcuts: "Shortcuts"
+        case .general: "General"
+        }
+    }
+}
+
 struct SettingsView: View {
     @Bindable var model: AppModel
+    @Binding var pane: SettingsPane
+    @State private var showingManualWifi = false
     @State private var confirmingADBRestart = false
     @State private var detectedPhoneToConfirm: AppModel.DetectedPhone?
     @State private var confirmingDetectedPhone = false
@@ -10,10 +25,41 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            Picker("Settings section", selection: $pane) {
+                ForEach(SettingsPane.allCases, id: \.self) { item in
+                    Text(item.title).tag(item)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .accessibilityLabel("Settings section")
+            .controlSize(.large)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 8)
+            Divider()
+
             StatusHeader(model: model)
+            if pane != .connection, model.isOperatingWireless || model.wirelessErrorMessage != nil {
+                HStack(spacing: 8) {
+                    if model.isOperatingWireless {
+                        ProgressView().controlSize(.small)
+                        wirelessProgress
+                    } else if let error = model.wirelessErrorMessage {
+                        Label(error, systemImage: "exclamationmark.circle")
+                    }
+                    Spacer()
+                    Button("Show connection") { pane = .connection }
+                }
+                .font(.callout)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 8)
+            }
             form
         }
-        .frame(minWidth: 400, idealWidth: 440, maxWidth: 700, minHeight: 420, idealHeight: 680)
+        .frame(minWidth: 480, idealWidth: 560, maxWidth: 760, minHeight: 420, idealHeight: 560)
+        .onChange(of: model.wirelessIP) { model.wirelessErrorMessage = nil }
+        .onChange(of: model.wirelessPort) { model.wirelessErrorMessage = nil }
         .alert("Restart ADB server?", isPresented: $confirmingADBRestart) {
             Button("Cancel", role: .cancel) {}
             Button("Restart ADB") { model.restartADB() }
@@ -42,72 +88,93 @@ struct SettingsView: View {
 
     private var form: some View {
         Form {
-            if !model.setup.isComplete {
-                SetupChecklist(model: model)
-            }
-
-            phoneSection
-            wirelessSection
-
-            Section("Layout") {
-                Picker("Android is on the", selection: $model.prefs.edge) {
-                    Text("Left").tag(ScreenEdge.left)
-                    Text("Right").tag(ScreenEdge.right)
-                    Text("Top").tag(ScreenEdge.top)
-                    Text("Bottom").tag(ScreenEdge.bottom)
+            switch pane {
+            case .connection:
+                phoneSection
+                if !model.setup.isComplete {
+                    SetupChecklist(model: model)
                 }
-                .pickerStyle(.segmented)
-            }
-
-            Section("Mouse") {
-                SpeedSlider(title: "Pointer speed", value: $model.prefs.pointerSpeed, range: 0.5 ... 4)
-                Toggle("Right click = Back", isOn: $model.prefs.rightClickIsBack)
-            }
-
-            Section("Scrolling") {
-                SpeedSlider(title: "Scroll speed", value: $model.prefs.scrollSpeed, range: 0.25 ... 4)
-                Toggle("Invert scroll direction", isOn: $model.prefs.invertScroll)
-            }
-
-            Section("Keyboard") {
-                Toggle("⌘ acts as Ctrl (⌘C, ⌘V, ⌘A)", isOn: $model.prefs.commandIsControl)
-                Toggle("Share the clipboard (text)", isOn: $model.prefs.shareClipboard)
-            }
-
-            Section("Android shortcuts") {
-                shortcutRow("Home", "⌥H")
-                shortcutRow("Back", "⌥B")
-                shortcutRow("Recent apps", "⌥R")
-                shortcutRow("Switch apps", "⌥Tab")
-                shortcutRow("Sleep screen", "⌥L")
-                shortcutRow("Volume up", "⌥↑")
-                shortcutRow("Volume down", "⌥↓")
-                shortcutRow("Brightness up", "⌥→")
-                shortcutRow("Brightness down", "⌥←")
-                shortcutRow("Notification panel", "⌥N")
-                shortcutRow("Mute", "⌥M")
-                shortcutRow("Play/pause", "⌥P")
-            }
-
-            Section("General") {
-                Toggle("Launch at login", isOn: $model.launchAtLogin)
-                Toggle("Show icon in the Dock", isOn: $model.showDockIcon)
-                HStack {
-                    Button("Check for updates") { model.checkForUpdates() }
-                        .disabled(model.checkingUpdates)
-                    if model.checkingUpdates {
-                        ProgressView().controlSize(.small)
-                    }
-                }
-                if let message = model.updateMessage {
-                    Text(verbatim: message).font(.caption)
-                }
-                if let url = model.updateURL {
-                    Link("Open download page", destination: url)
-                }
+                wirelessSection
+            case .controls:
+                controls
+            case .shortcuts:
+                shortcuts
+            case .general:
+                general
             }
         }
         .formStyle(.grouped)
+        .id(pane)
+    }
+
+    @ViewBuilder
+    private var controls: some View {
+        Section("Phone position") {
+            Picker("Android is on the", selection: $model.prefs.edge) {
+                Text("Left").tag(ScreenEdge.left)
+                Text("Right").tag(ScreenEdge.right)
+                Text("Top").tag(ScreenEdge.top)
+                Text("Bottom").tag(ScreenEdge.bottom)
+            }
+            .pickerStyle(.segmented)
+        }
+
+        Section("Mouse & scrolling") {
+            SpeedSlider(title: "Pointer speed", value: $model.prefs.pointerSpeed, range: 0.5 ... 4)
+            Toggle("Right click = Back", isOn: $model.prefs.rightClickIsBack)
+            SpeedSlider(title: "Scroll speed", value: $model.prefs.scrollSpeed, range: 0.25 ... 4)
+            Toggle("Invert scroll direction", isOn: $model.prefs.invertScroll)
+        }
+
+        Section("Keyboard & clipboard") {
+            Toggle("⌘ acts as Ctrl (⌘C, ⌘V, ⌘A)", isOn: $model.prefs.commandIsControl)
+            Toggle("Share the clipboard (text)", isOn: $model.prefs.shareClipboard)
+        }
+    }
+
+    @ViewBuilder
+    private var shortcuts: some View {
+        Section("Android navigation") {
+            shortcutRow("Home", "⌥H")
+            shortcutRow("Back", "⌥B")
+            shortcutRow("Recent apps", "⌥R")
+            shortcutRow("Switch apps", "⌥Tab")
+            shortcutRow("Notification panel", "⌥N")
+        }
+        Section("Screen") {
+            shortcutRow("Sleep screen", "⌥L")
+            shortcutRow("Brightness up", "⌥→")
+            shortcutRow("Brightness down", "⌥←")
+        }
+        Section("Audio & media") {
+            shortcutRow("Volume up", "⌥↑")
+            shortcutRow("Volume down", "⌥↓")
+            shortcutRow("Mute", "⌥M")
+            shortcutRow("Play/pause", "⌥P")
+        }
+    }
+
+    @ViewBuilder
+    private var general: some View {
+        Section("Startup & Dock") {
+            Toggle("Launch at login", isOn: $model.launchAtLogin)
+            Toggle("Show icon in the Dock", isOn: $model.showDockIcon)
+        }
+        Section("Updates") {
+            HStack {
+                Button("Check for updates") { model.checkForUpdates() }
+                    .disabled(model.checkingUpdates)
+                if model.checkingUpdates {
+                    ProgressView().controlSize(.small)
+                }
+            }
+            if let message = model.updateMessage {
+                Text(verbatim: message).font(.caption)
+            }
+            if let url = model.updateURL {
+                Link("Open download page", destination: url)
+            }
+        }
     }
 
     private func shortcutRow(_ title: LocalizedStringKey, _ keys: String) -> some View {
@@ -194,8 +261,8 @@ struct SettingsView: View {
     }
 
     private var wirelessSection: some View {
-        Section("Connect via Wi-Fi") {
-            VStack(alignment: .leading, spacing: 16) {
+        Section("Wi-Fi") {
+            VStack(alignment: .leading, spacing: 8) {
                 Toggle("Automatically prepare Wi-Fi", isOn: Binding(
                     get: { model.prefs.autoPrepareWifi },
                     set: { enabled in
@@ -206,81 +273,97 @@ struct SettingsView: View {
                         }
                     }
                 ))
-                HStack(alignment: .top, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("IP Address").font(.callout)
-                        TextField("IP Address", text: $model.wirelessIP, prompt: Text(verbatim: "192.168.1.75"))
-                            .labelsHidden()
-                            .accessibilityLabel("IP Address")
+                Button {
+                    showingManualWifi.toggle()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: showingManualWifi ? "chevron.down" : "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 12)
+                            .accessibilityHidden(true)
+                        Text("Manual Wi-Fi")
+                        Spacer(minLength: 0)
                     }
-                    .frame(maxWidth: .infinity)
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Port").font(.callout)
-                        TextField("Port", text: $model.wirelessPort)
-                            .labelsHidden()
-                            .accessibilityLabel("Port")
-                    }
-                    .frame(width: 80)
+                    .frame(minHeight: 32)
+                    .contentShape(Rectangle())
                 }
-                .textFieldStyle(.roundedBorder)
-                .disabled(model.isOperatingWireless)
-                .onSubmit {
-                    if model.canConnectWireless {
-                        model.connectWireless()
-                    }
+                .buttonStyle(.plain)
+                .accessibilityValue(showingManualWifi ? Text("Expanded") : Text("Collapsed"))
+
+                if showingManualWifi {
+                    manualWifiFields
+                        .padding(.bottom, 8)
                 }
 
-                Text(
-                    "Use the same Wi-Fi network. Enable automatic preparation over USB, or pair the phone outside DeskBridge."
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-                Group {
-                    if let error = model.wirelessErrorMessage ?? model.wirelessInputError {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Label(error, systemImage: "exclamationmark.circle")
-                                .foregroundStyle(.red)
-                            if model.wirelessErrorMessage != nil, let detail = model.wirelessErrorDetails {
-                                Text("ADB details")
-                                    .foregroundStyle(.secondary)
-                                Text(verbatim: detail)
-                                    .textSelection(.enabled)
-                            }
-                            if model.canRestartADB {
-                                Button("Restart ADB…") { confirmingADBRestart = true }
-                            }
+                if let error = model.wirelessErrorMessage ?? (showingManualWifi ? model.wirelessInputError : nil) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label(error, systemImage: "exclamationmark.circle")
+                            .foregroundStyle(.red)
+                        if model.wirelessErrorMessage != nil, let detail = model.wirelessErrorDetails {
+                            Text("ADB details")
+                                .foregroundStyle(.secondary)
+                            Text(verbatim: detail)
+                                .textSelection(.enabled)
                         }
-                        .font(.caption)
-                        .fixedSize(horizontal: false, vertical: true)
-                    } else {
-                        Text(" ").font(.caption)
+                        if model.canRestartADB {
+                            Button("Restart ADB…") { confirmingADBRestart = true }
+                        }
+                    }
+                    .font(.caption)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                if model.isOperatingWireless {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        wirelessProgress
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 8)
+                        if !model.isRestartingADB, !model.autoWifiInProgress {
+                            Button("Cancel") { model.cancelWireless() }
+                                .keyboardShortcut(.cancelAction)
+                        }
                     }
                 }
-                .frame(minHeight: 18, alignment: .topLeading)
-
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                        .opacity(model.isOperatingWireless ? 1 : 0)
-                        .accessibilityHidden(!model.isOperatingWireless)
-                    wirelessProgress
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer(minLength: 8)
-                    Button("Connect") { model.connectWireless() }
-                        .disabled(!model.canConnectWireless)
-                    if model.isOperatingWireless, !model.isRestartingADB, !model.autoWifiInProgress {
-                        Button("Cancel") { model.cancelWireless() }
-                            .keyboardShortcut(.cancelAction)
-                    }
-                }
-                .frame(minHeight: 24)
             }
-            .padding(.vertical, 8)
-            .onChange(of: model.wirelessIP) { model.wirelessErrorMessage = nil }
-            .onChange(of: model.wirelessPort) { model.wirelessErrorMessage = nil }
+        }
+    }
+
+    private var manualWifiFields: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .bottom, spacing: 8) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("IP Address").font(.callout)
+                    TextField("IP Address", text: $model.wirelessIP, prompt: Text(verbatim: "192.168.1.75"))
+                        .labelsHidden()
+                        .accessibilityLabel("IP Address")
+                }
+                .frame(maxWidth: .infinity)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Port").font(.callout)
+                    TextField("Port", text: $model.wirelessPort)
+                        .labelsHidden()
+                        .accessibilityLabel("Port")
+                }
+                .frame(width: 80)
+                Button("Connect") { model.connectWireless() }
+                    .disabled(!model.canConnectWireless)
+            }
+            .textFieldStyle(.roundedBorder)
+            .disabled(model.isOperatingWireless)
+            .onSubmit {
+                if model.canConnectWireless {
+                    model.connectWireless()
+                }
+            }
+
+            Text(
+                "Use the same Wi-Fi network. Enable automatic preparation over USB, or pair the phone outside DeskBridge."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 

@@ -2,7 +2,7 @@ import DeskBridgeCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Live checklist of what DeskBridge needs. Shown at the top of Settings until everything is ready.
+/// Live checklist of what DeskBridge needs. Shown in Connection until everything is ready.
 struct SetupChecklist: View {
     let model: AppModel
     private var setup: SetupState {
@@ -46,7 +46,7 @@ struct SetupChecklist: View {
                 EmptyView()
             }
         case let .choose(count):
-            row(ok: false, title: "\(count) phones found", hint: "Pick one in the Phone section below.") { EmptyView() }
+            row(ok: false, title: "\(count) phones found", hint: "Pick one in the Phone section.") { EmptyView() }
         case let .waiting(name):
             row(ok: false, title: "Waiting for \(name)", hint: "Reconnect the selected device or choose another one.") {
                 EmptyView()
