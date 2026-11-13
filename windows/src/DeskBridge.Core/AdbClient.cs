@@ -212,6 +212,57 @@ public sealed class AdbClient(string executable, IProcessRunner runner, TimeSpan
         await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
         return await ConnectWifiAsync(ip, 5555, cancellationToken).ConfigureAwait(false);
     }
+    private async Task<string> WifiAddressAsync(string serial, CancellationToken ct)
+    {
+        string? ip = ParseWifiAddress(await RunAsync(ct, "-s", serial, "shell", "ip", "route").ConfigureAwait(false));
+        ip ??= ParseWifiAddress(await RunAsync(ct, "-s", serial, "shell", "ip", "-f", "inet", "addr", "show", "wlan0").ConfigureAwait(false));
+        return ip ?? throw new IOException("No Wi-Fi IPv4 address found on the device.");
+    }
+    private async Task<int?> TcpListenerPortAsync(string serial, CancellationToken ct)
+    {
+        var output = (await RunAsync(ct, "-s", serial, "shell", "getprop", "service.adb.tcp.port").ConfigureAwait(false)).Trim();
+        return int.TryParse(output, NumberStyles.None, CultureInfo.InvariantCulture, out int port) && port is >= 1 and <= 65535 ? port : null;
+    }
+    public async Task<bool> WifiPreparationNeedsRestartAsync(string serial, CancellationToken ct = default)
+    {
+        _ = await WifiAddressAsync(serial, ct).ConfigureAwait(false);
+        return await TcpListenerPortAsync(serial, ct).ConfigureAwait(false) is null;
+    }
+    public async Task<string> PrepareWifiAsync(string serial, bool allowRestart, CancellationToken ct = default)
+    {
+        using var bounded = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        bounded.CancelAfter(TimeSpan.FromSeconds(30));
+        var operation = bounded.Token;
+        string ip = await WifiAddressAsync(serial, operation).ConfigureAwait(false);
+        int? existing = await TcpListenerPortAsync(serial, operation).ConfigureAwait(false);
+        if (existing is null)
+        {
+            if (!allowRestart) throw new IOException("The Wi-Fi listener changed during preparation.");
+            await RunAsync(operation, "-s", serial, "tcpip", "5555").ConfigureAwait(false);
+        }
+        int port = existing ?? 5555;
+        var deadline = Stopwatch.StartNew();
+        while (true)
+        {
+            operation.ThrowIfCancellationRequested();
+            try { return await ConnectWifiAsync(ip, port, operation).ConfigureAwait(false); }
+            catch (IOException) when (deadline.Elapsed < TimeSpan.FromSeconds(20)) { }
+            catch (TimeoutException) when (deadline.Elapsed < TimeSpan.FromSeconds(20)) { }
+            await Task.Delay(TimeSpan.FromSeconds(1), operation).ConfigureAwait(false);
+        }
+    }
+    /// Only for an explicit, confirmed user request; the server may be shared with other tools.
+    public async Task RestartServerAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        using var stopDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        Exception? stopError = null;
+        try { await RunAsync(stopDeadline.Token, "kill-server").ConfigureAwait(false); }
+        catch (Exception e) { stopError = e; }
+        using var startDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await RunAsync(startDeadline.Token, "start-server").ConfigureAwait(false);
+        if (stopError is not null) throw new IOException("Could not restart ADB cleanly.", stopError);
+    }
     public async Task<IServerLease> LaunchServerAsync(string serial, string jar, CancellationToken cancellationToken)
     {
         string token = ProtocolEncoder.MakeToken(), socket = "deskbridge-" + ProtocolEncoder.MakeToken()[..8];

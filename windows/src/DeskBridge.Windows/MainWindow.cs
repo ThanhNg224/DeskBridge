@@ -12,12 +12,15 @@ internal sealed class MainWindow : Window
     private readonly AppModel model;
     private readonly TextBlock status = new() { FontSize = 20, FontWeight = FontWeights.SemiBold };
     private readonly TextBlock error = new() { TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Firebrick, Margin = new Thickness(0, 8, 0, 8) };
+    private readonly TextBlock autoWifiStatus = new() { TextWrapping = TextWrapping.Wrap, Foreground = Brushes.DimGray };
+    private readonly CheckBox autoWifi = new();
     private readonly StackPanel transportPanel = new() { Margin = new Thickness(0, 8, 0, 0) };
     private readonly TextBlock transportLabel = new() { FontWeight = FontWeights.SemiBold };
     private readonly RadioButton usbTransport = new() { Content = "USB", GroupName = "PhoneTransport", Margin = new Thickness(0, 4, 16, 0) };
     private readonly RadioButton wifiTransport = new() { Content = "Wi-Fi", GroupName = "PhoneTransport", Margin = new Thickness(0, 4, 0, 0) };
     private Button? useDetectedDevice;
-    private Button? switchWifiButton, disconnectWifiButton;
+    private Button? disconnectWifiButton;
+    private Button? retryAutoWifiButton, restartAdbButton, resumeAutoWifiButton;
     private readonly ComboBox device = new() { DisplayMemberPath = "Label", SelectedValuePath = "Serial", MinHeight = 32 };
     private readonly TextBox adb = new(), pointer = new(), scroll = new(), host = new(), port = new() { Text = "5555" };
     private readonly ComboBox edge = new() { ItemsSource = Enum.GetValues<Edge>(), MinHeight = 32 };
@@ -54,9 +57,22 @@ internal sealed class MainWindow : Window
         transportPanel.Children.Add(transportLabel); transportPanel.Children.Add(transportOptions);
         usbTransport.Checked += async (_, _) => await SelectTransportAsync(false);
         wifiTransport.Checked += async (_, _) => await SelectTransportAsync(true);
+        autoWifi.Checked += async (_, _) => await ChangeAutoWifiAsync(true);
+        autoWifi.Unchecked += async (_, _) => await ChangeAutoWifiAsync(false);
         Closing += (_, e) => { if (!((App)Application.Current).Exiting) { e.Cancel = true; Hide(); } };
         model.Changed += Render;
         BuildFields(); LoadSettings(); Render();
+    }
+    private async Task ChangeAutoWifiAsync(bool enabled)
+    {
+        if (loading) return;
+        if (enabled && MessageBox.Show(this, T("This may briefly restart Android debugging and enables unencrypted ADB on the local network. The phone can keep that access enabled after this setting is off. Use only on trusted networks.", "Thao tác này có thể tạm khởi động lại gỡ lỗi Android và bật ADB không mã hóa qua mạng cục bộ. Điện thoại có thể vẫn cho phép truy cập sau khi tắt cài đặt này. Chỉ dùng trên mạng tin cậy."), "DeskBridge", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+        {
+            loading = true; autoWifi.IsChecked = false; loading = false;
+            return;
+        }
+        try { await model.SetAutoWifiAsync(enabled); }
+        catch (Exception e) { model.Report(e); Render(); }
     }
     private async Task SelectTransportAsync(bool wireless)
     {
@@ -132,11 +148,13 @@ internal sealed class MainWindow : Window
         fields.Children.Add(Button("Check for updates", "Kiểm tra bản cập nhật", CheckUpdatesAsync));
         Check(startup, "Start with Windows", "Mở cùng Windows");
         Field("Language", "Ngôn ngữ", language);
+        autoWifi.Content = T("Automatically prepare Wi-Fi", "Tự chuẩn bị Wi-Fi");
+        fields.Children.Add(autoWifi); fields.Children.Add(autoWifiStatus);
         Field("Wi-Fi IPv4 address", "Địa chỉ IPv4 Wi-Fi", host);
         Field("Connection port", "Cổng kết nối", port);
         fields.Children.Add(new TextBlock
         {
-            Text = T("Pair Wireless Debugging outside DeskBridge first. Switch to Wi-Fi enables unencrypted legacy ADB; use a trusted network.", "Ghép đôi Wireless Debugging bên ngoài DeskBridge. Chuyển sang Wi-Fi bật ADB không mã hóa; chỉ dùng mạng tin cậy."),
+            Text = T("Use the same Wi-Fi network. Enable automatic preparation over USB, or pair the phone outside DeskBridge.", "Dùng cùng mạng Wi-Fi. Bật tự chuẩn bị khi cắm USB, hoặc ghép đôi điện thoại bên ngoài DeskBridge."),
             TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 16)
         });
         var primary = new WrapPanel();
@@ -150,10 +168,16 @@ internal sealed class MainWindow : Window
             if (!int.TryParse(port.Text, out int value)) throw new InvalidDataException(T("Invalid port.", "Cổng không hợp lệ."));
             return model.ConnectWifiAsync(host.Text, value);
         }));
-        switchWifiButton = Button("Switch to Wi-Fi", "Chuyển sang Wi-Fi", model.SwitchWifiAsync);
         disconnectWifiButton = Button("Disconnect Wi-Fi", "Ngắt Wi-Fi", model.DisconnectWifiAsync);
-        wireless.Children.Add(switchWifiButton);
+        retryAutoWifiButton = Button("Retry Wi-Fi", "Thử lại Wi-Fi", model.RetryAutoWifiAsync);
+        resumeAutoWifiButton = Button("Reconnect Wi-Fi", "Kết nối lại Wi-Fi", model.ResumeAutoWifiAsync);
+        restartAdbButton = Button("Restart ADB…", "Khởi động lại ADB…", async () =>
+        {
+            if (MessageBox.Show(this, T("This temporarily disconnects all devices and other apps using ADB. They may need to reconnect.", "Thao tác này tạm thời ngắt tất cả thiết bị và ứng dụng khác đang dùng ADB. Chúng có thể cần kết nối lại."), "DeskBridge", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes)
+                await model.RestartAdbAsync();
+        });
         wireless.Children.Add(disconnectWifiButton);
+        wireless.Children.Add(retryAutoWifiButton); wireless.Children.Add(resumeAutoWifiButton); wireless.Children.Add(restartAdbButton);
         actions.Children.Add(wireless);
         actions.Children.Add(Button("Return control to PC · Ctrl+Alt+Shift+Esc", "Trả điều khiển về PC · Ctrl+Alt+Shift+Esc", () => { model.ReturnLocal(); return Task.CompletedTask; }));
         actions.Children.Add(new TextBlock { Text = T("Experimental · Windows/device acceptance pending", "Bản thử nghiệm · Chưa nghiệm thu Windows/thiết bị"), Foreground = Brushes.DimGray, Margin = new Thickness(0, 8, 0, 0) });
@@ -259,16 +283,27 @@ internal sealed class MainWindow : Window
         transportLabel.Text = T("Connection", "Kết nối");
         usbTransport.IsChecked = model.SelectedSerial is { } usb && !AdbClient.IsWirelessSerial(usb);
         wifiTransport.IsChecked = model.SelectedSerial is { } wifi && AdbClient.IsWirelessSerial(wifi);
+        autoWifi.IsChecked = model.Settings.AutoPrepareWifi;
         loading = false;
         if (useDetectedDevice is not null) useDetectedDevice.Visibility = model.DetectedDifferentDevice ? Visibility.Visible : Visibility.Collapsed;
         bool selectedWifi = model.SelectedSerial is { } selected && AdbClient.IsWirelessSerial(selected);
-        if (switchWifiButton is not null) switchWifiButton.Visibility = model.SelectedSerial is not null && !selectedWifi && !model.SelectedHasBothTransports ? Visibility.Visible : Visibility.Collapsed;
         if (disconnectWifiButton is not null) disconnectWifiButton.Visibility = selectedWifi ? Visibility.Visible : Visibility.Collapsed;
+        if (retryAutoWifiButton is not null) retryAutoWifiButton.Visibility = model.AutoWifiStatus == "Wi-Fi could not be prepared" && !model.AutoWifiInProgress ? Visibility.Visible : Visibility.Collapsed;
+        if (resumeAutoWifiButton is not null) resumeAutoWifiButton.Visibility = model.CanResumeAutoWifi ? Visibility.Visible : Visibility.Collapsed;
+        if (restartAdbButton is not null) restartAdbButton.Visibility = model.AutoWifiStatus == "Wi-Fi could not be prepared" && !model.AutoWifiInProgress ? Visibility.Visible : Visibility.Collapsed;
+        autoWifiStatus.Text = model.AutoWifiStatus switch
+        {
+            "Preparing Wi-Fi" => T("Preparing Wi-Fi…", "Đang chuẩn bị Wi-Fi…"),
+            "Wi-Fi could not be prepared" => T("Wi-Fi could not be prepared. Check the phone and network.", "Không thể chuẩn bị Wi-Fi. Hãy kiểm tra điện thoại và mạng."),
+            "Wi-Fi will be prepared after control returns" => T("Wi-Fi will be prepared after control returns to the PC.", "Wi-Fi sẽ được chuẩn bị sau khi trả điều khiển về PC."),
+            _ => ""
+        };
         status.Text = model.Settings.Language == "vi" ? model.Status switch
         {
             "Starting" => "Đang khởi động", "Disabled" => "Đã tắt", "No authorized device" => "Chưa có thiết bị được cấp quyền",
             "Ready" => "Sẵn sàng", "Selected device unavailable" => "Thiết bị đã chọn chưa sẵn sàng", "Connecting" => "Đang kết nối", "Connected" => "Đã kết nối",
             "Reconnecting" => "Đang kết nối lại",
+            "Restarting ADB" => "Đang khởi động lại ADB",
             "Switched to Wi-Fi" => "Đã tự chuyển sang Wi-Fi", "Switched to USB" => "Đã tự chuyển sang USB",
             "Controlling Android" => "Đang điều khiển Android", "Disconnected" => "Đã ngắt kết nối", "Error" => "Có lỗi", _ => model.Status
         } : model.Status;

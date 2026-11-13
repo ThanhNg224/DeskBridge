@@ -74,6 +74,93 @@ public sealed class AppModelTests
     });
 
     [Fact]
+    public void AutoWifiIsOptInAndKeepsUsbSessionWhenListenerExists() => Sta(async () =>
+    {
+        await using var app = new Harness();
+        app.Runner.Devices = "A device";
+        app.Runner.Identities["A"] = "PHONE-123";
+        app.Runner.Identities["10.0.0.2:5555"] = "PHONE-123";
+        app.Runner.AutoAttachWifi = true;
+        await app.Model.RefreshAsync();
+        Assert.Equal(0, app.Runner.WifiConnects);
+        var original = app.Backends[0];
+        await app.Model.SetAutoWifiAsync(true);
+        Assert.Equal(1, app.Runner.WifiConnects);
+        Assert.False(original.Lease.Disposed);
+        Assert.Equal("A", app.Model.SelectedSerial);
+        Assert.True(app.Model.SelectedHasBothTransports);
+    });
+
+    [Fact]
+    public void UsbInputRemainsAvailableDuringNonDisruptivePreparationButNotAfterDisconnect() => Sta(async () =>
+    {
+        await using var app = new Harness();
+        app.Runner.Devices = "A device";
+        app.Runner.Identities["A"] = "PHONE-123";
+        await app.Model.RefreshAsync();
+        app.Runner.WifiGate = Signal();
+        var preparing = app.Model.SetAutoWifiAsync(true);
+        await app.Runner.WifiStarted.Task;
+        Assert.True(app.Model.Connected);
+        Assert.True(app.Model.InputAvailableDuringWork);
+        var disconnect = app.Model.DisconnectAsync();
+        Assert.False(app.Model.InputAvailableDuringWork);
+        app.Runner.WifiGate.SetResult();
+        await Task.WhenAll(preparing, disconnect);
+        Assert.False(app.Model.Connected);
+    });
+
+    [Fact]
+    public void AutoWifiWaitsWhilePhoneIsControlled() => Sta(async () =>
+    {
+        await using var app = new Harness();
+        app.Runner.Devices = "A device";
+        app.Runner.Identities["A"] = "PHONE-123";
+        await app.Model.RefreshAsync();
+        await app.LastSession!.EnterAsync(Edge.Left, .5f, null);
+        var original = app.Backends[0];
+        await app.Model.SetAutoWifiAsync(true);
+        Assert.Equal(0, app.Runner.WifiConnects);
+        Assert.False(original.Lease.Disposed);
+    });
+
+    [Fact]
+    public void AutoWifiFailureDoesNotRestartSharedAdbServer() => Sta(async () =>
+    {
+        await using var app = new Harness();
+        app.Runner.Devices = "A device";
+        app.Runner.Identities["A"] = "PHONE-123";
+        app.Runner.NoWifi = true;
+        await app.Model.RefreshAsync();
+        await app.Model.SetAutoWifiAsync(true);
+        Assert.Equal("Wi-Fi could not be prepared", app.Model.AutoWifiStatus);
+        Assert.Equal(0, app.Runner.ServerRestartCalls);
+        Assert.True(app.Model.Connected);
+    });
+
+    [Fact]
+    public void ManualWifiDisconnectSuppressesAutomaticPreparationForThatPhone() => Sta(async () =>
+    {
+        await using var app = new Harness();
+        app.Runner.Devices = "A device\n10.0.0.2:5555 device";
+        app.Runner.Identities["A"] = "PHONE-123";
+        app.Runner.Identities["10.0.0.2:5555"] = "PHONE-123";
+        await app.Model.RefreshAsync();
+        await app.Model.SetAutoWifiAsync(true);
+        await app.Model.SelectTransportAsync("10.0.0.2:5555");
+        await app.Model.DisconnectWifiAsync();
+        app.Runner.Devices = "A device";
+        await app.Model.SelectDeviceAsync("A");
+        Assert.Equal(0, app.Runner.WifiConnects);
+        Assert.Equal(AdbClient.PhysicalId("PHONE-123"), app.Model.Settings.AutoWifiSuppressedPhysicalId);
+        Assert.True(app.Model.CanResumeAutoWifi);
+        app.Runner.AutoAttachWifi = true;
+        await app.Model.ResumeAutoWifiAsync();
+        Assert.Equal(1, app.Runner.WifiConnects);
+        Assert.Null(app.Model.Settings.AutoWifiSuppressedPhysicalId);
+    });
+
+    [Fact]
     public void CanSelectBothTransportsWithoutChangingPhoneIdentity() => Sta(async () =>
     {
         await using var app = new Harness();
@@ -250,6 +337,10 @@ public sealed class AppModelTests
     {
         public string Devices = "A device\nB device";
         public int ListCalls;
+        public int WifiConnects;
+        public bool AutoAttachWifi;
+        public bool NoWifi;
+        public int ServerRestartCalls;
         public readonly Dictionary<string, string> Identities = [];
         public TaskCompletionSource? WifiGate;
         public readonly TaskCompletionSource WifiStarted = Signal();
@@ -257,13 +348,20 @@ public sealed class AppModelTests
         {
             if (arguments[0] == "connect")
             {
+                WifiConnects++;
                 WifiStarted.TrySetResult();
                 if (WifiGate is not null) await WifiGate.Task; // Deliberately late success after cancellation.
+                if (AutoAttachWifi) Devices = "A device\n10.0.0.2:5555 device";
                 return new(0, "connected to 10.0.0.2:5555");
             }
             ct.ThrowIfCancellationRequested();
+            if (arguments[0] is "kill-server" or "start-server") { ServerRestartCalls++; return new(0, ""); }
             if (arguments[0] == "-s" && arguments.Count > 4 && arguments[2] == "shell")
+            {
+                if (arguments[3] == "ip") return new(0, NoWifi ? "" : "default dev wlan0 src 10.0.0.2");
+                if (arguments[3] == "getprop" && arguments[4] == "service.adb.tcp.port") return new(0, "5555");
                 return new(0, Identities.GetValueOrDefault(arguments[1], ""));
+            }
             ListCalls++;
             return new(0, Devices);
         }

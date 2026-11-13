@@ -100,6 +100,50 @@ public class AdbTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => new AdbClient("adb", runner).SwitchToWifiAsync("host._adb-tls-connect._tcp"));
         Assert.Empty(runner.Calls);
     }
+    [Fact] public async Task BackgroundPreparationReusesAnExistingPortWithoutRestartingAdbd()
+    {
+        var runner = new FakeRunner();
+        foreach (var output in new[] { "default dev wlan0 src 10.0.0.2", "7777", "connected to 10.0.0.2:7777", "10.0.0.2:7777 device" }) runner.Outputs.Enqueue(output);
+        var adb = new AdbClient("adb", runner);
+        Assert.Equal("10.0.0.2:7777", await adb.PrepareWifiAsync("usb", false));
+        Assert.DoesNotContain(runner.Calls, c => c.Contains("tcpip"));
+    }
+    [Fact] public async Task BackgroundPreparationRejectsListenerChangeWhenRestartIsForbidden()
+    {
+        var runner = new FakeRunner(); runner.Outputs.Enqueue("default dev wlan0 src 10.0.0.2"); runner.Outputs.Enqueue("0");
+        await Assert.ThrowsAsync<IOException>(() => new AdbClient("adb", runner).PrepareWifiAsync("usb", false));
+        Assert.DoesNotContain(runner.Calls, c => c.Contains("tcpip"));
+    }
+    [Fact] public async Task BackgroundPreparationEnablesTcpOnlyWhenNeeded()
+    {
+        var runner = new FakeRunner();
+        foreach (var output in new[] { "default dev wlan0 src 10.0.0.2", "0", "restarting in TCP mode port: 5555", "connected to 10.0.0.2:5555", "10.0.0.2:5555 device" }) runner.Outputs.Enqueue(output);
+        Assert.Equal("10.0.0.2:5555", await new AdbClient("adb", runner).PrepareWifiAsync("usb", true));
+        Assert.Single(runner.Calls, c => c.Contains("tcpip"));
+        Assert.DoesNotContain(runner.Calls, c => c.Contains("kill-server"));
+    }
+    [Fact] public async Task ConfirmedRestartStartsServerEvenIfCallerCancelsAfterStop()
+    {
+        using var caller = new CancellationTokenSource();
+        var runner = new FakeRunner { OnCall = args => { if (args[0] == "kill-server") caller.Cancel(); } };
+        await new AdbClient("adb", runner).RestartServerAsync(caller.Token);
+        Assert.Equal(new[] { "kill-server", "start-server" }, runner.Calls.Select(c => c[0]));
+        runner.Calls.Clear();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new AdbClient("adb", runner).RestartServerAsync(caller.Token));
+        Assert.Empty(runner.Calls);
+    }
+    [Fact] public async Task FailedStopStillAttemptsToRestoreServer()
+    {
+        var runner = new FakeRunner { FailKill = true };
+        await Assert.ThrowsAsync<IOException>(() => new AdbClient("adb", runner).RestartServerAsync());
+        Assert.Equal(new[] { "kill-server", "start-server" }, runner.Calls.Select(c => c[0]));
+    }
+    [Fact] public async Task PreflightFailsWithoutWifiAddress()
+    {
+        var runner = new FakeRunner(); runner.Outputs.Enqueue(""); runner.Outputs.Enqueue("");
+        await Assert.ThrowsAsync<IOException>(() => new AdbClient("adb", runner).WifiPreparationNeedsRestartAsync("usb"));
+        Assert.DoesNotContain(runner.Calls, c => c.Contains("tcpip"));
+    }
     [Fact] public async Task CommandTimeoutAndCancellationAreDistinguished()
     {
         var runner = new FakeRunner { Hang = true };
@@ -122,8 +166,9 @@ public class AdbTests
     }
     internal sealed class FakeRunner : IProcessRunner
     {
-        public readonly List<string[]> Calls = []; public readonly Queue<string> Outputs = []; public readonly FakeProcess Process = new(); public bool FailStart; public bool Hang;
-        public async Task<ProcessResult> RunAsync(string executable, IReadOnlyList<string> arguments, CancellationToken ct) { ct.ThrowIfCancellationRequested(); Calls.Add(arguments.ToArray()); if (Hang) await Task.Delay(Timeout.Infinite, ct); return new ProcessResult(0, Outputs.TryDequeue(out var value) ? value : ""); }
+        public readonly List<string[]> Calls = []; public readonly Queue<string> Outputs = []; public readonly FakeProcess Process = new(); public bool FailStart; public bool FailKill; public bool Hang;
+        public Action<string[]>? OnCall;
+        public async Task<ProcessResult> RunAsync(string executable, IReadOnlyList<string> arguments, CancellationToken ct) { ct.ThrowIfCancellationRequested(); var args = arguments.ToArray(); Calls.Add(args); OnCall?.Invoke(args); if (Hang) await Task.Delay(Timeout.Infinite, ct); return new ProcessResult(FailKill && args[0] == "kill-server" ? 1 : 0, Outputs.TryDequeue(out var value) ? value : ""); }
         public IRunningProcess Start(string executable, IReadOnlyList<string> arguments) { Calls.Add(arguments.ToArray()); if (FailStart) throw new IOException(); return Process; }
     }
     internal sealed class FakeProcess : IRunningProcess { public bool Disposed; public bool HasExited => Disposed; public ValueTask DisposeAsync() { Disposed = true; return ValueTask.CompletedTask; } }

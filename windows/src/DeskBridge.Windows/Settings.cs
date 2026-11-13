@@ -10,6 +10,8 @@ internal sealed record Settings
     public string AdbPath { get; init; } = "adb.exe";
     public string? PreferredSerial { get; init; }
     public string? PreferredPhysicalId { get; init; }
+    public bool AutoPrepareWifi { get; init; }
+    public string? AutoWifiSuppressedPhysicalId { get; init; }
     public Edge Edge { get; init; } = Edge.Right;
     public double PointerSpeed { get; init; } = 2;
     public double ScrollSpeed { get; init; } = 1;

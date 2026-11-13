@@ -29,6 +29,10 @@ internal sealed class AppModel : IAsyncDisposable
     private readonly HashSet<int> rejectedShortcuts = new();
     private int failures;
     private DateTimeOffset nextAttempt;
+    private string? autoWifiAttemptSerial;
+    private int autoWifiAttempts;
+    private DateTimeOffset autoWifiRetryAfter;
+    private bool autoWifiAllowsEntry;
     private bool disposing;
     private bool entering;
     private Task releaseVisit = Task.CompletedTask;
@@ -42,6 +46,12 @@ internal sealed class AppModel : IAsyncDisposable
     public (string Serial, string Identity)? DetectedPhone => pendingDeviceIdentity is { } identity && SelectedSerial is { } serial ? (serial, identity) : null;
     public string Status { get; private set; } = "Starting";
     public string? Error { get; private set; }
+    public string? AutoWifiStatus { get; private set; }
+    public bool AutoWifiInProgress { get; private set; }
+    public bool CanResumeAutoWifi => Settings.AutoPrepareWifi && !AutoWifiInProgress && selectedPhysicalId is not null &&
+        (Settings.AutoWifiSuppressedPhysicalId == "*" || Settings.AutoWifiSuppressedPhysicalId == selectedPhysicalId) &&
+        SelectedSerial is { } serial && !AdbClient.IsWirelessSerial(serial);
+    internal bool InputAvailableDuringWork => !operations.Busy || (AutoWifiInProgress && autoWifiAllowsEntry);
     public bool Connected => session?.Connected == true && sessionSerial == SelectedSerial;
     private string? sessionSerial;
     private string? selectedPhysicalId;
@@ -97,6 +107,7 @@ internal sealed class AppModel : IAsyncDisposable
     private async Task RunConnectionAsync(Func<CancellationToken, Task> action, bool supersede = true)
     {
         if (disposing) return;
+        if (supersede && AutoWifiInProgress) autoWifiAllowsEntry = false;
         try
         {
             await operations.RunAsync(action, supersede);
@@ -152,6 +163,49 @@ internal sealed class AppModel : IAsyncDisposable
             await RefreshCoreAsync(ct);
             return;
         }
+        bool hasWifi = selectedPhysicalId is not null && devices.Any(d => d.State == "device" && d.PhysicalId == selectedPhysicalId && AdbClient.IsWirelessSerial(d.Serial));
+        if (hasWifi) { autoWifiAttempts = 0; AutoWifiStatus = null; }
+        if (Settings.AutoPrepareWifi && Settings.Enabled && nextAttempt != DateTimeOffset.MaxValue && verified &&
+            selected is not null && !AdbClient.IsWirelessSerial(selected.Serial) && selectedPhysicalId is not null &&
+            Settings.AutoWifiSuppressedPhysicalId != "*" && Settings.AutoWifiSuppressedPhysicalId != selectedPhysicalId &&
+            !hasWifi && !Remote && session?.Remote != true && !entering)
+        {
+            if (autoWifiAttemptSerial != selected.Serial) { autoWifiAttemptSerial = selected.Serial; autoWifiAttempts = 0; autoWifiRetryAfter = DateTimeOffset.MinValue; }
+            if (autoWifiAttempts < 3 && DateTimeOffset.UtcNow >= autoWifiRetryAfter)
+            {
+                autoWifiAttempts++; AutoWifiInProgress = true; autoWifiAllowsEntry = true; AutoWifiStatus = "Preparing Wi-Fi"; Notify();
+                try
+                {
+                    bool needsRestart = await adb.WifiPreparationNeedsRestartAsync(selected.Serial, ct);
+                    ct.ThrowIfCancellationRequested();
+                    if (needsRestart)
+                    {
+                        if (Remote || session?.Remote == true || entering)
+                        {
+                            autoWifiAttempts--; AutoWifiStatus = "Wi-Fi will be prepared after control returns";
+                            return;
+                        }
+                        autoWifiAllowsEntry = false;
+                        ReturnLocal(); await DisconnectCoreAsync(); ct.ThrowIfCancellationRequested();
+                    }
+                    await adb.PrepareWifiAsync(selected.Serial, needsRestart, ct);
+                    ct.ThrowIfCancellationRequested();
+                    autoWifiAttempts = 3; AutoWifiStatus = null;
+                    AppLog.Write("automatic-wifi-prepared");
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+                catch (Exception e)
+                {
+                    AutoWifiStatus = "Wi-Fi could not be prepared";
+                    autoWifiRetryAfter = DateTimeOffset.UtcNow.AddSeconds(autoWifiAttempts == 1 ? 30 : 120);
+                    AppLog.Write("automatic-wifi-failed", e);
+                }
+                finally { autoWifiAllowsEntry = false; AutoWifiInProgress = false; }
+                ct.ThrowIfCancellationRequested();
+                await RefreshCoreAsync(ct);
+                return;
+            }
+        }
         var checkedDevices = devices.Select(d => d.Serial == SelectedSerial && !verified ? d with { State = "offline" } : d).ToArray();
         var samePhone = checkedDevices.Where(d => d.State == "device" && d.PhysicalId is not null && d.PhysicalId == selectedPhysicalId).ToArray();
         SelectedHasBothTransports = samePhone.Length == 2 && samePhone.Count(d => AdbClient.IsWirelessSerial(d.Serial)) == 1 && samePhone.Any(d => d.Serial == SelectedSerial);
@@ -179,9 +233,50 @@ internal sealed class AppModel : IAsyncDisposable
     {
         if (serial == SelectedSerial) return Task.CompletedTask;
         SelectedPhoneTransports = []; SelectedHasBothTransports = false;
+        AutoWifiStatus = null;
         SelectedSerial = serial; selectedPhysicalId = null; pendingDeviceIdentity = null; nextAttempt = DateTimeOffset.MinValue;
         ReturnLocal(); Notify();
         return RunConnectionAsync(async ct => { await DisconnectCoreAsync(); ct.ThrowIfCancellationRequested(); await RefreshCoreAsync(ct); });
+    }
+    public Task SetAutoWifiAsync(bool enabled)
+    {
+        if (Settings.AutoPrepareWifi == enabled) return Task.CompletedTask;
+        var updated = Settings with { AutoPrepareWifi = enabled, AutoWifiSuppressedPhysicalId = enabled ? null : Settings.AutoWifiSuppressedPhysicalId };
+        saveSelection(updated);
+        Settings = updated;
+        autoWifiAttemptSerial = null; autoWifiAttempts = 0; autoWifiRetryAfter = DateTimeOffset.MinValue; AutoWifiStatus = null;
+        if (!enabled && AutoWifiInProgress) operations.Cancel();
+        Notify();
+        return RunConnectionAsync(RefreshCoreAsync);
+    }
+    public Task RetryAutoWifiAsync()
+    {
+        if (!Settings.AutoPrepareWifi || AutoWifiInProgress) return Task.CompletedTask;
+        autoWifiAttempts = 0; autoWifiRetryAfter = DateTimeOffset.MinValue; AutoWifiStatus = null;
+        return RunConnectionAsync(RefreshCoreAsync);
+    }
+    public Task ResumeAutoWifiAsync()
+    {
+        if (!CanResumeAutoWifi) return Task.CompletedTask;
+        var updated = Settings with { AutoWifiSuppressedPhysicalId = null };
+        saveSelection(updated); Settings = updated;
+        autoWifiAttempts = 0; autoWifiRetryAfter = DateTimeOffset.MinValue; AutoWifiStatus = null;
+        return RunConnectionAsync(RefreshCoreAsync);
+    }
+    public Task RestartAdbAsync()
+    {
+        if (AutoWifiInProgress || AutoWifiStatus != "Wi-Fi could not be prepared") return Task.CompletedTask;
+        ReturnLocal();
+        return RunConnectionAsync(async ct =>
+        {
+            await DisconnectCoreAsync(); ct.ThrowIfCancellationRequested();
+            Status = "Restarting ADB"; Notify();
+            await makeAdb(Settings.AdbPath).RestartServerAsync(ct);
+            ct.ThrowIfCancellationRequested();
+            autoWifiAttempts = 0; autoWifiRetryAfter = DateTimeOffset.MinValue;
+            nextAttempt = DateTimeOffset.MinValue; AutoWifiStatus = null;
+            await RefreshCoreAsync(ct);
+        });
     }
     public Task SelectTransportAsync(string serial)
     {
@@ -254,7 +349,7 @@ internal sealed class AppModel : IAsyncDisposable
     private async Task EnterAsync(DisplayArea display, Native.Point point)
     {
         var active = session;
-        if (disposing || operations.Busy || entering || active?.Connected != true || active.Remote || !Settings.Enabled)
+        if (disposing || !InputAvailableDuringWork || entering || active?.Connected != true || active.Remote || !Settings.Enabled)
         { input.CancelCrossing(); return; }
         entering = true;
         int visit = Interlocked.Increment(ref generation);
@@ -438,6 +533,7 @@ internal sealed class AppModel : IAsyncDisposable
             await DisconnectCoreAsync(); ct.ThrowIfCancellationRequested();
             var serial = await makeAdb(Settings.AdbPath).ConnectWifiAsync(host, port, ct);
             ct.ThrowIfCancellationRequested(); SelectedSerial = serial; selectedPhysicalId = null;
+            Settings = Settings with { AutoWifiSuppressedPhysicalId = null };
             nextAttempt = DateTimeOffset.MinValue;
             await RefreshCoreAsync(ct);
         });
@@ -460,6 +556,9 @@ internal sealed class AppModel : IAsyncDisposable
     {
         var serial = SelectedSerial ?? throw new InvalidOperationException("Select a Wi-Fi device.");
         if (!AdbClient.IsWirelessSerial(serial)) throw new InvalidOperationException("The selected device is not a Wi-Fi endpoint.");
+        Settings = Settings with { AutoWifiSuppressedPhysicalId = selectedPhysicalId ?? "*" };
+        saveSelection(Settings);
+        AutoWifiStatus = null;
         ReturnLocal(); nextAttempt = DateTimeOffset.MaxValue;
         return RunConnectionAsync(async ct =>
         {

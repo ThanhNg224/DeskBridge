@@ -52,7 +52,9 @@ Clipboard sharing is text only and happens at visit boundaries. It can be disabl
 
 ### Wi-Fi
 
-**Switch to Wi-Fi** requires an authorized USB device and enables legacy ADB TCP/IP. This traffic is not encrypted; use a trusted network. For paired Wireless Debugging, perform pairing outside DeskBridge, then enter the phone's IPv4 address and **connection** port. The pairing port can differ. Disconnect Wi-Fi removes only the selected ADB endpoint; it does not turn off network debugging on the phone.
+Enable **Automatically prepare Wi-Fi** to prepare a second connection for an authorized USB phone. DeskBridge keeps the selected transport and reuses a connected, paired Wireless Debugging transport or an existing TCP listener when available. Otherwise it enables legacy ADB TCP/IP, which is not encrypted; use a trusted network. Enabling TCP can briefly restart Android debugging and interrupt the USB session. DeskBridge tries a limited number of times and does not restart the shared host ADB server.
+
+For paired Wireless Debugging, perform pairing outside DeskBridge, then enter the phone's IPv4 address and **connection** port if it does not connect automatically. The pairing port can differ. Disconnect Wi-Fi removes only the selected ADB endpoint; neither disconnecting nor turning off automatic preparation disables a network listener already running on the phone. If preparation fails, **Retry Wi-Fi** tries again; **Restart ADB** asks before interrupting other applications that use the shared server.
 
 ## Development from macOS
 
