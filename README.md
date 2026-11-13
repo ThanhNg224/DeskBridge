@@ -29,22 +29,22 @@ If you already use Homebrew, run this in Terminal instead:
 brew install --cask thanhng224/deskbridge/deskbridge
 ```
 
-Open DeskBridge from **Applications**. If macOS blocks the first launch because the app isn't notarized, follow [Apple's first-launch instructions](https://support.apple.com/en-us/102445#openanyway).
+Open DeskBridge from **Applications**. If macOS says it can't verify the developer, open **System Settings → Privacy & Security**, scroll down and click **Open Anyway** for DeskBridge. [Apple's first-launch instructions](https://support.apple.com/en-us/102445) show where to find this button.
 
 ### 2. Follow the setup checklist on your Mac
 
 1. Under **Accessibility access**, click **Open Settings** and turn on **DeskBridge** so it can use your mouse and keyboard to control the phone.
-2. If **Android tools (adb)** is missing, click **Download from Google**, choose **SDK Platform-Tools for Mac**, then return to DeskBridge and click **Select ZIP…**. Choose the ZIP you just downloaded.
+2. If **Android tools (adb)** is missing, click **Download from Google** and choose **Download SDK Platform-Tools for Mac**. Review Google's terms to download the file. Back in DeskBridge, click **Select ZIP…** and choose `platform-tools-latest-darwin.zip` in **Downloads**. Leave this ZIP compressed so DeskBridge can install it for you.
 
 ### 3. Connect your phone by USB
 
-1. On your phone, open **Settings → About phone** and tap **Build number** seven times. On some phones, **Build number** is under **Software information**.
+1. On your phone, open **Settings → About phone** and tap **Build number** seven times. On Samsung phones, open **Software information** first. [Google lists the location for other phones](https://developer.android.com/studio/debug/dev-options#enable).
 2. In **Settings**, search for **Developer options** and turn on **USB debugging**. On Xiaomi/HyperOS, also turn on **USB debugging (Security settings)** if available.
 3. Plug the phone into your Mac, unlock it and tap **Allow** when asked to allow USB debugging. If multiple phones are connected, pick yours in DeskBridge.
 
-When DeskBridge shows **Connected**, open **Controls**, choose the screen edge closest to your phone, then move the pointer past that edge. Press **Control + Option + Command + Esc** to bring it back to the Mac.
+When DeskBridge shows **Connected**, open **Controls** and choose the edge where you put your phone. For example, choose **Right** if your phone sits to the right of your Mac. Move the pointer past that edge to use the phone. Press **Control + Option + Command + Esc** to bring it back to the Mac.
 
-Once USB works, you can [switch to Wi-Fi](#questions).
+Once USB works, you can [switch to Wi-Fi](#connect-over-wi-fi).
 
 ## What it does
 
@@ -81,13 +81,19 @@ The phone's Android version and manufacturer determine how media, mute, brightne
 
 ## Questions
 
-**The pointer does not cross.** Open DeskBridge: the checklist tells you which step is missing (Accessibility, `adb`, or the phone not authorized). Make sure the screen edge in Settings is the side where you move the mouse.
+**DeskBridge can't find the phone.** Unlock it, unplug and reconnect the cable, then look for the USB debugging prompt. If the phone only charges and DeskBridge still can't see it, try another cable that supports data.
 
-**Can I use it without a cable?** Yes. With the Mac and phone on the same Wi-Fi network, plug in via USB and enable **Automatically prepare Wi-Fi**. Select **Wi-Fi** when available, or unplug USB to let DeskBridge switch to the prepared connection. For an already configured phone, enter its IPv4 address and connection port in **Manual Wi-Fi**; the port must be between 1 and 65535. Android's Wireless Debugging connection port can differ from its pairing port. **Disconnect Wi-Fi** disconnects this Mac from that ADB endpoint; it does not turn off debugging on the phone.
+**The pointer does not cross.** Check that DeskBridge says **Connected** and **Enabled** is on. In **Controls**, check that the selected edge matches the side you're moving toward.
 
 **Which device is being controlled?** The header names the active phone and its USB or Wi-Fi connection. DeskBridge can fall back to another connection for the same phone. If neither connection is available, it keeps your phone selected. Use the phone picker to choose another device or the USB/Wi-Fi selector to change transport. A temporary Wi-Fi loss retries the selected IP and port automatically. **Disconnect Wi-Fi**, **Cancel**, and turning **Enabled** off stop automatic reconnection until you explicitly retry, select a connection, or enable control again. A Wi-Fi connection attempt has a 30-second limit; success means the control session is ready, not just that ADB accepted the connection.
 
 **Is it safe?** Every DeskBridge session uses a one-time token. **Automatically prepare Wi-Fi** can enable legacy ADB TCP/IP, which does not encrypt traffic; use it only on a trusted network and turn off network debugging on the phone when finished. Android's paired Wireless Debugging uses TLS instead and requires pairing outside DeskBridge. The session token does not encrypt keyboard or clipboard data. Details in [the architecture notes](docs/ARCHITECTURE.md).
+
+### Connect over Wi-Fi
+
+With the Mac and phone on the same Wi-Fi network, plug in via USB and enable **Automatically prepare Wi-Fi** in **Connection**. Select **Wi-Fi** when it appears, then unplug the cable.
+
+If you've already set up wireless debugging on your phone, open **Manual Wi-Fi** and enter the phone's IPv4 address and connection port. Android may show a different port for pairing. Use the connection port. **Disconnect Wi-Fi** closes the connection on the Mac. To turn off network debugging, use the phone's settings.
 
 ## Known limits
 
