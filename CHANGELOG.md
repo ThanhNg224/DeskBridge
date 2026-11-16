@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.1 (2026-11-16)
+
+- Install on Apple Silicon Macs with one Homebrew command. The direct ZIP download is also available.
+- The first-time setup guide now covers macOS first launch, installing Android tools from the Google ZIP, enabling USB debugging, and fixing common USB connection problems. Wi-Fi has its own section.
+
+DeskBridge works the same as in 1.2.0. If you already use 1.2.0, you can keep it installed.
+
 ## 1.2.0 (2026-11-13)
 
 - Settings now has four visible tabs: Connection, Controls, Shortcuts, and General. Click anywhere on the Manual Wi-Fi row to open or close its address and port fields.
