@@ -14,6 +14,7 @@ extension AppModel.Phase {
 /// Top of the Settings window: live status (coloured dot + text), the master switch and the release chord.
 struct StatusHeader: View {
     @Bindable var model: AppModel
+    let showsMirrorControls: Bool
 
     var body: some View {
         HStack(spacing: 14) {
@@ -27,6 +28,10 @@ struct StatusHeader: View {
                     Circle().fill(model.phase.color).frame(width: 8, height: 8).padding(.top, 5)
                         .accessibilityHidden(true)
                     StatusLine(text: model.status)
+                }
+                if showsMirrorControls {
+                    MirrorControls(model: model)
+                        .padding(.top, 4)
                 }
                 Text("Release control: ⌃⌥⌘⎋").font(.caption).foregroundStyle(.tertiary)
             }

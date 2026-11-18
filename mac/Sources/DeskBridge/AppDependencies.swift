@@ -7,9 +7,19 @@ protocol AppSession: AnyObject, Sendable {
     func stop()
     func stopAndWait()
     func settingsChanged()
+    func suspendEdgeHandoff(then completion: @escaping @Sendable (Bool) -> Void)
+    func resumeEdgeHandoff()
 }
 
 extension DeviceSession: AppSession {}
+
+protocol MirrorProcess: AnyObject, Sendable {
+    func start(_ configuration: ScrcpyLaunchConfiguration,
+               onExit: @escaping @Sendable (ScrcpyExit) -> Void) async throws -> pid_t
+    func stop() async
+}
+
+extension ScrcpyProcess: MirrorProcess {}
 
 enum WirelessRequest: Equatable, Sendable {
     case switchFromUSB(String)
@@ -44,6 +54,15 @@ struct AppDependencies {
 
     var installedVersion: @Sendable () -> String = {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+    }
+
+    var prepareMirror: @Sendable (String, String) async throws -> ScrcpyLaunchConfiguration = { adb, serial in
+        try await Task.detached { try ScrcpyLaunchConfiguration.prepare(adbPath: adb, serial: serial) }.value
+    }
+
+    var makeMirror: @MainActor () -> any MirrorProcess = { ScrcpyProcess() }
+    var showMirrorWindow: @MainActor (pid_t, URL, Bool) async -> Bool? = { pid, executable, waitForWindow in
+        await ScrcpyWindow.show(pid: pid, executable: executable, waitForWindow: waitForWindow)
     }
 
     var devices: @Sendable (ADBBridge) async throws -> [AdbDevice] = { adb in

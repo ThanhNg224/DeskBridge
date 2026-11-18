@@ -324,6 +324,23 @@ struct ADBBridgeTests {
         #expect(try fixture.commands() == ["connect 1.2.3.4:5555", "devices -l"])
     }
 
+    @Test(arguments: [0, 1]) func reportsNoRouteWithoutRepeatingADBConnect(exitStatus: Int) async throws {
+        let error = "failed to connect to 1.2.3.4:5555: No route to host"
+        let fixture = try FakeADB(responses: [
+            ("-s USB shell ip route", "default dev wlan0 src 1.2.3.4", 0),
+            ("-s USB shell getprop service.adb.tcp.port", "5555", 0),
+            ("connect 1.2.3.4:5555", error, Int32(exitStatus)),
+        ])
+        defer { fixture.remove() }
+        do {
+            _ = try await fixture.bridge.withOperation(ADBOperation(timeout: 3)).prepareWireless(serial: "USB")
+            Issue.record("Expected wirelessConnectionFailed")
+        } catch let ADBError.wirelessConnectionFailed(output) {
+            #expect(output.contains(error))
+        }
+        #expect(try fixture.commands().filter { $0.hasPrefix("connect ") } == ["connect 1.2.3.4:5555"])
+    }
+
     @Test func retriesConnectionWhileTCPIPStarts() async throws {
         let fixture = try FakeADB(responses: [
             ("-s USB shell ip route", "default dev wlan0 src 1.2.3.4", 0),

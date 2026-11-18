@@ -27,6 +27,22 @@
 "Finish setup…" = "Hoàn tất cài đặt…";
 "Settings…" = "Cài đặt…";
 "Quit" = "Thoát";
+"Open phone screen" = "Mở màn hình điện thoại";
+"Enable DeskBridge to open the phone screen." = "Bật DeskBridge để mở màn hình điện thoại.";
+"Connect your phone to open its screen." = "Kết nối điện thoại để mở màn hình.";
+"Wait for the connection to finish before opening the phone screen." = "Đợi kết nối sẵn sàng để mở màn hình điện thoại.";
+"Opening phone screen…" = "Đang mở màn hình điện thoại…";
+"Bring phone screen forward" = "Đưa cửa sổ lên trước";
+"Close phone screen" = "Đóng màn hình điện thoại";
+"Open scrcpy from the Dock, or close the phone screen and open it again." = "Mở scrcpy từ Dock hoặc đóng màn hình điện thoại rồi mở lại.";
+"Moving across the screen edge is paused." = "Rê chuột qua mép đang tạm dừng.";
+"Closing phone screen…" = "Đang đóng màn hình điện thoại…";
+"Close" = "Đóng";
+"Try again" = "Thử lại";
+"Install scrcpy to open the phone screen." = "Cài scrcpy để mở màn hình điện thoại.";
+"Install scrcpy…" = "Cài scrcpy…";
+"The phone screen disconnected. Wait for the phone to connect again." = "Màn hình điện thoại đã ngắt kết nối. Hãy đợi điện thoại kết nối lại.";
+"Could not show the phone screen. Check that scrcpy is up to date." = "Không mở được màn hình điện thoại. Hãy kiểm tra scrcpy đã cập nhật chưa.";
 
 /* Setup checklist */
 "Setup" = "Thiết lập";

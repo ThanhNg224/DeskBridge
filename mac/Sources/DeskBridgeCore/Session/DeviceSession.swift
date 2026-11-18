@@ -44,6 +44,8 @@ public final class DeviceSession: @unchecked Sendable {
     private var server: LaunchedServer?
     private var connection: Connection?
     private var capturer: InputCapturer?
+    private var edgeHandoffSuspended = false
+    private var needsFreshEdgeApproach = false
     private var visitGeneration = 0
     private var shortcutPending = false
     private var bufferedInput: [CapturedEvent] = []
@@ -82,6 +84,31 @@ public final class DeviceSession: @unchecked Sendable {
     /// Call when the edge setting changed so the new edge applies at once.
     public func settingsChanged() {
         queue.async { self.refreshDetector() }
+    }
+
+    /// Keep the Android session alive while a mirror window owns input.
+    public func suspendEdgeHandoff(then completion: @escaping @Sendable (Bool) -> Void) {
+        queue.async {
+            guard self.acceptingInput.withLock({ $0 }), self.state == .local || self.state == .remote else {
+                completion(false)
+                return
+            }
+            self.edgeHandoffSuspended = true
+            self.returnToMac(along: nil, notifyServer: true)
+            // CursorShield.hide() releases the native editor and focus on this queue.
+            // Wait even when an earlier return has already set the session to local.
+            DispatchQueue.main.async {
+                completion(self.acceptingInput.withLock { $0 })
+            }
+        }
+    }
+
+    public func resumeEdgeHandoff() {
+        queue.async {
+            guard self.edgeHandoffSuspended else { return }
+            self.edgeHandoffSuspended = false
+            self.needsFreshEdgeApproach = true
+        }
     }
 
     /// For app termination: finishes teardown (cursor, forward, server) before returning.
@@ -254,11 +281,8 @@ public final class DeviceSession: @unchecked Sendable {
             cursor.commitComposition { [weak self] in
                 guard let self else { return }
                 queue.async {
+                    guard self.visitGeneration == generation else { return }
                     self.shortcutPending = false
-                    guard self.visitGeneration == generation else {
-                        self.bufferedInput.removeAll()
-                        return
-                    }
                     if self.state == .remote, self.acceptingInput.withLock({ $0 }) {
                         self.perform(RemoteInput.action(for: event, prefs: self.settings.values))
                     }
@@ -273,6 +297,11 @@ public final class DeviceSession: @unchecked Sendable {
         }
         switch (state, event) {
         case let (.local, .move(dx, dy, location)):
+            guard !edgeHandoffSuspended else { return }
+            if needsFreshEdgeApproach {
+                guard !detector.isAtEntryEdge(location) else { return }
+                needsFreshEdgeApproach = false
+            }
             if let crossing = detector.crossing(at: location, deltaX: dx, deltaY: dy) {
                 enterRemote(crossing, from: location)
             }
@@ -317,6 +346,8 @@ public final class DeviceSession: @unchecked Sendable {
     private func returnToMac(along: Float?, notifyServer: Bool) {
         guard state == .remote else { return }
         visitGeneration += 1
+        shortcutPending = false
+        bufferedInput.removeAll()
         if notifyServer {
             send(ProtocolEncoder.leave())
         }

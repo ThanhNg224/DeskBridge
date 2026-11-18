@@ -6,9 +6,22 @@ import os
 @MainActor @Observable
 final class AppModel {
     private static let wirelessLog = Logger(subsystem: "com.deskbridge.app", category: "wireless")
+    private static let mirrorLog = Logger(subsystem: "com.deskbridge.app", category: "mirror")
     enum Phase: Equatable { case paused, searching, connected, controlling }
     enum WirelessOperation: Equatable {
         case idle, readingAddress, preparing, connecting, checkingDevice, startingSession, disconnecting
+    }
+
+    enum MirrorPhase: Equatable {
+        case idle, opening, open, focusFailed, closing, notInstalled, failed, disconnected
+    }
+
+    private struct MirrorRun {
+        let id = UUID()
+        let sessionID: UUID
+        let process: any MirrorProcess
+        var window: (pid: pid_t, executable: URL)?
+        var suspensionRequested = false
     }
 
     struct DetectedPhone: Equatable {
@@ -39,9 +52,14 @@ final class AppModel {
     private(set) var checkingUpdates = false
     private(set) var updateMessage: String?
     private(set) var updateURL: URL?
+    private(set) var mirrorPhase = MirrorPhase.idle
 
     var isOperatingWireless: Bool {
         wirelessOperation != .idle || isRestartingADB || autoWifiInProgress
+    }
+
+    var canOpenMirror: Bool {
+        isEnabled && activePhone != nil && !isOperatingWireless && !installingADB && !isShuttingDown
     }
 
     var canRestartADB: Bool {
@@ -131,6 +149,7 @@ final class AppModel {
     @ObservationIgnored private var session: (any AppSession)?
     @ObservationIgnored private var sessionID: UUID?
     @ObservationIgnored private var sessionPhone: AdbDevice?
+    @ObservationIgnored private var sessionADBPath: String?
     @ObservationIgnored private var stoppingSession = false
     @ObservationIgnored private var selectionGeneration: UInt = 0
     @ObservationIgnored private var discoveryGeneration: UInt = 0
@@ -158,6 +177,9 @@ final class AppModel {
     @ObservationIgnored private var currentWirelessRequest: WirelessRequest?
     @ObservationIgnored private var failedWirelessRequest: WirelessRequest?
     @ObservationIgnored private var isShuttingDown = false
+    @ObservationIgnored private var mirror: MirrorRun?
+    @ObservationIgnored private var mirrorOpening: Task<Void, Never>?
+    @ObservationIgnored private var mirrorDraining: Task<Void, Never>?
 
     init(settings: Settings = Settings(), dependencies: AppDependencies = AppDependencies(),
          integratesWithSystem: Bool = true, pollsAutomatically: Bool = true)
@@ -199,6 +221,7 @@ final class AppModel {
 
     func shutdown() {
         isShuttingDown = true
+        closeMirror(resumeSession: false)
         cancelAutoWifi()
         discoveryGeneration &+= 1
         discoveryTask?.cancel()
@@ -209,9 +232,17 @@ final class AppModel {
         session?.stop()
     }
 
+    func prepareToQuit() -> Task<Void, Never>? {
+        isShuttingDown = true
+        guard mirror != nil else { return nil }
+        session?.stop()
+        return closeMirror(resumeSession: false)
+    }
+
     func installADB(from url: URL) {
         guard !installingADB else { return }
         installingADB = true
+        let mirrorClosed = closeMirror()
         adbInstallError = nil
         let scoped = url.startAccessingSecurityScopedResource()
         Task {
@@ -222,6 +253,8 @@ final class AppModel {
                 installingADB = false
             }
             do {
+                await mirrorClosed?.value
+                guard !isShuttingDown else { return }
                 try await dependencies.installADB(url)
                 wakeDiscovery()
             } catch ManagedADB.InstallError.incompatibleServer {
@@ -316,13 +349,114 @@ final class AppModel {
         wakeDiscovery()
     }
 
-    private func stopSession() {
+    @discardableResult
+    private func stopSession(mirrorResult: MirrorPhase = .idle) -> Task<Void, Never>? {
         activePhone = nil
         pendingPhone = nil
         if session != nil {
             stoppingSession = true
             session?.stop()
         }
+        return closeMirror(result: mirrorResult, resumeSession: false)
+    }
+
+    // MARK: - Phone mirror
+
+    func openMirror() {
+        if let mirror, let window = mirror.window, mirrorDraining == nil, mirrorOpening == nil {
+            let id = mirror.id
+            mirrorOpening = Task { [weak self] in
+                guard let self else { return }
+                let shown = await dependencies.showMirrorWindow(window.pid, window.executable, false)
+                guard self.mirror?.id == id, mirrorDraining == nil else { return }
+                mirrorPhase = shown == true ? .open : .focusFailed
+                mirrorOpening = nil
+            }
+            return
+        }
+        guard canOpenMirror, mirror == nil, let phone = activePhone, let sessionID, let session,
+              let adbPath = sessionADBPath else { return }
+        let run = MirrorRun(sessionID: sessionID, process: dependencies.makeMirror())
+        mirror = run
+        mirrorPhase = .opening
+        Self.mirrorLog.info("Mirror requested on \(phone.isWireless ? "Wi-Fi" : "USB", privacy: .public)")
+        mirrorOpening = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let configuration = try await dependencies.prepareMirror(adbPath, phone.serial)
+                guard canLaunchMirror(run) else { return }
+                mirror?.suspensionRequested = true
+                let suspended = await withCheckedContinuation { continuation in
+                    session.suspendEdgeHandoff { continuation.resume(returning: $0) }
+                }
+                guard canLaunchMirror(run) else { return }
+                guard suspended else { closeMirror(result: .disconnected, resumeSession: false); return }
+                Self.mirrorLog.info("Mirror handoff suspended")
+                let pid = try await run.process.start(configuration) { [weak self] exit in
+                    Task { @MainActor in self?.mirrorExited(run.id, exit) }
+                }
+                guard canLaunchMirror(run) else { return }
+                mirror?.window = (pid, configuration.executableURL)
+                Self.mirrorLog.info("Mirror process spawned")
+                let shown = await dependencies.showMirrorWindow(pid, configuration.executableURL, true)
+                guard canLaunchMirror(run) else { return }
+                guard let shown else { closeMirror(result: .failed); return }
+                mirrorPhase = shown ? .open : .focusFailed
+                Self.mirrorLog.info("Mirror presentation finished, focused: \(shown)")
+                mirrorOpening = nil
+            } catch {
+                guard canLaunchMirror(run) else { return }
+                if case ScrcpyError.notInstalled = error {
+                    closeMirror(result: .notInstalled)
+                } else {
+                    closeMirror(result: .failed)
+                }
+            }
+        }
+    }
+
+    private func canLaunchMirror(_ run: MirrorRun) -> Bool {
+        !Task.isCancelled && mirror?.id == run.id && mirrorDraining == nil && sessionID == run.sessionID &&
+            !stoppingSession && !isShuttingDown
+    }
+
+    private func mirrorExited(_ id: UUID, _ exit: ScrcpyExit) {
+        guard mirror?.id == id, mirrorDraining == nil else { return }
+        let result: MirrorPhase = if !exit.wasSignalled, exit.status == 2 {
+            .disconnected
+        } else if !exit.wasSignalled, exit.status == 0 {
+            .idle
+        } else {
+            .failed
+        }
+        closeMirror(result: result)
+    }
+
+    @discardableResult
+    func closeMirror(result: MirrorPhase = .idle, resumeSession: Bool = true) -> Task<Void, Never>? {
+        if let mirrorDraining {
+            return mirrorDraining
+        }
+        guard let run = mirror else { return nil }
+        mirrorOpening?.cancel()
+        mirrorOpening = nil
+        mirrorPhase = .closing
+        let task = Task { [weak self] in
+            await run.process.stop()
+            guard let self, mirror?.id == run.id else { return }
+            if run.suspensionRequested, resumeSession, isEnabled, !stoppingSession,
+               !isShuttingDown, sessionID == run.sessionID
+            {
+                session?.resumeEdgeHandoff()
+            }
+            mirror = nil
+            mirrorDraining = nil
+            mirrorPhase = result
+            Self.mirrorLog.info("Mirror closed")
+            wakeDiscovery()
+        }
+        mirrorDraining = task
+        return task
     }
 
     private func resetRetry() {
@@ -412,7 +546,7 @@ final class AppModel {
             if let phone = sessionPhone, !stoppingSession,
                !devices.contains(where: { $0.serial == phone.serial && $0.isReady })
             {
-                stopSession()
+                stopSession(mirrorResult: .disconnected)
             }
             devices = try await withTaskCancellationHandler {
                 try await dependencies.deviceIdentities(adb, devices)
@@ -430,7 +564,7 @@ final class AppModel {
             if startAutoWifiIfNeeded() {
                 return
             }
-            guard session == nil, !autoWifiInProgress else { return }
+            guard session == nil, mirror == nil, !autoWifiInProgress else { return }
             guard isEnabled else { phase = .paused; status = StatusText.paused; return }
             guard !isOperatingWireless || wirelessOperation == .startingSession else { return }
             guard !reconnectSuppressed else {
@@ -588,6 +722,7 @@ final class AppModel {
         let operation = wirelessContext ?? ADBOperation(timeout: 30)
         let next = dependencies.session(adb, phone, jar, settings, operation)
         session = next; sessionID = id; sessionPhone = phone
+        sessionADBPath = adb.adbPath
         stoppingSession = false
         pendingPhone = phone
         phase = .searching
@@ -603,6 +738,8 @@ final class AppModel {
         if case let .ended(reason) = state {
             let wasStopping = stoppingSession
             session = nil; sessionID = nil; sessionPhone = nil
+            sessionADBPath = nil
+            closeMirror(result: .disconnected, resumeSession: false)
             activePhone = nil; pendingPhone = nil; stoppingSession = false
             phase = isEnabled ? .searching : .paused
             if !wasStopping, reason != .stopped {
@@ -653,6 +790,10 @@ final class AppModel {
         autoWifiContext?.cancel()
         autoWifiTask?.cancel()
         autoWifiStatus = nil
+        if autoWifiRetryAfter == .distantFuture {
+            autoWifiAttempts = 0
+            autoWifiRetryAfter = .distantPast
+        }
         clearAutoWifiFailure()
     }
 
@@ -672,7 +813,7 @@ final class AppModel {
     }
 
     private func startAutoWifiIfNeeded() -> Bool {
-        guard prefs.autoPrepareWifi, isEnabled, !reconnectSuppressed,
+        guard prefs.autoPrepareWifi, isEnabled, !reconnectSuppressed, mirror == nil,
               !autoWifiInProgress, !isOperatingWireless, phase != .controlling,
               !selectedPhoneHasWifiTransport, let phone = selectedPhone,
               phone.isReady, !phone.isWireless, let identity = prefs.preferredPhysicalID,
@@ -733,7 +874,11 @@ final class AppModel {
                         wirelessErrorDetails = detail.isEmpty ? nil : String(detail.prefix(2048))
                     default: wirelessErrorDetails = nil
                     }
-                    autoWifiRetryAfter = dependencies.now().addingTimeInterval(autoWifiAttempts == 1 ? 30 : 120)
+                    if wirelessErrorDetails?.localizedCaseInsensitiveContains("no route to host") == true {
+                        autoWifiRetryAfter = .distantFuture
+                    } else {
+                        autoWifiRetryAfter = dependencies.now().addingTimeInterval(autoWifiAttempts == 1 ? 30 : 120)
+                    }
                     Self.wirelessLog
                         .error("Automatic Wi-Fi preparation failed: \(String(describing: error), privacy: .private)")
                 }
@@ -748,6 +893,7 @@ final class AppModel {
 
     func restartADB() {
         guard canRestartADB else { return }
+        let retryAutomaticWiFi = autoWifiFailureShown
         isRestartingADB = true
         discoveryGeneration &+= 1
         let oldDiscovery = discoveryTask
@@ -755,10 +901,12 @@ final class AppModel {
         let oldWatcher = watcher
         watcher = nil
         let oldSession = session
-        stopSession()
+        let mirrorClosed = stopSession()
         Self.wirelessLog.info("User requested ADB server restart")
         Task {
             do {
+                await mirrorClosed?.value
+                guard !isShuttingDown else { return }
                 await oldDiscovery?.value
                 await Task.detached {
                     oldWatcher?.stopAndWait()
@@ -768,6 +916,12 @@ final class AppModel {
                 try await dependencies.restartADB(adb)
                 Self.wirelessLog.info("ADB server restart completed")
                 if !isShuttingDown {
+                    if retryAutomaticWiFi {
+                        autoWifiAttempts = 0
+                        autoWifiRetryAfter = .distantPast
+                        autoWifiStatus = nil
+                        clearAutoWifiFailure()
+                    }
                     wirelessErrorMessage = nil
                     wirelessErrorDetails = nil
                     failedWirelessRequest = nil
@@ -814,7 +968,7 @@ final class AppModel {
         selectionGeneration &+= 1
         cancelWireless(restoreSelection: false)
         resetRetry()
-        stopSession()
+        let mirrorClosed = stopSession()
         discoveryGeneration &+= 1
         discoveryTask?.cancel()
         let id = UUID(), context = ADBOperation(timeout: 30)
@@ -846,6 +1000,8 @@ final class AppModel {
         wirelessTask = Task { [weak self] in
             guard let self else { return }
             do {
+                await mirrorClosed?.value
+                guard !Task.isCancelled, wirelessID == id, !isShuttingDown else { return }
                 let adb = try dependencies.adb().withOperation(context)
                 let target = try await withTaskCancellationHandler {
                     try await dependencies.wireless(adb, request) { [weak self] stage in

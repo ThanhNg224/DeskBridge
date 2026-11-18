@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The popover of the menu bar item: status, the master switch and the way to Settings. Nothing else.
+/// The popover of the menu bar item.
 struct MenuBarView: View {
     @Bindable var model: AppModel
     let openSetup: () -> Void
@@ -27,6 +27,8 @@ struct MenuBarView: View {
             if !model.setup.isComplete {
                 Button("Finish setup…", action: openSetup)
             }
+
+            MirrorControls(model: model, expandsPrimaryAction: true)
 
             Divider()
 

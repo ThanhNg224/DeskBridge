@@ -54,6 +54,17 @@ public struct EdgeDetector: Sendable {
         displays.reduce(CGRect.null) { $0.union($1) }
     }
 
+    /// The cursor must leave this area before a restored handoff can take control again.
+    func isAtEntryEdge(_ point: CGPoint) -> Bool {
+        let delta: (Double, Double) = switch edge {
+        case .left: (-1, 0)
+        case .right: (1, 0)
+        case .bottom: (0, 1)
+        case .top: (0, -1)
+        }
+        return crossing(at: point, deltaX: delta.0, deltaY: delta.1) != nil
+    }
+
     /// If the cursor sits on an exposed edge of its display and pushes outward, returns where.
     public func crossing(at point: CGPoint, deltaX: Double, deltaY: Double) -> Crossing? {
         guard let display = displays.first(where: { $0.contains(point) }) else { return nil }

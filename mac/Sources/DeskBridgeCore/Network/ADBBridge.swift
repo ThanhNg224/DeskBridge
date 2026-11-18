@@ -317,6 +317,10 @@ public struct ADBBridge: Sendable {
                 connectionOutput = output
                 connected = false
             }
+            // A routing failure is distinct from a listener that is still starting.
+            if !connected, connectionOutput.localizedCaseInsensitiveContains("no route to host") {
+                throw ADBError.wirelessConnectionFailed(connectionOutput)
+            }
             if connected {
                 progress(.checkingDevice)
                 if try devices().contains(where: { $0.serial == target && $0.isReady }) {

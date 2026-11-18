@@ -31,3 +31,6 @@ captures/
 # Output binaries
 dist/
 target/
+
+# Local implementation plans
+docs/plans/

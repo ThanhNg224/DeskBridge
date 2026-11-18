@@ -4,6 +4,18 @@ import os
 import Testing
 
 struct DeviceSessionLifecycleTests {
+    @Test func mirrorCannotSuspendAStoppedSession() async throws {
+        let defaults = try #require(UserDefaults(suiteName: UUID().uuidString))
+        let session = try DeviceSession(adb: ADBBridge(adbPath: "/usr/bin/true"), serial: "USB",
+                                        jar: URL(fileURLWithPath: "/unused/server.jar"),
+                                        settings: Settings(defaults: defaults))
+        session.stop()
+        let suspended = await withCheckedContinuation { result in
+            session.suspendEdgeHandoff { result.resume(returning: $0) }
+        }
+        #expect(!suspended)
+    }
+
     @Test func stoppingCancelsAnInFlightStartupCommand() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

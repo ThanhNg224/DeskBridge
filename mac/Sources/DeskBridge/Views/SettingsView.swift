@@ -39,7 +39,7 @@ struct SettingsView: View {
             .padding(.vertical, 8)
             Divider()
 
-            StatusHeader(model: model)
+            StatusHeader(model: model, showsMirrorControls: pane == .connection)
             if pane != .connection, model.isOperatingWireless || model.wirelessErrorMessage != nil {
                 HStack(spacing: 8) {
                     if model.isOperatingWireless {

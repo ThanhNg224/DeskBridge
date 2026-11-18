@@ -1,6 +1,7 @@
 @testable import DeskBridge
 import DeskBridgeCore
 import Foundation
+import os
 import Testing
 
 private final class TestClock: @unchecked Sendable {
@@ -37,11 +38,45 @@ private actor ResultGate {
     }
 }
 
+private actor FakeMirrorProcess: MirrorProcess {
+    private(set) var launches: [ScrcpyLaunchConfiguration] = []
+    private(set) var stops = 0
+    private let stopGate: ResultGate?
+    private var onExit: (@Sendable (ScrcpyExit) -> Void)?
+
+    init(stopGate: ResultGate? = nil) {
+        self.stopGate = stopGate
+    }
+
+    func start(_ configuration: ScrcpyLaunchConfiguration,
+               onExit: @escaping @Sendable (ScrcpyExit) -> Void) -> pid_t
+    {
+        launches.append(configuration)
+        self.onExit = onExit
+        return 123
+    }
+
+    func stop() async {
+        stops += 1
+        if let stopGate {
+            _ = await stopGate.wait()
+        }
+    }
+
+    func exit(_ status: Int32) {
+        onExit?(ScrcpyExit(status: status, wasSignalled: false))
+    }
+}
+
 private final class FakeSession: AppSession, @unchecked Sendable {
     var onStateChange: (@Sendable (DeviceSession.State) -> Void)?
     let serial: String
     var starts = 0
     var stops = 0
+    var suspends = 0
+    var resumes = 0
+    var suspension: (@Sendable (Bool) -> Void)?
+    var delaySuspension = false
     init(_ serial: String) {
         self.serial = serial
     }
@@ -59,6 +94,19 @@ private final class FakeSession: AppSession, @unchecked Sendable {
     }
 
     func settingsChanged() {}
+    func suspendEdgeHandoff(then completion: @escaping @Sendable (Bool) -> Void) {
+        suspends += 1
+        if delaySuspension {
+            suspension = completion
+        } else {
+            completion(true)
+        }
+    }
+
+    func resumeEdgeHandoff() {
+        resumes += 1
+    }
+
     func emit(_ state: DeviceSession.State) {
         onStateChange?(state)
     }
@@ -89,7 +137,8 @@ private final class ModelFixture {
          update: (@Sendable (String) async throws -> URL?)? = nil,
          restart: (@Sendable (ADBBridge) async throws -> Void)? = nil,
          identities: (@Sendable (ADBBridge, [AdbDevice]) async throws -> [AdbDevice])? = nil,
-         needsWifiRestart: (@Sendable (ADBBridge, String) async throws -> Bool)? = nil)
+         needsWifiRestart: (@Sendable (ADBBridge, String) async throws -> Bool)? = nil,
+         configure: (inout AppDependencies) -> Void = { _ in })
     {
         self.devices = devices
         let defaults = UserDefaults(suiteName: suite)!
@@ -137,6 +186,7 @@ private final class ModelFixture {
                 try await Task.sleep(for: .seconds(3600))
             }
         }
+        configure(&dependencies)
         model = AppModel(settings: settings, dependencies: dependencies,
                          integratesWithSystem: false, pollsAutomatically: false)
     }
@@ -169,6 +219,173 @@ struct AppModelTests {
     private let usb = AdbDevice(serial: "USB-A", state: "device")
     private let other = AdbDevice(serial: "USB-B", state: "device")
     private let wifi = AdbDevice(serial: "192.168.1.7:5555", state: "device")
+
+    private nonisolated static func mirrorConfiguration(adb: String, serial: String) -> ScrcpyLaunchConfiguration {
+        ScrcpyLaunchConfiguration(executableURL: URL(fileURLWithPath: "/test/scrcpy"),
+                                  arguments: ["--serial=\(serial)"], environment: ["ADB": adb])
+    }
+
+    @Test func mirrorUsesTheActiveADBAndWaitsForLocalControl() async throws {
+        let process = FakeMirrorProcess()
+        let adb = OSAllocatedUnfairLock(initialState: "/original/adb")
+        var presentations: [Bool] = []
+        let f = ModelFixture(selected: usb.serial, devices: [usb, other], configure: {
+            $0.adb = { try ADBBridge(adbPath: adb.withLock { $0 }) }
+            $0.prepareMirror = { Self.mirrorConfiguration(adb: $0, serial: $1) }
+            $0.makeMirror = { process }
+            $0.showMirrorWindow = { _, _, opening in presentations.append(opening); return true }
+        })
+        defer { f.close() }
+        await f.model.refreshNow()
+        let session = try #require(f.sessions.first)
+        session.delaySuspension = true
+        session.emit(.remote)
+        await eventually { f.model.phase == .controlling }
+        adb.withLock { $0 = "/new/adb" }
+
+        f.model.openMirror()
+        f.model.openMirror()
+        await eventually { session.suspension != nil }
+        #expect(await process.launches.isEmpty)
+        session.suspension?(true)
+        await eventually { f.model.mirrorPhase == .open }
+        let launches = await process.launches
+        #expect(launches.count == 1)
+        #expect(launches.first?.environment["ADB"] == "/original/adb")
+        #expect(launches.first?.arguments == ["--serial=USB-A"])
+        f.model.openMirror()
+        await eventually { presentations == [true, false] }
+        await process.exit(0)
+        await eventually { f.model.mirrorPhase == .idle }
+        #expect(session.suspends == 1 && session.resumes == 1 && session.stops == 0)
+    }
+
+    @Test func cancellationDuringMirrorPreflightCannotStartAProcess() async throws {
+        let process = FakeMirrorProcess()
+        let preflight = ResultGate()
+        let f = ModelFixture(selected: usb.serial, devices: [usb], configure: {
+            $0.prepareMirror = { adb, serial in
+                _ = await preflight.wait()
+                return Self.mirrorConfiguration(adb: adb, serial: serial)
+            }
+            $0.makeMirror = { process }
+        })
+        defer { f.close() }
+        await f.model.refreshNow()
+        let session = try #require(f.sessions.first)
+        session.emit(.local)
+        await eventually { f.model.canOpenMirror }
+        f.model.openMirror()
+        for _ in 0 ..< 200 {
+            if await preflight.waiting {
+                break
+            }
+            try? await Task.sleep(for: .milliseconds(2))
+        }
+        #expect(await preflight.waiting)
+        f.model.isEnabled = false
+        await eventually { f.model.mirrorPhase == .idle }
+        await preflight.resolve()
+        await settle()
+        #expect(await process.launches.isEmpty)
+        #expect(session.suspends == 0 && session.resumes == 0)
+        #expect(f.model.phase == .paused)
+    }
+
+    @Test func wirelessCommandWaitsForMirrorExit() async throws {
+        let stopGate = ResultGate()
+        let process = FakeMirrorProcess(stopGate: stopGate)
+        let f = ModelFixture(selected: usb.serial, devices: [usb], configure: {
+            $0.prepareMirror = { Self.mirrorConfiguration(adb: $0, serial: $1) }
+            $0.makeMirror = { process }
+            $0.showMirrorWindow = { _, _, _ in true }
+        })
+        defer { f.close() }
+        await f.model.refreshNow()
+        let session = try #require(f.sessions.first)
+        session.emit(.local)
+        await eventually { f.model.canOpenMirror }
+        f.model.openMirror()
+        await eventually { f.model.mirrorPhase == .open }
+        f.model.switchToWireless(serial: usb.serial)
+        await eventually { f.model.mirrorPhase == .closing }
+        await settle()
+        #expect(f.requests.isEmpty)
+        await stopGate.resolve()
+        await eventually { f.requests == [.switchFromUSB(usb.serial)] }
+        #expect(session.resumes == 0)
+    }
+
+    @Test func missingScrcpyDoesNotReleaseTheDeskBridgeSession() async throws {
+        let process = FakeMirrorProcess()
+        let f = ModelFixture(selected: usb.serial, devices: [usb], configure: {
+            $0.prepareMirror = { _, _ in throw ScrcpyError.notInstalled }
+            $0.makeMirror = { process }
+        })
+        defer { f.close() }
+        await f.model.refreshNow()
+        let session = try #require(f.sessions.first)
+        session.emit(.local)
+        await eventually { f.model.canOpenMirror }
+        f.model.openMirror()
+        await eventually { f.model.mirrorPhase == .notInstalled }
+        #expect(session.suspends == 0 && session.resumes == 0 && session.stops == 0)
+        #expect(f.model.canOpenMirror)
+    }
+
+    @Test func reconnectWaitsForMirrorDrainAfterConnectionLoss() async throws {
+        let stopGate = ResultGate()
+        let process = FakeMirrorProcess(stopGate: stopGate)
+        let f = ModelFixture(selected: usb.serial, devices: [usb], configure: {
+            $0.prepareMirror = { Self.mirrorConfiguration(adb: $0, serial: $1) }
+            $0.makeMirror = { process }
+            $0.showMirrorWindow = { _, _, _ in true }
+        })
+        defer { f.close() }
+        await f.model.refreshNow()
+        let first = try #require(f.sessions.first)
+        first.emit(.local)
+        await eventually { f.model.canOpenMirror }
+        f.model.openMirror()
+        await eventually { f.model.mirrorPhase == .open }
+
+        first.emit(.ended(.connectionLost(serverLog: "")))
+        await eventually { f.model.mirrorPhase == .closing }
+        f.clock.advance(60)
+        await f.model.refreshNow()
+        #expect(f.sessions.count == 1)
+        await stopGate.resolve()
+        await eventually { f.model.mirrorPhase == .disconnected }
+        await f.model.refreshNow()
+        #expect(f.sessions.count == 2)
+        #expect(first.resumes == 0)
+    }
+
+    @Test func quitCancelsTheMirrorAndRejectsFurtherLaunches() async throws {
+        let stopGate = ResultGate()
+        let process = FakeMirrorProcess(stopGate: stopGate)
+        let f = ModelFixture(selected: usb.serial, devices: [usb], configure: {
+            $0.prepareMirror = { Self.mirrorConfiguration(adb: $0, serial: $1) }
+            $0.makeMirror = { process }
+            $0.showMirrorWindow = { _, _, _ in true }
+        })
+        defer { f.close() }
+        await f.model.refreshNow()
+        let first = try #require(f.sessions.first)
+        first.emit(.local)
+        await eventually { f.model.canOpenMirror }
+        f.model.openMirror()
+        await eventually { f.model.mirrorPhase == .open }
+
+        let closing = try #require(f.model.prepareToQuit())
+        f.model.openMirror()
+        #expect(f.model.mirrorPhase == .closing)
+        await stopGate.resolve()
+        await closing.value
+        #expect(await process.launches.count == 1)
+        #expect(first.resumes == 0)
+        #expect(!f.model.canOpenMirror)
+    }
 
     private func eventually(_ condition: @MainActor () -> Bool,
                             sourceLocation: SourceLocation = #_sourceLocation) async
@@ -291,6 +508,16 @@ struct AppModelTests {
         #expect(f.model.wirelessErrorMessage?.contains("Local Network") == true)
         #expect(f.model.prefs.preferredSerial == usb.serial)
         #expect(f.model.canRestartADB)
+        f.clock.advance(1000)
+        await f.model.refreshNow()
+        #expect(f.preparations.count == 1)
+        #expect(f.model.wirelessErrorDetails == "No route to host")
+        f.model.retryAutoWifi()
+        await eventually { f.preparations.count == 2 && !f.model.autoWifiInProgress }
+        f.model.isEnabled = false
+        f.model.isEnabled = true
+        await f.model.refreshNow()
+        await eventually { f.preparations.count == 3 && !f.model.autoWifiInProgress }
     }
 
     @Test func disablingAutomaticWifiCancelsLateResult() async {

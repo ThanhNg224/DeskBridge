@@ -20,7 +20,8 @@ final class RemoteCursor: @unchecked Sendable {
     private let shield: CursorShield
     private let swallowing = OSAllocatedUnfairLock(initialState: false)
     private var warpFilter = WarpFilter()
-    private var engaged = false
+    private var nextVisitID = 0
+    private var visitID: Int?
     private var engagedAt = DispatchTime.now()
     private var hidden = false
     private var frozen = false
@@ -67,7 +68,9 @@ final class RemoteCursor: @unchecked Sendable {
     }
 
     func engage(from location: CGPoint, on display: CGRect, edge: ScreenEdge) {
-        engaged = true
+        nextVisitID &+= 1
+        let visit = nextVisitID
+        visitID = visit
         frozen = false
         engagedAt = .now()
         Self.log.debug("engage at (\(Int(location.x)),\(Int(location.y))) edge=\(edge.rawValue)")
@@ -81,13 +84,13 @@ final class RemoteCursor: @unchecked Sendable {
         let queue = queue
         shield.show(covering: display) { [weak self] in
             guard let cursor = self else { return }
-            queue.async { cursor.park(at: target) }
+            queue.async { cursor.park(at: target, visit: visit) }
         }
     }
 
     /// Gives the cursor back; `point` is where it reappears (nil: where it is).
     func release(returnTo point: CGPoint?) {
-        engaged = false
+        visitID = nil
         frozen = false
         swallowing.withLock { $0 = false }
         CGAssociateMouseAndMouseCursorPosition(1)
@@ -109,10 +112,10 @@ final class RemoteCursor: @unchecked Sendable {
     /// new spot. The freeze waits so that cursor update can happen (disassociating at once skipped it and the arrow
     /// stayed), and the user's real moves during that wait can drag the cursor back onto the Dock icon, so the freeze
     /// warps to the target once more.
-    private func park(at target: CGPoint) {
-        guard engaged else { return }
+    private func park(at target: CGPoint, visit: Int) {
+        guard visitID == visit else { return }
         warpAndNotify(to: target)
-        queue.asyncAfter(deadline: .now() + Self.freezeDelay) { [weak self] in self?.freeze(at: target) }
+        queue.asyncAfter(deadline: .now() + Self.freezeDelay) { [weak self] in self?.freeze(at: target, visit: visit) }
     }
 
     private func warpAndNotify(to target: CGPoint) {
@@ -132,46 +135,46 @@ final class RemoteCursor: @unchecked Sendable {
         move?.post(tap: .cghidEventTap)
     }
 
-    private func freeze(at target: CGPoint) {
-        guard engaged, !frozen else { return }
+    private func freeze(at target: CGPoint, visit: Int) {
+        guard visitID == visit, !frozen else { return }
         frozen = true
         swallowing.withLock { $0 = true }
         warpAndNotify(to: target)
         CGAssociateMouseAndMouseCursorPosition(0) // freeze the Mac cursor; deltas keep flowing
         shield.refreshCursor(reactivate: false) // right away: when another app was in front this is often enough
-        verifyBlankCursor(at: target, attempt: 0)
+        verifyBlankCursor(at: target, attempt: 0, visit: visit)
     }
 
     /// The shield's transparent cursor is sometimes not applied (seen after the Mac was idle for a while; the arrow
     /// then stays visible). `NSCursor.currentSystem` tells, so check and escalate: re-apply the cursor rects, take
     /// key/active status again, finally let the window server see a move with the cursor associated for a moment.
-    private func verifyBlankCursor(at target: CGPoint, attempt: Int) {
+    private func verifyBlankCursor(at target: CGPoint, attempt: Int, visit: Int) {
         queue.asyncAfter(deadline: .now() + Self.verifyDelay) { [weak self] in
-            guard let self, engaged else { return }
+            guard let self, visitID == visit else { return }
             shield.cursorIsBlank { [weak self] blank in
                 guard let self else { return }
                 queue.async { [self] in
-                    guard engaged else { return }
+                    guard visitID == visit else { return }
                     if blank || attempt >= Self.maxRetries {
                         report(blank: blank, retries: attempt, at: target)
                         return
                     }
                     shield.refreshCursor(reactivate: attempt >= 2)
                     if attempt >= 4 {
-                        nudge(at: target)
+                        nudge(at: target, visit: visit)
                     }
-                    verifyBlankCursor(at: target, attempt: attempt + 1)
+                    verifyBlankCursor(at: target, attempt: attempt + 1, visit: visit)
                 }
             }
         }
     }
 
     /// Associates the cursor for a moment so the window server evaluates the cursor under it, then freezes it again.
-    private func nudge(at target: CGPoint) {
+    private func nudge(at target: CGPoint, visit: Int) {
         CGAssociateMouseAndMouseCursorPosition(1)
         warpAndNotify(to: target)
         queue.asyncAfter(deadline: .now() + 0.03) { [weak self] in
-            guard let self, engaged else { return }
+            guard let self, visitID == visit else { return }
             warpAndNotify(to: target)
             CGAssociateMouseAndMouseCursorPosition(0)
         }

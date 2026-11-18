@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.0 (2026-11-18)
+
+- Open and control the selected Android phone in a window from the **Connection** tab or the DeskBridge menu bar. Install scrcpy once with `brew install scrcpy`. The window uses the phone's current USB or Wi-Fi connection.
+- Bring an existing phone window forward with one click. Screen-edge control pauses while the phone window is open and resumes when you close it.
+- **Retry Wi-Fi** reports `No route to host` as soon as ADB returns it. Automatic Wi-Fi preparation pauses on that error so you can retry when the network is ready. USB control stays available.
+
 ## 1.2.1 (2026-11-16)
 
 - Install on Apple Silicon Macs with one Homebrew command. The direct ZIP download is also available.

@@ -11,6 +11,7 @@ struct DeskBridgeApp: App {
         Window("DeskBridge", id: AppWindow.mainID) {
             SettingsView(model: model, pane: $settingsPane)
                 .modifier(RegisterWindowOpener())
+                .onAppear { appDelegate.model = model }
         }
         .windowResizability(.contentMinSize) // user can resize; the content sets the minimum
 
@@ -19,6 +20,7 @@ struct DeskBridgeApp: App {
                 settingsPane = .connection
                 AppWindow.show()
             })
+            .onAppear { appDelegate.model = model }
         } label: {
             Image(nsImage: BrandIcon.menuBar(model.phase))
                 .accessibilityLabel(model.status)

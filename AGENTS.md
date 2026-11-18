@@ -18,6 +18,12 @@
 - Windows-native checks: `scripts/check.ps1` and `scripts/package.ps1`; see `windows/README.md` for arguments.
 - Mac/core/CI evidence differs from actual Windows plus Android acceptance. Do not describe Windows runtime behavior as passed without the physical acceptance gate.
 
+## Local Mac installation and release
+
+- After each completed macOS change, build with `scripts/package_app.sh` and the existing development signing identity. Install the verified build at `/Applications/DeskBridge.app` before handing the change back so the agent and user can test the same installed app. Open it and verify the running process uses that path.
+- Quit obsolete DeskBridge processes and move superseded app bundles and duplicate local build bundles to the Trash after verifying the installed build. Keep `/Applications/DeskBridge.app` as the single local copy for daily use.
+- Start the next macOS release and publishing workflow after the user explicitly confirms the feature works for them in the installed build.
+
 ## Cross-platform gotchas
 
 - Protocol v1 is a byte contract: `DOWN=0`, `UP=1`. Shared changes need tests on both hosts.

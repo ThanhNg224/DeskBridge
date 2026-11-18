@@ -56,6 +56,14 @@ Once USB works, you can [switch to Wi-Fi](#connect-over-wi-fi).
 - **Type Vietnamese** with your Mac's input method (Telex, VNI): compose the word on the Mac, it appears on the phone when you press space.
 - **Always a way out.** Press **⌃⌥⌘⎋** (Control+Option+Command+Esc) to get the pointer back on the Mac instantly.
 
+## Open the phone screen on your Mac
+
+Install [scrcpy for macOS](https://github.com/Genymobile/scrcpy/blob/master/doc/macos.md#from-a-package-manager) once with `brew install scrcpy`. Once DeskBridge shows the phone as connected, choose **Open phone screen** in the **Connection** tab or from the menu bar popover. The window uses the selected phone's current USB or Wi-Fi connection.
+
+While the window is open, click or type inside it. DeskBridge pauses pointer handoff at the screen edge until the window closes. Use **Bring phone screen forward** to return to the existing window.
+
+To paste Vietnamese text, compose it on the Mac, copy it, then press **left Command + V** in the scrcpy window. Use DeskBridge's screen-edge controls to type directly with the Mac's Telex or VNI input method.
+
 ## Keyboard shortcuts
 
 These shortcuts work while the pointer is on the phone. Hold **Option (⌥)** and press the other key:
