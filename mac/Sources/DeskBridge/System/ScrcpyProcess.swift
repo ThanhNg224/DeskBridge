@@ -29,11 +29,10 @@ struct ScrcpyLaunchConfiguration: Sendable {
             executable = contents.appendingPathComponent("Helpers/scrcpy")
             let resources = contents.appendingPathComponent("Resources/scrcpy")
             let server = resources.appendingPathComponent("scrcpy-server")
-            guard FileManager.default.isExecutableFile(atPath: executable.path),
-                  [server, resources.appendingPathComponent("scrcpy.png"),
-                   resources.appendingPathComponent("disconnected.png")]
-                  .allSatisfy({ FileManager.default.fileExists(atPath: $0.path) })
-            else {
+            let requiredFiles = [server, resources.appendingPathComponent("scrcpy.png"),
+                                 resources.appendingPathComponent("disconnected.png")]
+            let hasResources = requiredFiles.allSatisfy { FileManager.default.fileExists(atPath: $0.path) }
+            guard FileManager.default.isExecutableFile(atPath: executable.path), hasResources else {
                 throw ScrcpyError.notInstalled
             }
             childEnvironment["SCRCPY_SERVER_PATH"] = server.path
