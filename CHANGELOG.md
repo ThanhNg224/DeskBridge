@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.0 (2026-11-23)
+
+- The **Phone** list shows available phones by their Android device names, with a checkmark on the selected phone. A phone available over both USB and Wi-Fi appears once when DeskBridge can verify the match. Choose the transport in **Device connection**.
+- **Open phone screen** works with the scrcpy client bundled in DeskBridge. You can open the selected phone over USB or Wi-Fi without installing scrcpy separately.
+- The release includes the [scrcpy and library source archive](https://github.com/ThanhNg224/DeskBridge/releases/download/v1.4.0/DeskBridge-scrcpy-sources.tar.gz) and [instructions for rebuilding the helper](docs/MAC_SCRCPY_SOURCES.md).
+
 ## 1.3.0 (2026-11-18)
 
 - Open and control the selected Android phone in a window from the **Connection** tab or the DeskBridge menu bar. Install scrcpy once with `brew install scrcpy`. The window uses the phone's current USB or Wi-Fi connection.

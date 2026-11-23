@@ -37,23 +37,11 @@ struct MirrorControls: View {
         case .closing:
             primaryAction("Closing phone screen…", enabled: false, showsProgress: true)
         case .notInstalled:
-            VStack(alignment: .leading, spacing: 8) {
-                hint("Install scrcpy to open the phone screen.")
-                HStack {
-                    Link(
-                        "Install scrcpy…",
-                        destination: URL(
-                            string: "https://github.com/Genymobile/scrcpy/blob/master/doc/macos.md#from-a-package-manager"
-                        )!
-                    )
-                    Button("Try again", action: model.openMirror)
-                        .disabled(!model.canOpenMirror)
-                }
-            }
+            hint("Reinstall DeskBridge to restore the phone screen files.")
         case .failed:
             VStack(alignment: .leading, spacing: 8) {
                 primaryAction("Try again", enabled: model.canOpenMirror)
-                hint("Could not show the phone screen. Check that scrcpy is up to date.")
+                hint("Could not show the phone screen. Check the phone connection and try again.")
             }
         }
     }

@@ -91,6 +91,7 @@ struct SettingsView: View {
             switch pane {
             case .connection:
                 phoneSection
+                connectionSection
                 if !model.setup.isComplete {
                     SetupChecklist(model: model)
                 }
@@ -185,72 +186,84 @@ struct SettingsView: View {
         }
     }
 
-    @ViewBuilder
     private var phoneSection: some View {
-        if !model.setup.phones.isEmpty {
-            Section("Phone") {
-                Picker("Use this phone", selection: Binding(
-                    get: { model.prefs.preferredSerial },
-                    set: { model.selectDevice(serial: $0) }
-                )) {
-                    Text("Choose…").tag(String?.none).disabled(true)
-                    ForEach(model.setup.phones, id: \.serial) { phone in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Label {
-                                Text(verbatim: phone.connectionLabel + (
-                                    phone.isReady ? "" : " · \(String(localized: "Disconnected"))"
-                                ))
-                            } icon: {
-                                Image(systemName: phone.isWireless ? "wifi" : "cable.connector")
-                            }
-                            Text(phone.serial).font(.caption).foregroundStyle(.secondary)
-                        }
-                        .tag(String?.some(phone.serial))
-                        .help(phone.serial)
-                    }
-                }
-
-                if let phone = model.selectedPhone {
-                    if let detected = model.detectedDifferentPhone {
-                        Button("Use detected phone…") {
-                            detectedPhoneToConfirm = detected
+        let options = model.phoneOptions
+        return Section("Phone") {
+            if options.isEmpty {
+                Label("No phones available", systemImage: "iphone")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(options) { option in
+                    Button {
+                        if let phone = model.choosePhone(option.id) {
+                            detectedPhoneToConfirm = phone
                             confirmingDetectedPhone = true
                         }
-                    }
-                    if let message = model.automaticSwitchMessage {
-                        Text(verbatim: message)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    if let message = model.autoWifiStatus {
-                        Text(verbatim: message).font(.caption).foregroundStyle(.secondary)
-                        if !model.autoWifiInProgress {
-                            Button("Retry Wi-Fi") { model.retryAutoWifi() }
-                        }
-                    }
-                    if model.selectedPhoneHasBothTransports {
-                        Picker("Connection", selection: Binding(
-                            get: { model.prefs.preferredSerial ?? "" },
-                            set: { model.selectTransport(serial: $0) }
-                        )) {
-                            ForEach(model.selectedPhoneTransports, id: \.serial) { transport in
-                                Text(transport.isWireless ? "Wi-Fi" : "USB").tag(transport.serial)
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "iphone")
+                                .foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
+                            Text(verbatim: option.name)
+                            if let identifier = option.identifier {
+                                Text("ID \(identifier)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 8)
+                            if option.isSelected {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(Color.accentColor)
+                                    .accessibilityHidden(true)
                             }
                         }
-                        .pickerStyle(.segmented)
-                        .disabled(model.isOperatingWireless || !model.isEnabled)
+                        .frame(minHeight: 28)
+                        .contentShape(Rectangle())
                     }
-                    HStack(spacing: 8) {
-                        Label(phone.isWireless ? "Wi-Fi" : "USB",
-                              systemImage: phone.isWireless ? "wifi" : "cable.connector")
-                            .foregroundStyle(.secondary)
-                        Spacer(minLength: 8)
-                        if phone.isWireless {
-                            Button("Disconnect Wi-Fi", role: .destructive) {
-                                model.disconnectWireless(serial: phone.serial)
-                            }
-                            .disabled(model.isOperatingWireless)
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(option.isSelected ? .isSelected : [])
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var connectionSection: some View {
+        if let phone = model.selectedPhone {
+            Section("Device connection") {
+                if let message = model.automaticSwitchMessage {
+                    Text(verbatim: message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if let message = model.autoWifiStatus {
+                    Text(verbatim: message).font(.caption).foregroundStyle(.secondary)
+                    if !model.autoWifiInProgress {
+                        Button("Retry Wi-Fi") { model.retryAutoWifi() }
+                    }
+                }
+                if model.selectedPhoneHasBothTransports {
+                    Picker("Connection", selection: Binding(
+                        get: { model.prefs.preferredSerial ?? "" },
+                        set: { model.selectTransport(serial: $0) }
+                    )) {
+                        ForEach(model.selectedPhoneTransports, id: \.serial) { transport in
+                            Text(transport.isWireless ? "Wi-Fi" : "USB").tag(transport.serial)
                         }
+                    }
+                    .pickerStyle(.segmented)
+                    .disabled(model.isOperatingWireless || !model.isEnabled)
+                }
+                HStack(spacing: 8) {
+                    Label(phone.isWireless ? "Wi-Fi" : "USB",
+                          systemImage: phone.isWireless ? "wifi" : "cable.connector")
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 8)
+                    if phone.isWireless {
+                        Button("Disconnect Wi-Fi", role: .destructive) {
+                            model.disconnectWireless(serial: phone.serial)
+                        }
+                        .disabled(model.isOperatingWireless)
                     }
                 }
                 if model.canRetryConnection {

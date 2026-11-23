@@ -58,7 +58,7 @@ Once USB works, you can [switch to Wi-Fi](#connect-over-wi-fi).
 
 ## Open the phone screen on your Mac
 
-Install [scrcpy for macOS](https://github.com/Genymobile/scrcpy/blob/master/doc/macos.md#from-a-package-manager) once with `brew install scrcpy`. Once DeskBridge shows the phone as connected, choose **Open phone screen** in the **Connection** tab or from the menu bar popover. The window uses the selected phone's current USB or Wi-Fi connection.
+DeskBridge includes scrcpy. Once DeskBridge shows the phone as connected, choose **Open phone screen** in the **Connection** tab or from the menu bar popover. The window uses the selected phone's current USB or Wi-Fi connection.
 
 While the window is open, click or type inside it. DeskBridge pauses pointer handoff at the screen edge until the window closes. Use **Bring phone screen forward** to return to the existing window.
 
@@ -157,7 +157,9 @@ ADB output and device addresses in logs are private; review details in Settings 
 
 ### Release
 
-`scripts/release.sh` builds `build/DeskBridge.zip`, the file behind the download link (`gh release upload vX.Y.Z build/DeskBridge.zip --clobber`). With a paid Apple Developer account it also signs, notarizes and staples, so users can skip the "Open Anyway" step:
+`scripts/release.sh` builds `build/DeskBridge.zip` and `build/DeskBridge-scrcpy-sources.tar.gz`. Upload both files to the same GitHub release. The source archive contains the corresponding scrcpy and library sources, including LGPL-licensed FFmpeg and libusb. See [how to rebuild the helper](docs/MAC_SCRCPY_SOURCES.md).
+
+With a paid Apple Developer account, the script also signs, notarizes and staples the app so users can skip the "Open Anyway" step.
 
 ```bash
 DEVELOPER_ID="Developer ID Application: Name (TEAMID)" NOTARY_PROFILE=deskbridge scripts/release.sh

@@ -69,12 +69,15 @@ final class AppModel {
 
     var selectedPhone: AdbDevice? {
         guard let serial = prefs.preferredSerial else { return nil }
-        return setup.phones.first { $0.serial == serial }
-            ?? AdbDevice(
-                serial: serial,
-                state: "offline",
-                model: rememberedPhone?.serial == serial ? rememberedPhone?.model : nil
-            )
+        if rememberedPhone?.serial == serial {
+            return rememberedPhone
+        }
+        return AdbDevice(serial: serial, state: "offline")
+    }
+
+    var phoneOptions: [PhoneOption] {
+        PhoneOption.make(from: setup.phones, selectedSerial: prefs.preferredSerial,
+                         selectedIdentity: prefs.preferredPhysicalID)
     }
 
     var canConnectWireless: Bool {
@@ -162,7 +165,7 @@ final class AppModel {
     @ObservationIgnored private var autoWifiAttempts = 0
     @ObservationIgnored private var autoWifiRetryAfter = Date.distantPast
     @ObservationIgnored private var autoWifiFailureShown = false
-    @ObservationIgnored private var rememberedPhone: AdbDevice?
+    private var rememberedPhone: AdbDevice?
     @ObservationIgnored private var pendingAutomaticSwitch: String?
     @ObservationIgnored private var updatingPreference = false
     @ObservationIgnored private var syncingLoginItem = false
@@ -291,15 +294,28 @@ final class AppModel {
 
     // MARK: - Selection
 
-    func selectDevice(serial: String?) {
+    func choosePhone(_ id: PhoneOption.ID) -> DetectedPhone? {
+        guard let option = phoneOptions.first(where: { $0.id == id }), !option.isSelected else { return nil }
+        if let detected = detectedDifferentPhone, detected.serial == option.phone.serial {
+            return detected
+        }
+        selectDevice(serial: option.phone.serial, physicalID: option.phone.physicalID)
+        return nil
+    }
+
+    func selectDevice(serial: String?, physicalID: String? = nil) {
         guard let serial else { return }
-        if prefs.preferredSerial == serial {
-            selectionChanged()
-        } else {
+        if prefs.preferredSerial != serial {
             selectedPhoneTransports = []
             selectedPhoneHasBothTransports = false
-            prefs.preferredSerial = serial
+            var next = prefs
+            next.preferredSerial = serial
+            next.preferredPhysicalID = physicalID
+            updatingPreference = true
+            prefs = next
+            updatingPreference = false
         }
+        selectionChanged()
     }
 
     func selectTransport(serial: String) {
@@ -536,6 +552,7 @@ final class AppModel {
         startWatcherIfNeeded()
         setup.accessibility = dependencies.accessibility()
         let context = ADBOperation(timeout: 30)
+        var hasDiscoveredPhones = false
         do {
             let adb = try dependencies.adb().withOperation(context)
             setup.adbFound = true
@@ -549,10 +566,11 @@ final class AppModel {
                 stopSession(mirrorResult: .disconnected)
             }
             devices = try await withTaskCancellationHandler {
-                try await dependencies.deviceIdentities(adb, devices)
+                try await dependencies.describeDevices(adb, devices)
             } onCancel: { context.cancel() }
             guard !Task.isCancelled, generation == discoveryGeneration else { return }
             var pick = updateDevices(devices)
+            hasDiscoveredPhones = true
             if let phone = sessionPhone, !stoppingSession,
                phone.serial != prefs.preferredSerial || selectedPhone?.isReady != true
             {
@@ -588,12 +606,14 @@ final class AppModel {
                     try await dependencies.wireless(adb, .connect(endpoint.ip, endpoint.port)) { _ in }
                 } onCancel: { context.cancel() }
                 guard !Task.isCancelled, generation == discoveryGeneration else { return }
+                hasDiscoveredPhones = false
                 devices = try await withTaskCancellationHandler {
                     let raw = try await dependencies.devices(adb)
-                    return try await dependencies.deviceIdentities(adb, raw)
+                    return try await dependencies.describeDevices(adb, raw)
                 } onCancel: { context.cancel() }
                 guard !Task.isCancelled, generation == discoveryGeneration else { return }
                 pick = updateDevices(devices)
+                hasDiscoveredPhones = true
             }
             switch pick {
             case let .ready(device):
@@ -607,6 +627,10 @@ final class AppModel {
             }
         } catch {
             guard !Task.isCancelled, generation == discoveryGeneration else { return }
+            if !hasDiscoveredPhones {
+                setup.phones = []
+                detectedDifferentPhone = nil
+            }
             phase = .searching
             if isEnabled, !reconnectSuppressed {
                 recordFailure()
@@ -664,7 +688,6 @@ final class AppModel {
             setPreference(alternate.serial)
         }
         var currentDevices = checkedDevices
-        var phones = DevicePicker.phones(from: checkedDevices, preferredSerial: prefs.preferredSerial)
         if let identity = prefs.preferredPhysicalID {
             let matches = checkedDevices.filter { $0.isReady && $0.physicalID == identity }
             selectedPhoneHasWifiTransport = matches.contains(where: \.isWireless)
@@ -682,10 +705,12 @@ final class AppModel {
         }
         if let serial = prefs.preferredSerial {
             let discovered = checkedDevices.first { $0.serial == serial }
+            let remembered = rememberedPhone?.serial == serial ? rememberedPhone : nil
             let selected = AdbDevice(
                 serial: serial, state: discovered?.state ?? "offline",
-                model: discovered?.model ?? (rememberedPhone?.serial == serial ? rememberedPhone?.model : nil),
-                physicalID: discovered?.physicalID
+                model: discovered?.model ?? remembered?.model,
+                physicalID: discovered?.physicalID,
+                friendlyName: discovered?.isReady == true ? discovered?.friendlyName : remembered?.friendlyName
             )
             rememberedPhone = selected
             if let index = currentDevices
@@ -695,14 +720,12 @@ final class AppModel {
             } else {
                 currentDevices.append(selected)
             }
-            if let index = phones.firstIndex(where: { $0.serial == serial }) {
-                phones[index] = selected
-            } else {
-                phones.append(selected)
-            }
         }
         let pick = DevicePicker.pick(from: currentDevices, preferredSerial: prefs.preferredSerial)
-        setup.phones = phones
+        let available = devices.filter { device in
+            device.serial != prefs.preferredSerial || prefs.preferredPhysicalID == nil || device.physicalID != nil
+        }
+        setup.phones = DevicePicker.phones(from: available, preferredSerial: prefs.preferredSerial)
         switch pick {
         case let .ready(phone): setup.device = .ready(phone.displayName)
         case let .choose(phones): setup.device = .choose(phones.count)
@@ -1033,7 +1056,10 @@ final class AppModel {
                 wirelessTarget = target
                 setPreference(target)
                 if case .switchFromUSB = request {
-                    rememberedPhone = AdbDevice(serial: target, state: "device", model: rememberedPhone?.model)
+                    rememberedPhone = AdbDevice(
+                        serial: target, state: "offline", model: rememberedPhone?.model,
+                        friendlyName: rememberedPhone?.friendlyName
+                    )
                 }
                 reconnectSuppressed = false
                 wirelessOperation = .startingSession

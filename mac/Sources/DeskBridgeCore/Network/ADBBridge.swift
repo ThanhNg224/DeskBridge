@@ -9,12 +9,17 @@ public struct AdbDevice: Equatable, Sendable {
     public let model: String?
     /// Hash of a device-reported identity, when it can be read and validated.
     public let physicalID: String?
+    /// Human-readable name from Android's device settings and manufacturer.
+    public let friendlyName: String?
 
-    public init(serial: String, state: String, model: String? = nil, physicalID: String? = nil) {
+    public init(serial: String, state: String, model: String? = nil, physicalID: String? = nil,
+                friendlyName: String? = nil)
+    {
         self.serial = serial
         self.state = state
         self.model = model
         self.physicalID = physicalID
+        self.friendlyName = friendlyName
     }
 
     public var isReady: Bool {
@@ -27,7 +32,7 @@ public struct AdbDevice: Equatable, Sendable {
 
     /// Short name for the UI.
     public var displayName: String {
-        model ?? serial
+        friendlyName ?? model ?? serial
     }
 }
 
@@ -208,6 +213,54 @@ public struct ADBBridge: Sendable {
         let model = (try? run(["-s", serial, "shell", "getprop", "ro.product.model"]))?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return model.isEmpty ? serial : model
+    }
+
+    /// Read the identity and display metadata in one shell trip. The optional settings query
+    /// is bounded so that a busy Settings provider does not block discovery.
+    public func readDeviceDetails(_ device: AdbDevice) throws -> AdbDevice {
+        let script = #"""
+        printf '%s\000%s\000' "$(getprop ro.serialno 2>/dev/null)" "$(getprop ro.product.manufacturer 2>/dev/null)"
+        name=$(timeout -s KILL 1 settings get global device_name 2>/dev/null) && printf '%s\n' "$name" || true
+        """#
+        do {
+            let output = try run(["-s", device.serial, "shell", script])
+            return Self.parseDeviceDetails(output, for: device)
+        } catch ADBError.commandFailed {
+            return device
+        }
+    }
+
+    static func parseDeviceDetails(_ output: String, for device: AdbDevice) -> AdbDevice {
+        // Validate the entire serial property, even if it contains a newline.
+        let fields = output.split(separator: "\0", maxSplits: 2, omittingEmptySubsequences: false)
+        guard fields.count == 3 else { return device }
+        let identity = Self.physicalDeviceID(from: String(fields[0]))
+        let manufacturer = Self.displayField(fields[1])
+        let configuredName = Self.displayField(fields[2])
+        let name = configuredName ?? device.model
+        let friendlyName: String?
+        if let manufacturer {
+            let brand = manufacturer == manufacturer.lowercased() ? manufacturer.capitalized : manufacturer
+            if let name {
+                let normalizedName = name.lowercased()
+                let normalizedBrand = brand.lowercased()
+                friendlyName = normalizedName == normalizedBrand || normalizedName.hasPrefix(normalizedBrand + " ")
+                    ? name : "\(brand) \(name)"
+            } else {
+                friendlyName = brand
+            }
+        } else {
+            friendlyName = configuredName
+        }
+        return AdbDevice(serial: device.serial, state: device.state, model: device.model,
+                         physicalID: identity, friendlyName: friendlyName)
+    }
+
+    private static func displayField(_ field: Substring) -> String? {
+        let value = field.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard !value.isEmpty, !["null", "unknown"].contains(value.lowercased()),
+              !value.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) else { return nil }
+        return value
     }
 
     /// Read through each live transport; unavailable or placeholder identities must never match.

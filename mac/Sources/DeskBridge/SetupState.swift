@@ -11,7 +11,7 @@ struct SetupState: Equatable {
         case ready(String)
     }
 
-    /// All ready phones while more than one is attached (the user picks one in Settings).
+    /// Phones that ADB currently reports as ready.
     var phones: [AdbDevice] = []
     var accessibility = false
     var adbFound = true

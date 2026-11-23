@@ -8,14 +8,17 @@
 # One-time notarization setup (needs the paid Apple Developer Program and a "Developer ID Application" certificate):
 #   xcrun notarytool store-credentials deskbridge --apple-id <id> --team-id <TEAMID>   (asks for an app-specific password)
 #
-# Publish: gh release upload vX.Y.Z build/DeskBridge.zip --clobber
+# Publish the app and corresponding sources together:
+# gh release upload vX.Y.Z build/DeskBridge.zip build/DeskBridge-scrcpy-sources.tar.gz
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP="$ROOT/build/release/DeskBridge.app"
 ZIP="$ROOT/build/DeskBridge.zip"
+SOURCES="$ROOT/build/DeskBridge-scrcpy-sources.tar.gz"
 
 DESKBRIDGE_APP_OUTPUT="$APP" CODESIGN_IDENTITY="${DEVELOPER_ID:--}" "$ROOT/scripts/package_app.sh"
+"$ROOT/scripts/bundle_scrcpy_macos.sh" sources "$SOURCES"
 
 if [ -n "${NOTARY_PROFILE:-}" ]; then
   [ -n "${DEVELOPER_ID:-}" ] || { echo "NOTARY_PROFILE needs DEVELOPER_ID" >&2; exit 1; }
@@ -27,3 +30,4 @@ fi
 rm -f "$ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP" # ditto keeps the signature and symlinks intact (zip does not)
 echo "Built $ZIP"
+echo "Built $SOURCES"

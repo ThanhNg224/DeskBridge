@@ -160,7 +160,7 @@ private final class ModelFixture {
         dependencies.installedVersion = { "1.1.7" }
         dependencies.adb = { try ADBBridge(adbPath: "/usr/bin/true") }
         dependencies.devices = { [weak self] _ in await self?.discoveredDevices() ?? [] }
-        dependencies.deviceIdentities = identities ?? { _, devices in devices }
+        dependencies.describeDevices = identities ?? { _, devices in devices }
         dependencies.wifiNeedsRestart = needsWifiRestart ?? { _, _ in true }
         dependencies.prepareWifi = { [weak self] _, serial, _ in
             guard let self else { throw CancellationError() }
@@ -581,6 +581,8 @@ struct AppModelTests {
         await f.model.refreshNow()
         #expect(f.model.prefs.preferredSerial == usb.serial)
         #expect(f.model.selectedPhone?.state == "offline")
+        #expect(f.model.phoneOptions.map(\.phone.serial) == [wifi.serial])
+        #expect(f.model.phoneOptions.allSatisfy { !$0.isSelected })
         #expect(f.sessions.map(\.serial) == [usb.serial])
         f.devices = [wifi, usb]
         await f.model.refreshNow()
@@ -596,6 +598,10 @@ struct AppModelTests {
         await f.model.refreshNow()
         #expect(f.model.setup.phones.count == 2)
         #expect(f.model.selectedPhoneHasBothTransports)
+        let originalOptions = f.model.phoneOptions
+        #expect(originalOptions.map(\.name) == ["Phone", "Phone"])
+        #expect(Set(originalOptions.compactMap(\.identifier)).count == 2)
+        #expect(originalOptions.first(where: \.isSelected)?.phone.serial == usb.serial)
         let first = f.sessions[0]
         first.emit(.local)
         await eventually { f.model.activePhone != nil }
@@ -604,6 +610,9 @@ struct AppModelTests {
         #expect(first.stops == 1)
         #expect(f.model.prefs.preferredSerial == usb.serial)
         #expect(f.sessions.count == 1)
+        #expect(f.model.phoneOptions.map(\.id) == originalOptions.map(\.id))
+        #expect(f.model.phoneOptions.map(\.identifier) == originalOptions.map(\.identifier))
+        #expect(f.model.phoneOptions.first(where: \.isSelected)?.phone.serial == wifi.serial)
         first.emit(.ended(.stopped))
         await eventually { f.sessions.count == 2 }
         #expect(f.model.prefs.preferredSerial == wifi.serial)
@@ -712,6 +721,10 @@ struct AppModelTests {
         #expect(f.sessions.count == 1)
         #expect(f.model.selectedPhone?.isReady == false)
         let detected = try #require(f.model.detectedDifferentPhone)
+        let option = try #require(f.model.phoneOptions.first)
+        #expect(!option.isSelected)
+        #expect(f.model.choosePhone(option.id) == detected)
+        #expect(f.sessions.count == 1)
         f.model.useDetectedPhone(detected)
         await eventually { f.sessions.count == 2 }
         #expect(f.sessions[1].serial == wifi.serial)
@@ -739,7 +752,7 @@ struct AppModelTests {
     }
 
     @Test func selectedDeviceKeepsItsNameWhenADBReportsOfflineWithoutModel() async {
-        let namedUSB = AdbDevice(serial: usb.serial, state: "device", model: "OPPO")
+        let namedUSB = AdbDevice(serial: usb.serial, state: "device", model: "CPH2873", friendlyName: "OPPO Find X9s")
         let f = ModelFixture(selected: usb.serial, devices: [namedUSB, wifi])
         defer { f.close() }
         await f.model.refreshNow()
@@ -748,11 +761,11 @@ struct AppModelTests {
         f.sessions[0].emit(.ended(.stopped))
         await settle()
         await f.model.refreshNow()
-        #expect(f.model.selectedPhone?.displayName == "OPPO")
-        #expect(f.model.status.contains("OPPO"))
+        #expect(f.model.selectedPhone?.displayName == "OPPO Find X9s")
+        #expect(f.model.status.contains("OPPO Find X9s"))
     }
 
-    @Test func oneReadyDevicePinsItselfAndMultipleReadyDevicesWaitForSelection() async {
+    @Test func oneReadyDevicePinsItselfAndMultipleReadyDevicesWaitForSelection() async throws {
         let single = ModelFixture(devices: [usb])
         defer { single.close() }
         await single.model.refreshNow()
@@ -763,9 +776,40 @@ struct AppModelTests {
         await multiple.model.refreshNow()
         #expect(multiple.model.prefs.preferredSerial == nil)
         #expect(multiple.sessions.isEmpty)
-        multiple.model.selectDevice(serial: wifi.serial)
+        let choice = try #require(multiple.model.phoneOptions.first(where: { $0.phone.serial == wifi.serial }))
+        #expect(multiple.model.choosePhone(choice.id) == nil)
         await eventually { multiple.sessions.count == 1 }
         #expect(multiple.sessions.first?.serial == wifi.serial)
+    }
+
+    @Test func pickerOmitsUnavailablePhonesAndRejectsRemovedChoices() async throws {
+        let f = ModelFixture(devices: [usb, other])
+        defer { f.close() }
+        await f.model.refreshNow()
+        let removed = try #require(f.model.phoneOptions.first(where: { $0.phone.serial == other.serial }))
+        f.devices = [
+            AdbDevice(serial: usb.serial, state: "unauthorized"),
+            AdbDevice(serial: other.serial, state: "offline"),
+        ]
+        await f.model.refreshNow()
+        #expect(f.model.phoneOptions.isEmpty)
+        #expect(f.model.choosePhone(removed.id) == nil)
+        #expect(f.model.prefs.preferredSerial == nil)
+        #expect(f.sessions.isEmpty)
+    }
+
+    @Test func failedIdentityRefreshClearsOldChoicesWithoutChangingThePinnedPhone() async {
+        let f = ModelFixture(selected: usb.serial, devices: [usb, other], identities: { _, devices in
+            guard devices.count == 2 else { throw ADBError.commandTimedOut }
+            return devices
+        })
+        defer { f.close() }
+        await f.model.refreshNow()
+        #expect(f.model.phoneOptions.count == 2)
+        f.devices = [usb]
+        await f.model.refreshNow()
+        #expect(f.model.phoneOptions.isEmpty)
+        #expect(f.model.prefs.preferredSerial == usb.serial)
     }
 
     @Test func staleDiscoveryCompletionCannotReplaceNewSelectionOrDeviceList() async {

@@ -14,6 +14,80 @@ struct ScrcpyProcessTests {
         return (directory, executable)
     }
 
+    private func bundledFixture() throws -> (URL, URL, URL) {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let bundle = directory.appendingPathComponent("Desk Bridge.app")
+        let helpers = bundle.appendingPathComponent("Contents/Helpers")
+        let resources = bundle.appendingPathComponent("Contents/Resources/scrcpy")
+        try FileManager.default.createDirectory(at: helpers, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+        let executable = helpers.appendingPathComponent("scrcpy")
+        try "#!/bin/sh\nexit 0\n".write(to: executable, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+        for name in ["scrcpy-server", "scrcpy.png", "disconnected.png"] {
+            try Data().write(to: resources.appendingPathComponent(name))
+        }
+        return (directory, bundle, resources)
+    }
+
+    @Test func bundledRuntimeTakesPrecedenceAndOverridesEnvironment() throws {
+        let (directory, bundle, resources) = try bundledFixture()
+        let (pathDirectory, _) = try fixture("exit 0")
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            try? FileManager.default.removeItem(at: pathDirectory)
+        }
+        let config = try ScrcpyLaunchConfiguration.prepare(
+            adbPath: "/tmp/chosen adb", serial: "device with spaces",
+            environment: ["PATH": pathDirectory.path, "ADB": "/wrong/adb",
+                          "SCRCPY_SERVER_PATH": "/wrong/server", "SCRCPY_ICON_DIR": "/wrong/icons"],
+            searchDirectories: [pathDirectory.path], bundleURL: bundle
+        )
+        #expect(config.executableURL.path == bundle.appendingPathComponent("Contents/Helpers/scrcpy").path)
+        #expect(config.environment["SCRCPY_SERVER_PATH"] == resources.appendingPathComponent("scrcpy-server").path)
+        #expect(config.environment["SCRCPY_ICON_DIR"] == resources.path)
+        #expect(config.environment["ADB"] == "/tmp/chosen adb")
+        #expect(config.arguments.first == "--serial=device with spaces")
+    }
+
+    @Test func incompleteBundleDoesNotFallBackToPath() throws {
+        let (directory, bundle, resources) = try bundledFixture()
+        let (pathDirectory, _) = try fixture("exit 0")
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            try? FileManager.default.removeItem(at: pathDirectory)
+        }
+        let server = resources.appendingPathComponent("scrcpy-server")
+        let executable = bundle.appendingPathComponent("Contents/Helpers/scrcpy")
+        for missing in [server, executable, resources.appendingPathComponent("scrcpy.png"),
+                        resources.appendingPathComponent("disconnected.png")]
+        {
+            let contents = try Data(contentsOf: missing)
+            try FileManager.default.removeItem(at: missing)
+            do {
+                _ = try ScrcpyLaunchConfiguration.prepare(adbPath: "/bin/true", serial: "x",
+                                                          environment: ["PATH": pathDirectory.path],
+                                                          searchDirectories: [pathDirectory.path], bundleURL: bundle)
+                Issue.record("Expected missing bundle resource to fail: \(missing.lastPathComponent)")
+            } catch ScrcpyError.notInstalled {
+                // Expected, even when a developer executable is available.
+            }
+            try contents.write(to: missing)
+            if missing == executable {
+                try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: missing.path)
+            }
+        }
+    }
+
+    @Test func standaloneExecutableUsesDeveloperLookup() throws {
+        let (directory, executable) = try fixture("exit 0")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let config = try ScrcpyLaunchConfiguration.prepare(adbPath: "/bin/true", serial: "x",
+                                                           environment: ["PATH": directory.path],
+                                                           searchDirectories: [directory.path], bundleURL: directory)
+        #expect(config.executableURL == executable.standardizedFileURL)
+    }
+
     private func waitFor(_ predicate: () -> Bool) async throws {
         let deadline = Date().addingTimeInterval(3)
         while !predicate(), Date() < deadline {

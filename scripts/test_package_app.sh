@@ -18,6 +18,15 @@ cat > "$TEST_ROOT/scripts/build_server.sh" <<'STUB'
 #!/usr/bin/env bash
 printf jar > "$(dirname "$0")/../server/build/deskbridge-server.jar"
 STUB
+cat > "$TEST_ROOT/scripts/bundle_scrcpy_macos.sh" <<'STUB'
+#!/usr/bin/env bash
+[ "$1" = bundle ] || exit 1
+[ "${TEST_SCRCPY_FAIL:-0}" = 0 ] || exit 1
+mkdir -p "$2/Contents/Helpers" "$2/Contents/Resources/scrcpy/Licenses"
+printf helper > "$2/Contents/Helpers/scrcpy"
+printf server > "$2/Contents/Resources/scrcpy/scrcpy-server"
+printf license > "$2/Contents/Resources/scrcpy/Licenses/scrcpy.txt"
+STUB
 cat > "$TEST_ROOT/bin/swift" <<'STUB'
 #!/usr/bin/env bash
 if [[ " $* " == *" --show-bin-path "* ]]; then printf '%s\n' "$TEST_ROOT/bin"; fi
@@ -35,7 +44,8 @@ cat > "$TEST_ROOT/bin/codesign" <<'STUB'
 if [ "${TEST_SIGN_FAIL:-0}" = 1 ] && [ "$1" = "--force" ]; then exit 1; fi
 printf '%s\n' "$*" >> "$TEST_ROOT/codesign.log"
 STUB
-chmod +x "$TEST_ROOT/scripts/build_server.sh" "$TEST_ROOT/bin/swift" "$TEST_ROOT/bin/security" "$TEST_ROOT/bin/codesign"
+chmod +x "$TEST_ROOT/scripts/build_server.sh" "$TEST_ROOT/scripts/bundle_scrcpy_macos.sh" \
+  "$TEST_ROOT/bin/swift" "$TEST_ROOT/bin/security" "$TEST_ROOT/bin/codesign"
 export TEST_ROOT PATH="$TEST_ROOT/bin:$PATH"
 unset CODESIGN_IDENTITY
 
@@ -48,9 +58,21 @@ export TEST_IDENTITIES=one TEST_SIGN_FAIL=1
 if "$TEST_ROOT/scripts/package_app.sh" >/dev/null 2>&1; then echo "Unexpected signing success" >&2; exit 1; fi
 [ "$(<"$TEST_ROOT/build/DeskBridge.app/sentinel")" = old ]
 unset TEST_SIGN_FAIL
+if TEST_SCRCPY_FAIL=1 "$TEST_ROOT/scripts/package_app.sh" >/dev/null 2>&1; then
+  echo "Unexpected install with a failed scrcpy bundle" >&2
+  exit 1
+fi
+[ "$(<"$TEST_ROOT/build/DeskBridge.app/sentinel")" = old ]
 "$TEST_ROOT/scripts/package_app.sh" >/dev/null
 grep -q -- '--force --sign 111' "$TEST_ROOT/codesign.log"
+sed -n '1p' "$TEST_ROOT/codesign.log" | grep -q '/Contents/Helpers/scrcpy$'
+sed -n '2p' "$TEST_ROOT/codesign.log" | grep -q '/DeskBridge.app$'
+grep -q -- '--verify --deep --strict' "$TEST_ROOT/codesign.log"
 [ -f "$TEST_ROOT/build/DeskBridge.app/Contents/MacOS/DeskBridge" ]
+[ -f "$TEST_ROOT/build/DeskBridge.app/Contents/Helpers/scrcpy" ]
+[ -f "$TEST_ROOT/build/DeskBridge.app/Contents/Resources/scrcpy/scrcpy-server" ]
+[ -f "$TEST_ROOT/build/DeskBridge.app/Contents/Resources/scrcpy/Licenses/scrcpy.txt" ]
+[ ! -e "$TEST_ROOT/build/DeskBridge.app/Contents/Helpers/adb" ]
 [ -f "$TEST_ROOT/build/DeskBridge.app/Contents/Resources/ThirdPartyNotices.txt" ]
 [ -f "$TEST_ROOT/build/DeskBridge.app/Contents/Resources/ZIPFoundation_ZIPFoundation.bundle/Contents/Resources/PrivacyInfo.xcprivacy" ]
 [ ! -e "$TEST_ROOT/build/DeskBridge.app/sentinel" ]

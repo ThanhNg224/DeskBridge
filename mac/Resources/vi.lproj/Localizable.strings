@@ -39,10 +39,9 @@
 "Closing phone screen…" = "Đang đóng màn hình điện thoại…";
 "Close" = "Đóng";
 "Try again" = "Thử lại";
-"Install scrcpy to open the phone screen." = "Cài scrcpy để mở màn hình điện thoại.";
-"Install scrcpy…" = "Cài scrcpy…";
+"Reinstall DeskBridge to restore the phone screen files." = "Cài lại DeskBridge để khôi phục các tệp cần thiết để mở màn hình điện thoại.";
 "The phone screen disconnected. Wait for the phone to connect again." = "Màn hình điện thoại đã ngắt kết nối. Hãy đợi điện thoại kết nối lại.";
-"Could not show the phone screen. Check that scrcpy is up to date." = "Không mở được màn hình điện thoại. Hãy kiểm tra scrcpy đã cập nhật chưa.";
+"Could not show the phone screen. Check the phone connection and try again." = "Không mở được màn hình điện thoại. Hãy kiểm tra kết nối rồi thử lại.";
 
 /* Setup checklist */
 "Setup" = "Thiết lập";
@@ -80,6 +79,10 @@
 "Show icon in the Dock" = "Hiện biểu tượng trên Dock";
 "%lld phones are connected. Choose one in Settings." = "Có %lld điện thoại đang kết nối. Hãy chọn một máy trong Cài đặt.";
 "Phone" = "Điện thoại";
+"Android phone" = "Điện thoại Android";
+"No phones available" = "Chưa có điện thoại khả dụng";
+"Device connection" = "Kết nối thiết bị";
+"ID %@" = "Mã %@";
 "Connected phone" = "Điện thoại đang kết nối";
 "Use this phone" = "Dùng điện thoại này";
 "Connection" = "Kết nối";

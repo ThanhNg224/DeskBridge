@@ -45,6 +45,39 @@ struct ADBBridgeTests {
         #expect(ADBBridge.parseDevices("List of devices attached\n\n").isEmpty)
     }
 
+    @Test func readsFriendlyDeviceNamesAndKeepsModelAndIdentitySeparate() {
+        let samsung = AdbDevice(serial: "192.0.2.10:5555", state: "device", model: "SM N770F")
+        let identified = ADBBridge.parseDeviceDetails("SAMSUNG123\0samsung\0Galaxy Note10 Lite\r\n", for: samsung)
+        #expect(identified.displayName == "Samsung Galaxy Note10 Lite")
+        #expect(identified.model == samsung.model)
+        #expect(identified.physicalID == ADBBridge.physicalDeviceID(from: "SAMSUNG123"))
+
+        let oppo = AdbDevice(serial: "OPPO1234", state: "device", model: "CPH2873")
+        let named = ADBBridge.parseDeviceDetails("OPPO1234\0OPPO\0OPPO Find X9s\n", for: oppo)
+        #expect(named.displayName == "OPPO Find X9s")
+        let customized = ADBBridge.parseDeviceDetails("\0\0Máy của mình 👩‍👩‍👧\n", for: oppo)
+        #expect(customized.displayName == "Máy của mình 👩‍👩‍👧")
+        #expect(customized.physicalID == nil)
+    }
+
+    @Test func usesManufacturerAndModelWhenAndroidNameIsUnavailable() {
+        let device = AdbDevice(serial: "OPPO1234", state: "device", model: "CPH2873")
+        for output in ["OPPO1234\0OPPO\0null\n", "OPPO1234\0OPPO\0"] {
+            let details = ADBBridge.parseDeviceDetails(output, for: device)
+            #expect(details.displayName == "OPPO CPH2873")
+            #expect(details.physicalID == ADBBridge.physicalDeviceID(from: device.serial))
+        }
+        #expect(ADBBridge.parseDeviceDetails("OPPO1234\0\0null\n", for: device).displayName == "CPH2873")
+    }
+
+    @Test func rejectsMultilineIdentityInsteadOfMatchingItsFirstLine() {
+        let device = AdbDevice(serial: "OPPO1234", state: "device", model: "CPH2873")
+        let details = ADBBridge.parseDeviceDetails("ABCDEF\nOTHER\0OPPO\0OPPO Find X9s\n", for: device)
+        #expect(details.physicalID == nil)
+        #expect(details.displayName == "OPPO Find X9s")
+        #expect(ADBBridge.parseDeviceDetails("ABCDEF", for: device) == device)
+    }
+
     @Test func findsStaleForwards() {
         let output = """
         RF8NA2EZKZK tcp:57534 localabstract:deskbridge-59cfef45

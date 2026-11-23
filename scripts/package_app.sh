@@ -45,6 +45,7 @@ cp "$BIN" "$BUNDLE/Contents/MacOS/DeskBridge"
 cp "$ROOT/server/build/deskbridge-server.jar" "$ROOT/mac/Resources/AppIcon.icns" "$ROOT/mac/Resources/ThirdPartyNotices.txt" "$BUNDLE/Contents/Resources/"
 cp -R "$ROOT"/mac/Resources/*.lproj "$BUNDLE/Contents/Resources/"
 cp -R "$BIN_DIR/ZIPFoundation_ZIPFoundation.bundle" "$BUNDLE/Contents/Resources/"
+"$ROOT/scripts/bundle_scrcpy_macos.sh" bundle "$BUNDLE"
 
 VERSION="$(cat "$ROOT/VERSION")"
 cat > "$BUNDLE/Contents/Info.plist" <<PLIST
@@ -68,13 +69,17 @@ PLIST
 
 # Explicit ad-hoc signing is used by the release script; local builds use the stable identity above.
 if [ "$IDENTITY" = "-" ]; then
+  codesign --force --sign - --identifier com.deskbridge.scrcpy "$BUNDLE/Contents/Helpers/scrcpy"
   codesign --force --sign - --requirements '=designated => identifier "com.deskbridge.app"' "$BUNDLE"
 elif [[ "$IDENTITY" == "Developer ID Application"* ]]; then
+  codesign --force --sign "$IDENTITY" --options runtime --timestamp --identifier com.deskbridge.scrcpy \
+    "$BUNDLE/Contents/Helpers/scrcpy"
   codesign --force --sign "$IDENTITY" --options runtime --timestamp "$BUNDLE"
 else
+  codesign --force --sign "$IDENTITY" --identifier com.deskbridge.scrcpy "$BUNDLE/Contents/Helpers/scrcpy"
   codesign --force --sign "$IDENTITY" "$BUNDLE"
 fi
-codesign --verify --strict "$BUNDLE"
+codesign --verify --deep --strict "$BUNDLE"
 
 # Keep the previous bundle until installation has succeeded, and restore it if the move fails.
 if [ -e "$APP" ]; then mv "$APP" "$STAGE/previous.app"; fi

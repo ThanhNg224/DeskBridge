@@ -19,21 +19,40 @@ struct ScrcpyLaunchConfiguration: Sendable {
     }
 
     static func prepare(adbPath: String, serial: String, environment: [String: String],
-                        searchDirectories: [String]? = nil) throws -> Self
+                        searchDirectories: [String]? = nil,
+                        bundleURL: URL = Bundle.main.bundleURL) throws -> Self
     {
-        let directories = searchDirectories ?? ["/opt/homebrew/bin", "/usr/local/bin"]
-            + (environment["PATH"] ?? "").split(separator: ":").map(String.init)
-        guard let executable = directories.filter({ $0.hasPrefix("/") })
-            .map({ URL(fileURLWithPath: $0).appendingPathComponent("scrcpy").standardizedFileURL })
-            .first(where: { FileManager.default.isExecutableFile(atPath: $0.path) })
-        else {
-            throw ScrcpyError.notInstalled
+        let executable: URL
+        var childEnvironment = environment
+        if bundleURL.pathExtension.lowercased() == "app" {
+            let contents = bundleURL.standardizedFileURL.appendingPathComponent("Contents")
+            executable = contents.appendingPathComponent("Helpers/scrcpy")
+            let resources = contents.appendingPathComponent("Resources/scrcpy")
+            let server = resources.appendingPathComponent("scrcpy-server")
+            guard FileManager.default.isExecutableFile(atPath: executable.path),
+                  [server, resources.appendingPathComponent("scrcpy.png"),
+                   resources.appendingPathComponent("disconnected.png")]
+                  .allSatisfy({ FileManager.default.fileExists(atPath: $0.path) })
+            else {
+                throw ScrcpyError.notInstalled
+            }
+            childEnvironment["SCRCPY_SERVER_PATH"] = server.path
+            childEnvironment["SCRCPY_ICON_DIR"] = resources.path
+        } else {
+            let directories = searchDirectories ?? ["/opt/homebrew/bin", "/usr/local/bin"]
+                + (environment["PATH"] ?? "").split(separator: ":").map(String.init)
+            guard let found = directories.filter({ $0.hasPrefix("/") })
+                .map({ URL(fileURLWithPath: $0).appendingPathComponent("scrcpy").standardizedFileURL })
+                .first(where: { FileManager.default.isExecutableFile(atPath: $0.path) })
+            else {
+                throw ScrcpyError.notInstalled
+            }
+            executable = found
         }
         let adb = URL(fileURLWithPath: adbPath).standardizedFileURL
         if adb.path == ManagedADB.executable.standardizedFileURL.path {
             try ManagedADB.ensureServerCompatible(adb)
         }
-        var childEnvironment = environment
         childEnvironment["ADB"] = adb.path
         return Self(executableURL: executable, arguments: ["--serial=\(serial)", "--max-size=1600",
                                                            "--max-fps=60", "--video-bit-rate=6M", "--no-audio",

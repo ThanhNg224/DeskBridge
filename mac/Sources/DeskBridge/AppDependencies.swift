@@ -69,12 +69,11 @@ struct AppDependencies {
         try await Task.detached { try adb.devices() }.value
     }
 
-    var deviceIdentities: @Sendable (ADBBridge, [AdbDevice]) async throws -> [AdbDevice] = { adb, devices in
+    var describeDevices: @Sendable (ADBBridge, [AdbDevice]) async throws -> [AdbDevice] = { adb, devices in
         try await Task.detached {
             try devices.map { device in
                 guard device.isReady else { return device }
-                let identity = try adb.physicalDeviceID(serial: device.serial)
-                return AdbDevice(serial: device.serial, state: device.state, model: device.model, physicalID: identity)
+                return try adb.readDeviceDetails(device)
             }
         }.value
     }

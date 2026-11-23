@@ -22,3 +22,13 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+scrcpy 5.0.1 (Apache License 2.0)
+https://github.com/Genymobile/scrcpy/releases/tag/v5.0.1
+
+The bundled scrcpy executable uses SDL 3.4.18 (zlib), dav1d 1.5.4
+(BSD-2-Clause), FFmpeg 9.0.2 (LGPL 2.1 or later), libusb 1.0.30
+(LGPL 2.1 or later), and zlib 1.3.2 (zlib). See scrcpy/Licenses in this
+bundle for the license texts. Corresponding source and rebuild instructions
+are in DeskBridge-scrcpy-sources.tar.gz on the same DeskBridge release page.
+https://github.com/ThanhNg224/DeskBridge/releases
