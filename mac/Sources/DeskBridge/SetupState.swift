@@ -14,11 +14,17 @@ struct SetupState: Equatable {
     /// Phones that ADB currently reports as ready.
     var phones: [AdbDevice] = []
     var accessibility = false
+    var captureFailed = false
     var adbFound = true
     var device = Device.none
 
-    var isComplete: Bool {
+    var needsInputMonitoringHelp: Bool {
         guard accessibility, adbFound, case .ready = device else { return false }
+        return captureFailed
+    }
+
+    var isComplete: Bool {
+        guard accessibility, !captureFailed, adbFound, case .ready = device else { return false }
         return true
     }
 }

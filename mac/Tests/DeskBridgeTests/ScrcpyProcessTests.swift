@@ -146,6 +146,24 @@ struct ScrcpyProcessTests {
         await failed.stop()
     }
 
+    @Test func concurrentCloseWaitsForTheSameChildToBeReaped() async throws {
+        let (directory, _) = try fixture("trap '' TERM\necho ready > \"$READY\"\nwhile :; do :; done")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let ready = directory.appendingPathComponent("ready")
+        let config = try ScrcpyLaunchConfiguration.prepare(adbPath: "/bin/true", serial: "x",
+                                                           environment: ["READY": ready.path],
+                                                           searchDirectories: [directory.path])
+        let exits = OSAllocatedUnfairLock(initialState: [ScrcpyExit]())
+        let process = ScrcpyProcess()
+        let pid = try await process.start(config) { exit in exits.withLock { $0.append(exit) } }
+        try await waitFor { FileManager.default.fileExists(atPath: ready.path) }
+        async let first: Void = process.stop()
+        async let second: Void = process.stop()
+        _ = await (first, second)
+        #expect(exits.withLock { $0.count == 1 && $0.first?.status == SIGKILL && $0.first?.wasSignalled == true })
+        #expect(kill(pid, 0) == -1)
+    }
+
     @Test func stopEscalatesAndOnlyKillsOwnedChild() async throws {
         let (directory, _) = try fixture("trap '' TERM\necho ready > \"$READY\"\nwhile :; do :; done")
         defer { try? FileManager.default.removeItem(at: directory) }

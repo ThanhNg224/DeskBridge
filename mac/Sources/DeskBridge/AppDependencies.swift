@@ -27,7 +27,7 @@ enum WirelessRequest: Equatable, Sendable {
     case disconnect(String)
 }
 
-enum AppConnectionError: Error { case sessionStartFailed }
+enum AppConnectionError: Error { case sessionEnded(SessionEndReason) }
 
 /// The connection model's I/O; tests substitute sessions without installing event taps.
 struct AppDependencies {

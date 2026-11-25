@@ -13,6 +13,7 @@ struct DeskBridgeApp: App {
                 .modifier(RegisterWindowOpener())
                 .onAppear { appDelegate.model = model }
         }
+        .defaultSize(width: 800, height: 660)
         .windowResizability(.contentMinSize) // user can resize; the content sets the minimum
 
         MenuBarExtra {

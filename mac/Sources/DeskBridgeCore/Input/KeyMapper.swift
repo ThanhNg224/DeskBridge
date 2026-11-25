@@ -51,11 +51,16 @@ public enum KeyMapper {
         return meta
     }
 
-    /// ⌃⌥⌘⎋ hands control back to the Mac from any state.
+    /// Return from Android with Control–Escape. Existing users can still use the original release chord.
     public static func isReleaseChord(keyCode: UInt16, flags rawFlags: UInt64) -> Bool {
-        let flags = CGEventFlags(rawValue: rawFlags)
-        return Int(keyCode) == kVK_Escape
-            && flags.contains(.maskControl) && flags.contains(.maskAlternate) && flags.contains(.maskCommand)
+        guard Int(keyCode) == kVK_Escape else { return false }
+        let modifiers = CGEventFlags(rawValue: rawFlags).intersection([
+            .maskControl,
+            .maskAlternate,
+            .maskCommand,
+            .maskShift,
+        ])
+        return modifiers == .maskControl || modifiers.contains([.maskControl, .maskAlternate, .maskCommand])
     }
 }
 

@@ -4,6 +4,15 @@ import SwiftUI
 enum SettingsPane: CaseIterable {
     case connection, controls, shortcuts, general
 
+    var symbol: String {
+        switch self {
+        case .connection: "cable.connector"
+        case .controls: "slider.horizontal.3"
+        case .shortcuts: "keyboard"
+        case .general: "gearshape"
+        }
+    }
+
     var title: LocalizedStringKey {
         switch self {
         case .connection: "Connection"
@@ -24,43 +33,24 @@ struct SettingsView: View {
     @State private var confirmingAutoWifi = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            Picker("Settings section", selection: $pane) {
-                ForEach(SettingsPane.allCases, id: \.self) { item in
-                    Text(item.title).tag(item)
+        GeometryReader { geometry in
+            let hasSidebar = geometry.size.width >= 700
+            HStack(spacing: 0) {
+                if hasSidebar {
+                    sidebar
+                    Divider()
                 }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .accessibilityLabel("Settings section")
-            .controlSize(.large)
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 8)
-            Divider()
-
-            StatusHeader(
-                model: model,
-                showsMirrorControls: pane == .connection && (model.setup.isComplete || phoneScreenSuspendsHandoff)
-            )
-            if pane != .connection, model.isOperatingWireless || model.wirelessErrorMessage != nil {
-                HStack(spacing: 8) {
-                    if model.isOperatingWireless {
-                        ProgressView().controlSize(.small)
-                        wirelessProgress
-                    } else if let error = model.wirelessErrorMessage {
-                        Label(error, systemImage: "exclamationmark.circle")
+                VStack(spacing: 0) {
+                    if !hasSidebar {
+                        compactNavigation
+                        Divider()
                     }
-                    Spacer()
-                    Button("Show connection") { pane = .connection }
+                    detail
                 }
-                .font(.callout)
-                .padding(.horizontal, 24)
-                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity)
             }
-            form
         }
-        .frame(minWidth: 480, idealWidth: 560, maxWidth: 760, minHeight: 420, idealHeight: 560)
+        .frame(minWidth: 480, idealWidth: 800, minHeight: 440, idealHeight: 660)
         .onChange(of: model.wirelessIP) { model.wirelessErrorMessage = nil }
         .onChange(of: model.wirelessPort) { model.wirelessErrorMessage = nil }
         .alert("Restart ADB server?", isPresented: $confirmingADBRestart) {
@@ -89,6 +79,77 @@ struct SettingsView: View {
         }
     }
 
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 9) {
+                Image(nsImage: NSApplication.shared.applicationIconImage)
+                    .resizable().frame(width: 32, height: 32)
+                    .accessibilityHidden(true)
+                Text("DeskBridge").font(.headline)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 18)
+            List(selection: Binding<SettingsPane?>(
+                get: { pane },
+                set: {
+                    if let selection = $0 {
+                        pane = selection
+                    }
+                }
+            )) {
+                ForEach(SettingsPane.allCases, id: \.self) { item in
+                    Label(item.title, systemImage: item.symbol)
+                        .padding(.vertical, 3)
+                        .tag(item)
+                }
+            }
+            .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
+            .accessibilityLabel("Settings section")
+        }
+        .frame(width: 168)
+        .background(.regularMaterial)
+    }
+
+    private var compactNavigation: some View {
+        Picker("Settings section", selection: $pane) {
+            ForEach(SettingsPane.allCases, id: \.self) { item in
+                Text(item.title).tag(item)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .accessibilityLabel("Settings section")
+        .controlSize(.large)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 8)
+    }
+
+    private var detail: some View {
+        VStack(spacing: 0) {
+            StatusHeader(
+                model: model,
+                showsMirrorControls: pane == .connection && (model.setup.isComplete || phoneScreenSuspendsHandoff)
+            )
+            if pane != .connection, model.isOperatingWireless || model.wirelessErrorMessage != nil {
+                HStack(spacing: 8) {
+                    if model.isOperatingWireless {
+                        ProgressView().controlSize(.small)
+                        wirelessProgress
+                    } else if let error = model.wirelessErrorMessage {
+                        Label(error, systemImage: "exclamationmark.circle")
+                    }
+                    Spacer()
+                    Button("Show connection") { pane = .connection }
+                }
+                .font(.callout)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 8)
+            }
+            form
+        }
+    }
+
     private var form: some View {
         Form {
             switch pane {
@@ -100,6 +161,14 @@ struct SettingsView: View {
                 }
                 phoneSection
                 connectionSection
+                if let details = model.connectionErrorDetails {
+                    Section {
+                        DisclosureGroup("Technical details") {
+                            Text(verbatim: details)
+                                .textSelection(.enabled)
+                        }
+                    }
+                }
                 wirelessSection
             case .controls:
                 controls
@@ -132,7 +201,7 @@ struct SettingsView: View {
 
     private var handoffSection: some View {
         Section("Control your phone") {
-            phonePositionPicker
+            PhonePlacementView(edge: $model.prefs.edge)
             if !phoneScreenSuspendsHandoff {
                 Text(handoffHint)
                     .font(.callout)
@@ -169,11 +238,24 @@ struct SettingsView: View {
         Section("Keyboard & clipboard") {
             Toggle("⌘ acts as Ctrl (⌘C, ⌘V, ⌘A)", isOn: $model.prefs.commandIsControl)
             Toggle("Share the clipboard (text)", isOn: $model.prefs.shareClipboard)
+            Text("Text is shared when the pointer crosses between your Mac and phone.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
     @ViewBuilder
     private var shortcuts: some View {
+        Section("Control") {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Return pointer to Mac")
+                Text("Control + Esc")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Return pointer to Mac: Control + Escape")
+        }
         Section("Android navigation") {
             shortcutRow("Home", "⌥H")
             shortcutRow("Back", "⌥B")
@@ -224,7 +306,11 @@ struct SettingsView: View {
         HStack {
             Text(title)
             Spacer()
-            Text(verbatim: keys).foregroundStyle(.secondary)
+            Text(verbatim: keys)
+                .font(.system(.callout, design: .rounded, weight: .medium))
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
         }
     }
 
@@ -296,16 +382,18 @@ struct SettingsView: View {
                     .pickerStyle(.segmented)
                     .disabled(model.isOperatingWireless || !model.isEnabled)
                 }
-                HStack(spacing: 8) {
-                    Label(phone.isWireless ? "Wi-Fi" : "USB",
-                          systemImage: phone.isWireless ? "wifi" : "cable.connector")
-                        .foregroundStyle(.secondary)
-                    Spacer(minLength: 8)
-                    if phone.isWireless {
-                        Button("Disconnect Wi-Fi", role: .destructive) {
-                            model.disconnectWireless(serial: phone.serial)
+                if phone.isWireless || !model.selectedPhoneHasBothTransports {
+                    HStack(spacing: 8) {
+                        Label(phone.isWireless ? "Wi-Fi" : "USB",
+                              systemImage: phone.isWireless ? "wifi" : "cable.connector")
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 8)
+                        if phone.isWireless {
+                            Button("Disconnect Wi-Fi", role: .destructive) {
+                                model.disconnectWireless(serial: phone.serial)
+                            }
+                            .disabled(model.isOperatingWireless)
                         }
-                        .disabled(model.isOperatingWireless)
                     }
                 }
                 if model.canRetryConnection {

@@ -61,8 +61,11 @@ struct RemoteInputTests {
         #expect(action(.key(code: UInt16(kVK_Function), down: true, flags: 0)) == .ignore)
     }
 
-    @Test func releaseChordGivesControlBackOnKeyDownOnly() {
-        let chord = CGEventFlags([.maskControl, .maskAlternate, .maskCommand]).rawValue
+    @Test(arguments: [
+        CGEventFlags.maskControl.rawValue,
+        CGEventFlags([.maskControl, .maskAlternate, .maskCommand]).rawValue
+    ])
+    func releaseChordGivesControlBackOnKeyDownOnly(_ chord: UInt64) {
         #expect(action(.key(code: UInt16(kVK_Escape), down: true, flags: chord)) == .releaseToMac)
         // The key-up of the chord is a normal Escape release.
         #expect(action(.key(code: UInt16(kVK_Escape), down: false, flags: chord)) != .releaseToMac)

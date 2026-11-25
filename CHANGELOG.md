@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.1 (2026-11-25)
+
+- Connection shows the phone’s position beside the Mac. Wide windows use a sidebar for Connection, Controls, Shortcuts, and General.
+- **Accessibility setup** offers Input Monitoring as a fallback when capture fails after Accessibility is granted.
+- **Enable control** is visible in the connection flow. Return the pointer to the Mac with **Control + Esc** (the original shortcut also works).
+- **Controls** explains when copied text moves between devices. Connection errors now suggest a recovery step and let you copy technical details. The USB/Wi-Fi picker also shows the active USB connection without a duplicate row.
+- Closing the phone screen reliably returns control to the screen edge, including when the screen helper takes longer to exit.
+
 ## 1.5.0 (2026-11-25)
 
 - **Connection** guides you through Accessibility access, installing Android tools when needed, and connecting and authorizing your phone by USB.

@@ -7,28 +7,17 @@ struct MenuBarView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top, spacing: 8) {
-                Circle()
-                    .fill(model.phase.color)
-                    .frame(width: 8, height: 8)
-                    .padding(.top, 6)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("DeskBridge").font(.headline)
-                    StatusLine(text: model.status)
-                }
-                Spacer(minLength: 8)
-                Toggle("Enabled", isOn: $model.isEnabled)
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-                    .accessibilityLabel("Enabled")
-            }
+            PhoneStatus(model: model)
+
+            Toggle("Enable control", isOn: $model.isEnabled)
+                .toggleStyle(.switch)
 
             if !model.setup.isComplete {
                 Button("Finish setup…", action: openSetup)
             }
 
             MirrorControls(model: model, expandsPrimaryAction: true)
+            ReleaseShortcut()
 
             Divider()
 

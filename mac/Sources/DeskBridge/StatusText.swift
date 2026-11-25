@@ -7,7 +7,10 @@ enum StatusText {
     static let paused = String(localized: "Paused")
     static let noDevice = String(localized: "Connect an Android phone via USB or Wi-Fi with debugging enabled")
     static let needsAccessibility = String(localized: "DeskBridge needs Accessibility access")
-    static let jarMissing = String(localized: "The Android server file is missing. Run scripts/build_server.sh")
+    static let checkInputMonitoring = String(localized: "Check Input Monitoring to enable mouse and keyboard control.")
+    static let jarMissing = String(localized: "Reinstall DeskBridge to restore the missing phone connection files.")
+    static let adbFailure =
+        String(localized: "Android tools could not reach the phone. Check its connection and try again.")
     static let preparingConnection = String(localized: "Preparing connection…")
     static let connectionCancelled = String(localized: "Connection cancelled")
 
@@ -36,25 +39,39 @@ enum StatusText {
     }
 
     static func controlling(_ name: String) -> String {
-        String(localized: "Controlling \(name). Press ⌃⌥⌘⎋ to give the mouse back to the Mac.")
+        String(localized: "Controlling \(name). Press ⌃⎋ to give the mouse back to the Mac.")
     }
 
     static func notAuthorized(_ state: String) -> String {
         String(localized: "Allow this Mac on the phone (\(state))")
     }
 
-    static func ended(_ reason: SessionEndReason) -> String {
+    static func ended(_ reason: SessionEndReason, accessibilityGranted: Bool) -> String {
         if reason.isInjectionDenied {
             return String(localized: "The phone refused input. On Xiaomi, turn on “USB debugging (Security settings)”.")
         }
         switch reason {
         case .stopped: return paused
-        case .captureDenied: return needsAccessibility
-        case .deviceSilent: return String(localized: "The phone stopped responding")
-        case .protocolError: return String(localized: "Unexpected reply from the phone")
-        case let .adbFailed(detail): return detail
-        case let .connectionLost(log):
-            return log.isEmpty ? String(localized: "The connection to the phone was lost") : log
+        case .captureDenied: return accessibilityGranted ? checkInputMonitoring : needsAccessibility
+        case .deviceSilent,
+             .connectionLost: return String(
+                localized: "The phone disconnected. Check the cable or Wi-Fi, then try again."
+            )
+        case .protocolError: return String(localized: "The phone sent an unexpected reply. Reconnect it and try again.")
+        case .adbFailed: return adbFailure
         }
+    }
+
+    static func details(for reason: SessionEndReason) -> String? {
+        switch reason {
+        case let .adbFailed(detail), let .connectionLost(detail), let .protocolError(detail):
+            diagnostic(detail)
+        default: nil
+        }
+    }
+
+    static func diagnostic(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : String(trimmed.prefix(2048))
     }
 }

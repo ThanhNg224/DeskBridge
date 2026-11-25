@@ -81,33 +81,37 @@ private final class ScrcpyChild: @unchecked Sendable {
         self.onExit = onExit
         let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: queue)
         exitSource = source
-        source.setEventHandler { [self] in reapIfExited() }
+        source.setEventHandler { [self] in reap(waitForExit: true) }
         source.resume()
         // A child can exit before the watcher is registered.
-        queue.async { [self] in reapIfExited() }
+        queue.async { [self] in reap() }
     }
 
     func stop() {
         queue.async { [self] in
-            reapIfExited()
+            reap()
             guard !exited, !stopping else { return }
             stopping = true
             kill(pid, SIGTERM)
             queue.asyncAfter(deadline: .now() + .seconds(1)) { [self] in
-                reapIfExited()
+                reap()
                 if !exited {
                     kill(pid, SIGKILL)
+                    // The exit notification can already have been delivered. Finish the wait
+                    // on this child's private queue so closing the mirror always resumes handoff.
+                    reap(waitForExit: true)
                 }
             }
         }
     }
 
-    private func reapIfExited() {
+    private func reap(waitForExit: Bool = false) {
         guard !exited else { return }
         var status: Int32 = 0
-        var result = waitpid(pid, &status, WNOHANG)
+        let options = waitForExit ? 0 : WNOHANG
+        var result = waitpid(pid, &status, options)
         while result < 0, errno == EINTR {
-            result = waitpid(pid, &status, WNOHANG)
+            result = waitpid(pid, &status, options)
         }
         guard result == pid || (result < 0 && errno == ECHILD) else { return }
         exited = true

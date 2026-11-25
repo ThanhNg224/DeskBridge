@@ -41,6 +41,23 @@ struct KeyMapperTests {
 
     @Test func releaseChord() {
         let chord = CGEventFlags([.maskControl, .maskAlternate, .maskCommand]).rawValue
+        let escape = UInt16(kVK_Escape)
+        for flags: CGEventFlags in [
+            .maskControl,
+            [.maskControl, .maskAlphaShift],
+            [.maskControl, .maskAlternate, .maskCommand, .maskShift],
+        ] {
+            #expect(KeyMapper.isReleaseChord(keyCode: escape, flags: flags.rawValue))
+        }
+        for flags: CGEventFlags in [
+            [],
+            .maskAlternate,
+            [.maskControl, .maskAlternate],
+            [.maskControl, .maskShift],
+            [.maskControl, .maskCommand],
+        ] {
+            #expect(!KeyMapper.isReleaseChord(keyCode: escape, flags: flags.rawValue))
+        }
         #expect(KeyMapper.isReleaseChord(keyCode: UInt16(kVK_Escape), flags: chord))
         #expect(!KeyMapper.isReleaseChord(keyCode: UInt16(kVK_Escape), flags: CGEventFlags.maskCommand.rawValue))
         #expect(!KeyMapper.isReleaseChord(keyCode: UInt16(kVK_ANSI_A), flags: chord))

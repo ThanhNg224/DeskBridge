@@ -405,6 +405,108 @@ struct AppModelTests {
         }
     }
 
+    @Test func missingAccessibilityPreventsSessionStart() async {
+        let f = ModelFixture(selected: usb.serial, devices: [usb], configure: {
+            $0.accessibility = { false }
+        })
+        defer { f.close() }
+        await f.model.refreshNow()
+        #expect(!f.model.setup.accessibility)
+        #expect(f.model.status == StatusText.needsAccessibility)
+        #expect(f.sessions.isEmpty)
+    }
+
+    @Test func captureFailureSurvivesDiscoveryUntilSuccessfulRetry() async throws {
+        let f = ModelFixture(selected: usb.serial, devices: [usb])
+        defer { f.close() }
+        await f.model.refreshNow()
+        let first = try #require(f.sessions.first)
+        first.emit(.ended(.captureDenied))
+        await eventually { f.model.setup.captureFailed }
+        #expect(f.model.setup.accessibility)
+        #expect(!f.model.setup.isComplete)
+        #expect(f.model.status == StatusText.checkInputMonitoring)
+
+        await f.model.refreshNow()
+        #expect(f.model.setup.accessibility)
+        #expect(f.model.setup.captureFailed)
+        #expect(!f.model.setup.isComplete)
+
+        f.model.retryConnection()
+        await eventually { f.sessions.count == 2 }
+        #expect(f.model.setup.captureFailed)
+        f.sessions[1].emit(.local)
+        await eventually { !f.model.setup.captureFailed }
+        #expect(f.model.setup.accessibility)
+        #expect(f.model.setup.isComplete)
+    }
+
+    @Test(arguments: [
+        SessionEndReason.adbFailed("adb transport failed"),
+        .connectionLost(serverLog: "server disconnected unexpectedly"),
+        .connectionLost(serverLog: "java.lang.SecurityException: requires INJECT_EVENTS"),
+    ])
+    func connectionFailureDetailsRemainAvailableUntilSuccessfulRetry(_ reason: SessionEndReason) async throws {
+        let f = ModelFixture(selected: usb.serial, devices: [usb])
+        defer { f.close() }
+        await f.model.refreshNow()
+        let first = try #require(f.sessions.first)
+        first.emit(.ended(reason))
+        await eventually { f.model.connectionErrorDetails != nil }
+        #expect(f.model.connectionErrorDetails == reason.description)
+        #expect(f.model.connectionErrorDetails?.isEmpty == false)
+        if reason.isInjectionDenied {
+            #expect(f.model.status.contains("USB debugging (Security settings)"))
+        }
+
+        f.model.retryConnection()
+        await eventually { f.sessions.count == 2 }
+        f.sessions[1].emit(.local)
+        await eventually { f.model.activePhone != nil }
+        #expect(f.model.connectionErrorDetails == nil)
+    }
+
+    @Test func discoveryReplacesDiagnosticsWhenTheFailedPhoneGoesOffline() async throws {
+        let f = ModelFixture(selected: usb.serial, devices: [usb])
+        defer { f.close() }
+        await f.model.refreshNow()
+        let session = try #require(f.sessions.first)
+        session.emit(.ended(.adbFailed("previous connection error")))
+        await eventually { f.model.connectionErrorDetails != nil }
+        f.devices = []
+        f.clock.advance(60)
+        await f.model.refreshNow()
+        #expect(f.model.status != StatusText.adbFailure)
+        #expect(f.model.connectionErrorDetails == nil)
+    }
+
+    @Test func missingPrerequisitesTakePrecedenceOverCaptureHelp() {
+        var setup = SetupState()
+        setup.accessibility = true
+        setup.captureFailed = true
+        setup.device = .ready("Phone")
+        #expect(setup.needsInputMonitoringHelp)
+        setup.adbFound = false
+        #expect(!setup.needsInputMonitoringHelp)
+        setup.adbFound = true
+        setup.device = .waiting("Phone")
+        #expect(!setup.needsInputMonitoringHelp)
+        setup.device = .ready("Phone")
+        #expect(setup.needsInputMonitoringHelp)
+    }
+
+    @Test func missingServerJarShowsActionableGuidance() async {
+        let f = ModelFixture(selected: usb.serial, devices: [usb], configure: {
+            $0.jar = { nil }
+        })
+        defer { f.close() }
+        await f.model.refreshNow()
+        #expect(f.model.status == StatusText.jarMissing)
+        #expect(f.model.status.contains("Reinstall DeskBridge"))
+        #expect(!f.model.status.contains("build_server.sh"))
+        #expect(f.sessions.isEmpty)
+    }
+
     @Test func automaticWifiIsOptInAndKeepsUSBSelected() async {
         let usb = AdbDevice(serial: "USB-A", state: "device", physicalID: "phone-1")
         let wifi = AdbDevice(serial: "192.168.1.7:5555", state: "device", physicalID: "phone-1")

@@ -9,41 +9,116 @@ extension AppModel.Phase {
         case .controlling: .blue
         }
     }
+
+    var symbol: String {
+        switch self {
+        case .paused: "pause.circle.fill"
+        case .searching: "magnifyingglass.circle.fill"
+        case .connected: "checkmark.circle.fill"
+        case .controlling: "cursorarrow.circle.fill"
+        }
+    }
 }
 
-/// Top of the Settings window: live status (coloured dot + text), the master switch and the release chord.
+/// Live phone status and control in the Settings window.
 struct StatusHeader: View {
     @Bindable var model: AppModel
     let showsMirrorControls: Bool
 
     var body: some View {
-        HStack(spacing: 14) {
-            Image(nsImage: NSApplication.shared.applicationIconImage)
-                .resizable()
-                .frame(width: 52, height: 52)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 16) {
+                PhoneStatus(model: model)
+                Toggle("Enable control", isOn: $model.isEnabled)
+                    .toggleStyle(.switch)
+                    .fixedSize()
+            }
+
+            if showsMirrorControls {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 16) {
+                        MirrorControls(model: model)
+                        Spacer(minLength: 12)
+                        ReleaseShortcut()
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        MirrorControls(model: model)
+                        ReleaseShortcut()
+                    }
+                }
+            } else {
+                ReleaseShortcut()
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 14)
+        .background(.background)
+        .overlay(alignment: .bottom) { Divider() }
+    }
+}
+
+/// Shared status presentation for the window and menu bar.
+struct PhoneStatus: View {
+    let model: AppModel
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: model.phase.symbol)
+                .font(.system(size: 20, weight: .medium))
+                .foregroundStyle(model.phase.color)
+                .frame(width: 38, height: 38)
+                .background(model.phase.color.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
-                Text("DeskBridge").font(.title2.weight(.semibold))
-                HStack(alignment: .top, spacing: 6) {
-                    Circle().fill(model.phase.color).frame(width: 8, height: 8).padding(.top, 5)
-                        .accessibilityHidden(true)
+                if let phone = model.activePhone ?? model.pendingPhone ?? model.selectedPhone {
+                    Text(phone.displayName)
+                        .font(.system(.title3, design: .default, weight: .semibold))
+                        .lineLimit(2)
+                        .truncationMode(.middle)
+                        .help(phone.displayName)
+                } else {
+                    Text("Phone control")
+                        .font(.headline)
+                }
+                if let phone = model.activePhone, model.status == StatusText.connected(phone.connectionLabel)
+                    || model.status == StatusText.controlling(phone.connectionLabel)
+                {
+                    HStack(spacing: 5) {
+                        Text(model
+                            .phase == .controlling ? LocalizedStringKey("Controlling phone") :
+                            LocalizedStringKey("Connected"))
+                        Text(verbatim: "·").accessibilityHidden(true)
+                        Label(phone.isWireless ? "Wi-Fi" : "USB",
+                              systemImage: phone.isWireless ? "wifi" : "cable.connector")
+                    }
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                } else {
                     StatusLine(text: model.status)
                 }
-                if showsMirrorControls {
-                    MirrorControls(model: model)
-                        .padding(.top, 4)
-                }
-                Text("Release control: ⌃⌥⌘⎋").font(.caption).foregroundStyle(.tertiary)
             }
-            Spacer()
-            Toggle("Enabled", isOn: $model.isEnabled)
-                .toggleStyle(.switch)
-                .labelsHidden()
-                .accessibilityLabel("Enabled")
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 18)
-        .padding(.bottom, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct ReleaseShortcut: View {
+    var body: some View {
+        HStack(spacing: 5) {
+            Text("Return pointer to Mac")
+                .foregroundStyle(.secondary)
+            Text(verbatim: "Control")
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
+            Text(verbatim: "Esc")
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
+        }
+        .font(.caption)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Return pointer to Mac: Control + Escape")
     }
 }
 
@@ -57,6 +132,6 @@ struct StatusLine: View {
             .foregroundStyle(.secondary)
             .lineLimit(2, reservesSpace: true)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .help(text) // full text if a long message is cut
+            .help(text)
     }
 }

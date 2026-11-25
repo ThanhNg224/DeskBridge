@@ -30,7 +30,15 @@ final class AppModel {
     }
 
     var phase = Phase.searching
-    var status = StatusText.searching
+    var status = StatusText.searching {
+        didSet {
+            if oldValue != status {
+                connectionErrorDetails = nil
+            }
+        }
+    }
+
+    private(set) var connectionErrorDetails: String?
     var setup = SetupState()
     private(set) var selectedPhoneHasBothTransports = false
     private var selectedPhoneHasWifiTransport = false
@@ -128,6 +136,7 @@ final class AppModel {
         set {
             guard prefs.enabled != newValue else { return }
             prefs.enabled = newValue
+            connectionErrorDetails = nil
             selectionGeneration &+= 1
             cancelAutoWifi()
             cancelWireless(restoreSelection: true)
@@ -340,6 +349,7 @@ final class AppModel {
     }
 
     private func selectionChanged() {
+        connectionErrorDetails = nil
         cancelAutoWifi()
         autoWifiStatus = nil
         automaticSwitchMessage = nil
@@ -652,7 +662,13 @@ final class AppModel {
             if wirelessOperation == .startingSession {
                 failWireless(error); return
             }
-            status = selectedPhone.map { StatusText.waiting($0.connectionLabel) } ?? wirelessMessage(for: error)
+            if case ADBError.adbNotFound = error {
+                status = wirelessMessage(for: error)
+                connectionErrorDetails = nil
+            } else {
+                status = StatusText.adbFailure
+                connectionErrorDetails = StatusText.diagnostic(String(describing: error))
+            }
         }
     }
 
@@ -771,13 +787,16 @@ final class AppModel {
             phase = isEnabled ? .searching : .paused
             if !wasStopping, reason != .stopped {
                 if reason == .captureDenied {
-                    setup.accessibility = false
+                    setup.accessibility = dependencies.accessibility()
+                    setup.captureFailed = true
                 }
                 if wirelessOperation == .startingSession {
-                    failWireless(AppConnectionError.sessionStartFailed); return
+                    failWireless(AppConnectionError.sessionEnded(reason)); return
                 }
                 recordFailure()
-                status = isEnabled ? StatusText.ended(reason) : StatusText.paused
+                status = isEnabled ? StatusText.ended(reason, accessibilityGranted: setup.accessibility) : StatusText
+                    .paused
+                connectionErrorDetails = StatusText.details(for: reason)
             }
             wakeDiscovery()
             return
@@ -787,6 +806,8 @@ final class AppModel {
         switch state {
         case .starting: break
         case .local, .remote:
+            setup.captureFailed = false
+            connectionErrorDetails = nil
             activePhone = phone
             pendingPhone = nil
             if state == .local, pendingAutomaticSwitch == phone.serial {
@@ -1118,12 +1139,12 @@ final class AppModel {
 
     private func failWireless(_ error: Error) {
         let request = currentWirelessRequest, message = wirelessMessage(for: error)
-        let detail: String?
-        switch error as? ADBError {
-        case let .commandFailed(output), let .wirelessConnectionFailed(output):
-            let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-            detail = trimmed.isEmpty ? nil : String(trimmed.prefix(2048))
-        default: detail = nil
+        let detail: String? = switch error {
+        case let ADBError.commandFailed(output), let ADBError.wirelessConnectionFailed(output):
+            StatusText.diagnostic(output)
+        case let AppConnectionError.sessionEnded(reason):
+            StatusText.details(for: reason)
+        default: nil
         }
         let id = wirelessID?.uuidString ?? "unknown"
         let stage = String(describing: wirelessOperation)
@@ -1154,8 +1175,8 @@ final class AppModel {
     }
 
     private func wirelessMessage(for error: Error) -> String {
-        if error is AppConnectionError {
-            return String(localized: "The control session could not start. Check the phone, then retry.")
+        if case let AppConnectionError.sessionEnded(reason) = error {
+            return StatusText.ended(reason, accessibilityGranted: setup.accessibility)
         }
         switch error as? ADBError {
         case .invalidWirelessIP: return String(localized: "Enter a valid IPv4 address, such as 192.168.1.75.")

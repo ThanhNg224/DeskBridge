@@ -5,7 +5,9 @@
 "Paused" = "Đã tạm dừng";
 "Connect an Android phone via USB or Wi-Fi with debugging enabled" = "Kết nối điện thoại Android qua USB hoặc Wi-Fi và bật gỡ lỗi";
 "DeskBridge needs Accessibility access" = "DeskBridge cần quyền Trợ năng (Accessibility)";
-"The Android server file is missing. Run scripts/build_server.sh" = "Thiếu tệp máy chủ Android. Hãy chạy scripts/build_server.sh";
+"Reinstall DeskBridge to restore the missing phone connection files." = "Cài lại DeskBridge để khôi phục các tệp cần thiết cho kết nối điện thoại.";
+"Check Input Monitoring to enable mouse and keyboard control." = "Kiểm tra quyền Giám sát đầu vào để điều khiển điện thoại bằng chuột và bàn phím.";
+"Android tools could not reach the phone. Check its connection and try again." = "Công cụ Android không kết nối được với điện thoại. Hãy kiểm tra kết nối rồi thử lại.";
 "Connecting to %@…" = "Đang kết nối với %@…";
 "Connected to %@" = "Đã kết nối với %@";
 "Waiting for %@" = "Đang chờ %@";
@@ -13,17 +15,29 @@
 "Disconnected from %@" = "Đã ngắt kết nối với %@";
 "Preparing connection…" = "Đang chuẩn bị kết nối…";
 "Connection cancelled" = "Đã hủy kết nối";
-"Controlling %@. Press ⌃⌥⌘⎋ to give the mouse back to the Mac." = "Đang điều khiển %@. Nhấn ⌃⌥⌘⎋ để trả chuột về Mac.";
+"Controlling %@. Press ⌃⎋ to give the mouse back to the Mac." = "Đang điều khiển %@. Nhấn ⌃⎋ để trả chuột về Mac.";
 "Allow this Mac on the phone (%@)" = "Hãy cho phép máy Mac này trên điện thoại (%@)";
 "The phone refused input. On Xiaomi, turn on “USB debugging (Security settings)”." = "Điện thoại từ chối nhận thao tác. Trên Xiaomi, hãy bật “Gỡ lỗi USB (Cài đặt bảo mật)”.";
-"The phone stopped responding" = "Điện thoại không phản hồi";
-"Unexpected reply from the phone" = "Điện thoại trả lời không hợp lệ";
-"The connection to the phone was lost" = "Mất kết nối với điện thoại";
+"The phone disconnected. Check the cable or Wi-Fi, then try again." = "Đã mất kết nối với điện thoại. Kiểm tra cáp hoặc Wi-Fi rồi thử lại.";
+"The phone sent an unexpected reply. Reconnect it and try again." = "Điện thoại phản hồi không như dự kiến. Hãy kết nối lại điện thoại rồi thử lại.";
+
+"Phone control" = "Điều khiển điện thoại";
+
+"Connected" = "Đã kết nối";
+
+"Controlling phone" = "Đang điều khiển điện thoại";
 
 /* Menu bar */
 "DeskBridge" = "DeskBridge";
-"Enabled" = "Bật";
-"Release control: ⌃⌥⌘⎋" = "Trả chuột về Mac: ⌃⌥⌘⎋";
+"Enable control" = "Bật điều khiển";
+"Control" = "Điều khiển";
+"Return pointer to Mac" = "Trả chuột về Mac";
+"Control + Esc" = "Control + Esc";
+"Return pointer to Mac: Control + Escape" = "Trả chuột về Mac: Control + Escape";
+"Release control: Control + Escape" = "Trả chuột về Mac: Control + Escape";
+"Technical details" = "Chi tiết kỹ thuật";
+"Text is shared when the pointer crosses between your Mac and phone." = "Văn bản đã sao chép đi theo con trỏ khi bạn chuyển giữa Mac và điện thoại.";
+"Release control: ⌃⎋" = "Trả chuột về Mac: ⌃⎋";
 "Finish setup…" = "Hoàn tất cài đặt…";
 "Settings…" = "Cài đặt…";
 "Quit" = "Thoát";
@@ -49,7 +63,9 @@
 "Turn on DeskBridge in Accessibility so it can use your mouse and keyboard to control the phone." = "Bật DeskBridge trong mục Trợ năng để dùng chuột và bàn phím điều khiển điện thoại.";
 "Open Settings for Accessibility" = "Mở cài đặt Trợ năng";
 "Open Settings" = "Mở Cài đặt";
-"Input Monitoring" = "Giám sát đầu vào";
+"Check Input Monitoring" = "Kiểm tra quyền Giám sát đầu vào";
+"Accessibility is on, but DeskBridge could not use your mouse and keyboard. Check DeskBridge in Input Monitoring, then try again." = "Quyền Trợ năng đã bật nhưng DeskBridge chưa dùng được chuột và bàn phím. Hãy kiểm tra quyền của DeskBridge trong mục Giám sát đầu vào (Input Monitoring), rồi thử lại.";
+"Open Input Monitoring" = "Mở Giám sát đầu vào";
 "Install Android tools (adb)" = "Cài công cụ Android (adb)";
 "Download Platform Tools for Mac from Google, then select the ZIP here." = "Tải Platform Tools cho Mac từ Google rồi chọn tệp ZIP tại đây.";
 "Connect your phone by USB" = "Kết nối điện thoại qua USB";
@@ -147,7 +163,6 @@
 "Starting control session…" = "Đang khởi động phiên điều khiển…";
 "Retry now" = "Thử lại ngay";
 "Cancel" = "Hủy";
-"The control session could not start. Check the phone, then retry." = "Không thể khởi động phiên điều khiển. Hãy kiểm tra điện thoại rồi thử lại.";
 "The connection timed out. Check the phone and Wi-Fi, then retry." = "Kết nối quá thời gian chờ. Hãy kiểm tra điện thoại và Wi-Fi rồi thử lại.";
 "The Wi-Fi device is not reachable. Check its address and network, then retry." = "Không thể truy cập thiết bị Wi-Fi. Hãy kiểm tra địa chỉ và mạng rồi thử lại.";
 "ADB cannot reach the phone. Check the network and the Local Network permission of the app that started the ADB server." = "ADB không thể kết nối tới điện thoại. Hãy kiểm tra mạng và quyền Mạng cục bộ của ứng dụng đã khởi chạy máy chủ ADB.";

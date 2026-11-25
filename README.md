@@ -33,7 +33,7 @@ Open DeskBridge from **Applications**. If macOS says it can't verify the develop
 
 ### 2. Follow the setup guide on your Mac
 
-1. In **Connection**, click **Open Settings for Accessibility** and turn on **DeskBridge** so it can use your mouse and keyboard to control the phone.
+1. In **Connection**, click **Open Settings for Accessibility** and turn on **DeskBridge** so it can use your mouse and keyboard to control the phone. If DeskBridge still cannot use your mouse and keyboard, click **Open Input Monitoring**, check that DeskBridge is enabled there, then click **Try again** in DeskBridge.
 2. If you see **Install Android tools (adb)**, click **Download from Google** and choose **Download SDK Platform-Tools for Mac**. Review Google's terms to download the file. Back in DeskBridge, click **Select ZIP…** and choose `platform-tools-latest-darwin.zip` in **Downloads**. Keep the ZIP compressed so DeskBridge can install it for you.
 
 ### 3. Connect your phone by USB
@@ -42,7 +42,7 @@ Open DeskBridge from **Applications**. If macOS says it can't verify the develop
 2. In **Settings**, search for **Developer options** and turn on **USB debugging**. On Xiaomi/HyperOS, also turn on **USB debugging (Security settings)** if available.
 3. Plug the phone into your Mac, unlock it and tap **Allow** when asked to allow USB debugging. If multiple phones are connected, pick yours in DeskBridge.
 
-When DeskBridge shows **Connected**, choose the phone's position under **Control your phone**. For example, choose **Right** if your phone sits to the right of your Mac. Push the pointer past that edge to control the phone, then push it back across the same edge to return. You can also press **Control + Option + Command + Esc** to return immediately.
+With **Enable control** on, wait for **Connected**, then choose the phone's position under **Control your phone**. For example, choose **Right** if your phone sits to the right of your Mac. Push the pointer past that edge to control the phone, then push it back across the same edge to return. You can also press **Control + Esc** to return immediately.
 
 Once USB works, you can [switch to Wi-Fi](#connect-over-wi-fi).
 
@@ -54,7 +54,7 @@ Once USB works, you can [switch to Wi-Fi](#connect-over-wi-fi).
 - **Copy and paste shortcuts just work.** `Cmd+C`, `Cmd+V` and `Cmd+A` become their Android equivalents, and copied text follows the pointer: copy on the Mac, paste on the phone, and the other way round.
 - **Right click goes Back**, like on a phone (you can switch it to a real right click).
 - **Type Vietnamese** with your Mac's input method (Telex, VNI): compose the word on the Mac, it appears on the phone when you press space.
-- **Always a way out.** Press **⌃⌥⌘⎋** (Control+Option+Command+Esc) to get the pointer back on the Mac instantly.
+- **Always a way out.** Press **Control + Esc** to get the pointer back on the Mac instantly.
 
 ## Open the phone screen on your Mac
 
@@ -81,17 +81,17 @@ These shortcuts work while the pointer is on the phone. Hold **Option (⌥)** an
 | Mute / unmute | `Option + M` |
 | Play / pause media | `Option + P` |
 
-To switch apps, keep holding **Option**, press **Tab** until the app you want is selected, then release **Option**. The phone controls the appearance of the switcher. `Command + Tab` continues to switch Mac apps.
+To switch apps, keep holding **Option**, press **Tab** until the app you want is selected, then release **Option**. The phone controls the appearance of the switcher. `Command + Tab` continues to switch Mac apps. To immediately return control to your Mac, press **Control + Esc**.
 
-With **⌘ acts as Ctrl** enabled in DeskBridge settings, use `Command + C`, `Command + V` and `Command + A` on the phone to copy, paste and select all. Right-click also goes Back by default. To immediately return control to your Mac, press **Control + Option + Command + Esc**.
+With **⌘ acts as Ctrl** enabled in DeskBridge settings, use `Command + C`, `Command + V` and `Command + A` on the phone to copy, paste and select all. Right-click also goes Back by default.
 
 The phone's Android version and manufacturer determine how media, mute, brightness and the notification panel behave. Adjusting brightness may turn off automatic brightness. Turning off the screen does not necessarily require a PIN when you wake it; that depends on your phone's security settings.
 
 ## Questions
 
-**DeskBridge can't find the phone.** Unlock it, unplug and reconnect the cable, then look for the USB debugging prompt. If the phone only charges and DeskBridge still can't see it, try another cable that supports data.
+**DeskBridge can't find the phone.** Unlock it, unplug and reconnect the cable, then look for the USB debugging prompt. If the phone only charges and DeskBridge still can't see it, try another cable that supports data. If **Connection** shows **Technical details**, expand it to select and copy the diagnostic for support.
 
-**The pointer does not cross.** Check that DeskBridge says **Connected** and **Enabled** is on. Check the selected edge under **Control your phone** in **Connection**. If the phone screen window is open, close it to resume screen-edge control.
+**The pointer does not cross.** Check that DeskBridge says **Connected** and **Enable control** is on. Check the selected edge under **Control your phone** in **Connection**. If the phone screen window is open, close it to resume screen-edge control.
 
 **Where can I find my version?** Open **General → Updates** to see the installed version and check for a newer release.
 
@@ -108,7 +108,7 @@ If you've already set up wireless debugging on your phone, open **Manual Wi-Fi**
 ## Known limits
 
 - **Typing with an input method** (Vietnamese Telex/VNI, ...): the word is composed on the Mac, where a small preview appears at the bottom of the screen, and goes to the phone when you commit it (space, punctuation). Words with accents reach the phone by pasting: the phone's clipboard is used for a moment and then put back (an image on the clipboard is lost), and Samsung may show its "Copied to clipboard" toast. Other input methods (Japanese, Chinese) are untested.
-- **Clipboard:** text only (no images or files). It is shared when the pointer crosses, so something you copy by touching the phone while the pointer is on the Mac reaches the Mac the next time the pointer comes back from the phone. Samsung shows a "Copied to clipboard" toast when text arrives on the phone.
+- **Clipboard:** text only (no images or files). It follows the pointer when it crosses between the Mac and phone. Samsung shows a "Copied to clipboard" toast when text arrives on the phone.
 - **One phone at a time.** With several plugged in or connected, DeskBridge lets you choose which one.
 - **Connection options:** USB avoids Wi-Fi interference. Wi-Fi provides cable-free use, with latency that depends on your local network.
 - **Rotating the phone** while the pointer is on it takes effect the next time the pointer enters.

@@ -21,9 +21,6 @@ struct SetupChecklist: View {
                         Permissions.openSettings(.accessibility)
                     }
                     .buttonStyle(.borderedProminent)
-                    Button("Input Monitoring") {
-                        Permissions.openSettings(.inputMonitoring)
-                    }
                 }
             } else if !setup.adbFound || model.installingADB {
                 task("Install Android tools (adb)") {
@@ -40,6 +37,18 @@ struct SetupChecklist: View {
                     if let error = model.adbInstallError {
                         Text(verbatim: error).font(.caption).foregroundStyle(.red)
                     }
+                }
+            } else if setup.needsInputMonitoringHelp {
+                task("Check Input Monitoring") {
+                    Text(
+                        "Accessibility is on, but DeskBridge could not use your mouse and keyboard. Check DeskBridge in Input Monitoring, then try again."
+                    )
+                    Button("Open Input Monitoring") {
+                        Permissions.openSettings(.inputMonitoring)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Button("Try again") { model.retryConnection() }
+                        .disabled(!model.isEnabled || model.isOperatingWireless)
                 }
             } else {
                 deviceTask
