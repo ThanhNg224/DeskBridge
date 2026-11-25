@@ -26,6 +26,7 @@ enum SettingsPane: CaseIterable {
 struct SettingsView: View {
     @Bindable var model: AppModel
     @Binding var pane: SettingsPane
+    @Binding var appearance: AppAppearance
     @State private var showingManualWifi = false
     @State private var confirmingADBRestart = false
     @State private var detectedPhoneToConfirm: AppModel.DetectedPhone?
@@ -278,6 +279,14 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var general: some View {
+        Section("Appearance") {
+            Picker("Theme", selection: $appearance) {
+                Text("System").tag(AppAppearance.system)
+                Text("Light").tag(AppAppearance.light)
+                Text("Dark").tag(AppAppearance.dark)
+            }
+            .pickerStyle(.segmented)
+        }
         Section("Startup & Dock") {
             Toggle("Launch at login", isOn: $model.launchAtLogin)
             Toggle("Show icon in the Dock", isOn: $model.showDockIcon)

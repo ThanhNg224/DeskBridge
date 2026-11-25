@@ -207,3 +207,10 @@
 "Could not check for updates. Check your connection and try again." = "Không thể kiểm tra cập nhật. Hãy kiểm tra kết nối và thử lại.";
 "Open download page" = "Mở trang tải về";
 "GitHub limited or refused the request. Try again later." = "GitHub đã giới hạn hoặc từ chối yêu cầu. Hãy thử lại sau.";
+
+/* Appearance */
+"Appearance" = "Giao diện";
+"Theme" = "Chế độ";
+"System" = "Theo hệ thống";
+"Light" = "Sáng";
+"Dark" = "Tối";

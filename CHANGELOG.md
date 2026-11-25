@@ -2,6 +2,7 @@
 
 ## 1.5.1 (2026-11-25)
 
+- Choose System, Light, or Dark in **General → Appearance**. DeskBridge remembers the choice.
 - Connection shows the phone’s position beside the Mac. Wide windows use a sidebar for Connection, Controls, Shortcuts, and General.
 - **Accessibility setup** offers Input Monitoring as a fallback when capture fails after Accessibility is granted.
 - **Enable control** is visible in the connection flow. Return the pointer to the Mac with **Control + Esc** (the original shortcut also works).
