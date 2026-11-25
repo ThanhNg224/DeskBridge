@@ -44,19 +44,28 @@
 "Could not show the phone screen. Check the phone connection and try again." = "Không mở được màn hình điện thoại. Hãy kiểm tra kết nối rồi thử lại.";
 
 /* Setup checklist */
-"Setup" = "Thiết lập";
-"Accessibility access" = "Quyền Trợ năng";
-"Needed to read the mouse and keyboard." = "Cần để đọc chuột và bàn phím.";
+"Set up DeskBridge" = "Thiết lập DeskBridge";
+"Allow Accessibility access" = "Cấp quyền Trợ năng";
+"Turn on DeskBridge in Accessibility so it can use your mouse and keyboard to control the phone." = "Bật DeskBridge trong mục Trợ năng để dùng chuột và bàn phím điều khiển điện thoại.";
+"Open Settings for Accessibility" = "Mở cài đặt Trợ năng";
 "Open Settings" = "Mở Cài đặt";
 "Input Monitoring" = "Giám sát đầu vào";
-"Android tools (adb)" = "Công cụ Android (adb)";
-"Install them with Homebrew:" = "Cài bằng Homebrew:";
-"Copy command" = "Sao chép lệnh";
-"Phone: %@" = "Điện thoại: %@";
-"Phone not authorized (%@)" = "Điện thoại chưa cho phép (%@)";
-"Unlock the phone and tap Allow." = "Mở khóa điện thoại và chạm Cho phép.";
-"No phone found" = "Không thấy điện thoại";
-"Connect via USB cable or Wi-Fi (wireless debugging)." = "Cắm cáp USB hoặc kết nối qua Wi-Fi (gỡ lỗi không dây).";
+"Install Android tools (adb)" = "Cài công cụ Android (adb)";
+"Download Platform Tools for Mac from Google, then select the ZIP here." = "Tải Platform Tools cho Mac từ Google rồi chọn tệp ZIP tại đây.";
+"Connect your phone by USB" = "Kết nối điện thoại qua USB";
+"Tap Build number seven times in About phone. On Samsung, look in Software information." = "Chạm Số hiệu bản tạo bảy lần trong mục Thông tin điện thoại. Trên Samsung, mục này nằm trong Thông tin phần mềm.";
+"Turn on USB debugging in Developer options. Connect a USB data cable, unlock your phone, then tap Allow." = "Bật Gỡ lỗi USB trong Tùy chọn nhà phát triển. Cắm cáp USB truyền dữ liệu, mở khóa điện thoại rồi chạm Cho phép.";
+"Android developer-options guide" = "Hướng dẫn bật Tùy chọn nhà phát triển";
+"Allow USB debugging on your phone" = "Cho phép gỡ lỗi USB trên điện thoại";
+"Unlock your phone and tap Allow on the USB debugging prompt." = "Mở khóa điện thoại rồi chạm Cho phép khi thấy thông báo gỡ lỗi USB.";
+"Choose a phone" = "Chọn điện thoại";
+"Select the phone you want to control below." = "Chọn điện thoại bạn muốn điều khiển trong danh sách bên dưới.";
+"Control your phone" = "Điều khiển điện thoại";
+"Push the pointer past the left edge to control your phone." = "Đẩy con trỏ qua cạnh trái để điều khiển điện thoại.";
+"Push the pointer past the right edge to control your phone." = "Đẩy con trỏ qua cạnh phải để điều khiển điện thoại.";
+"Push the pointer past the top edge of your main display to control your phone." = "Đẩy con trỏ qua cạnh trên của màn hình chính để điều khiển điện thoại.";
+"Push the pointer past the bottom edge of your main display to control your phone." = "Đẩy con trỏ qua cạnh dưới của màn hình chính để điều khiển điện thoại.";
+"Move the pointer back past the same edge to return to your Mac." = "Đẩy con trỏ ngược qua cùng cạnh để trở về Mac.";
 
 /* Settings */
 "Layout" = "Bố cục";
@@ -98,6 +107,7 @@
 "Audio & media" = "Âm thanh và media";
 "Startup & Dock" = "Khởi động và Dock";
 "Updates" = "Cập nhật";
+"Installed version" = "Phiên bản đang dùng";
 "Manual Wi-Fi" = "Wi-Fi thủ công";
 "Expanded" = "Đã mở rộng";
 "Collapsed" = "Đã thu gọn";

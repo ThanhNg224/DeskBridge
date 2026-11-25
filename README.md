@@ -21,9 +21,9 @@ You'll need an Apple Silicon Mac running macOS 14 or later, an Android phone or 
 
 ### 1. Install DeskBridge on your Mac
 
-[**Download DeskBridge.zip**](https://github.com/ThanhNg224/DeskBridge/releases/latest/download/DeskBridge.zip), double-click the ZIP, then drag **DeskBridge** into **Applications**.
+**ZIP.** [Download DeskBridge.zip](https://github.com/ThanhNg224/DeskBridge/releases/latest/download/DeskBridge.zip), double-click the ZIP, then drag **DeskBridge** into **Applications**.
 
-If you already use Homebrew, run this in Terminal instead:
+**Homebrew.** If you already use Homebrew, this command installs DeskBridge and the Android tools it uses to connect to your phone.
 
 ```sh
 brew install --cask thanhng224/deskbridge/deskbridge
@@ -31,10 +31,10 @@ brew install --cask thanhng224/deskbridge/deskbridge
 
 Open DeskBridge from **Applications**. If macOS says it can't verify the developer, open **System Settings → Privacy & Security**, scroll down and click **Open Anyway** for DeskBridge. [Apple's first-launch instructions](https://support.apple.com/en-us/102445) show where to find this button.
 
-### 2. Follow the setup checklist on your Mac
+### 2. Follow the setup guide on your Mac
 
-1. Under **Accessibility access**, click **Open Settings** and turn on **DeskBridge** so it can use your mouse and keyboard to control the phone.
-2. If **Android tools (adb)** is missing, click **Download from Google** and choose **Download SDK Platform-Tools for Mac**. Review Google's terms to download the file. Back in DeskBridge, click **Select ZIP…** and choose `platform-tools-latest-darwin.zip` in **Downloads**. Leave this ZIP compressed so DeskBridge can install it for you.
+1. In **Connection**, click **Open Settings for Accessibility** and turn on **DeskBridge** so it can use your mouse and keyboard to control the phone.
+2. If you see **Install Android tools (adb)**, click **Download from Google** and choose **Download SDK Platform-Tools for Mac**. Review Google's terms to download the file. Back in DeskBridge, click **Select ZIP…** and choose `platform-tools-latest-darwin.zip` in **Downloads**. Keep the ZIP compressed so DeskBridge can install it for you.
 
 ### 3. Connect your phone by USB
 
@@ -42,7 +42,7 @@ Open DeskBridge from **Applications**. If macOS says it can't verify the develop
 2. In **Settings**, search for **Developer options** and turn on **USB debugging**. On Xiaomi/HyperOS, also turn on **USB debugging (Security settings)** if available.
 3. Plug the phone into your Mac, unlock it and tap **Allow** when asked to allow USB debugging. If multiple phones are connected, pick yours in DeskBridge.
 
-When DeskBridge shows **Connected**, open **Controls** and choose the edge where you put your phone. For example, choose **Right** if your phone sits to the right of your Mac. Move the pointer past that edge to use the phone. Press **Control + Option + Command + Esc** to bring it back to the Mac.
+When DeskBridge shows **Connected**, choose the phone's position under **Control your phone**. For example, choose **Right** if your phone sits to the right of your Mac. Push the pointer past that edge to control the phone, then push it back across the same edge to return. You can also press **Control + Option + Command + Esc** to return immediately.
 
 Once USB works, you can [switch to Wi-Fi](#connect-over-wi-fi).
 
@@ -91,7 +91,9 @@ The phone's Android version and manufacturer determine how media, mute, brightne
 
 **DeskBridge can't find the phone.** Unlock it, unplug and reconnect the cable, then look for the USB debugging prompt. If the phone only charges and DeskBridge still can't see it, try another cable that supports data.
 
-**The pointer does not cross.** Check that DeskBridge says **Connected** and **Enabled** is on. In **Controls**, check that the selected edge matches the side you're moving toward.
+**The pointer does not cross.** Check that DeskBridge says **Connected** and **Enabled** is on. Check the selected edge under **Control your phone** in **Connection**. If the phone screen window is open, close it to resume screen-edge control.
+
+**Where can I find my version?** Open **General → Updates** to see the installed version and check for a newer release.
 
 **Which device is being controlled?** The header names the active phone and its USB or Wi-Fi connection. DeskBridge can fall back to another connection for the same phone. If neither connection is available, it keeps your phone selected. Use the phone picker to choose another device or the USB/Wi-Fi selector to change transport. A temporary Wi-Fi loss retries the selected IP and port automatically. **Disconnect Wi-Fi**, **Cancel**, and turning **Enabled** off stop automatic reconnection until you explicitly retry, select a connection, or enable control again. A Wi-Fi connection attempt has a 30-second limit; success means the control session is ready, not just that ADB accepted the connection.
 

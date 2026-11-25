@@ -39,7 +39,10 @@ struct SettingsView: View {
             .padding(.vertical, 8)
             Divider()
 
-            StatusHeader(model: model, showsMirrorControls: pane == .connection)
+            StatusHeader(
+                model: model,
+                showsMirrorControls: pane == .connection && (model.setup.isComplete || phoneScreenSuspendsHandoff)
+            )
             if pane != .connection, model.isOperatingWireless || model.wirelessErrorMessage != nil {
                 HStack(spacing: 8) {
                     if model.isOperatingWireless {
@@ -90,11 +93,13 @@ struct SettingsView: View {
         Form {
             switch pane {
             case .connection:
+                if !model.setup.isComplete || model.installingADB {
+                    SetupChecklist(model: model)
+                } else if model.phase == .connected || model.phase == .controlling {
+                    handoffSection
+                }
                 phoneSection
                 connectionSection
-                if !model.setup.isComplete {
-                    SetupChecklist(model: model)
-                }
                 wirelessSection
             case .controls:
                 controls
@@ -108,16 +113,50 @@ struct SettingsView: View {
         .id(pane)
     }
 
+    private var phoneScreenSuspendsHandoff: Bool {
+        switch model.mirrorPhase {
+        case .opening, .open, .focusFailed, .closing: true
+        case .idle, .notInstalled, .failed, .disconnected: false
+        }
+    }
+
+    private var phonePositionPicker: some View {
+        Picker("Android is on the", selection: $model.prefs.edge) {
+            Text("Left").tag(ScreenEdge.left)
+            Text("Right").tag(ScreenEdge.right)
+            Text("Top").tag(ScreenEdge.top)
+            Text("Bottom").tag(ScreenEdge.bottom)
+        }
+        .pickerStyle(.segmented)
+    }
+
+    private var handoffSection: some View {
+        Section("Control your phone") {
+            phonePositionPicker
+            if !phoneScreenSuspendsHandoff {
+                Text(handoffHint)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var handoffHint: LocalizedStringKey {
+        if model.phase == .controlling {
+            return "Move the pointer back past the same edge to return to your Mac."
+        }
+        switch model.prefs.edge {
+        case .left: return "Push the pointer past the left edge to control your phone."
+        case .right: return "Push the pointer past the right edge to control your phone."
+        case .top: return "Push the pointer past the top edge of your main display to control your phone."
+        case .bottom: return "Push the pointer past the bottom edge of your main display to control your phone."
+        }
+    }
+
     @ViewBuilder
     private var controls: some View {
         Section("Phone position") {
-            Picker("Android is on the", selection: $model.prefs.edge) {
-                Text("Left").tag(ScreenEdge.left)
-                Text("Right").tag(ScreenEdge.right)
-                Text("Top").tag(ScreenEdge.top)
-                Text("Bottom").tag(ScreenEdge.bottom)
-            }
-            .pickerStyle(.segmented)
+            phonePositionPicker
         }
 
         Section("Mouse & scrolling") {
@@ -162,6 +201,9 @@ struct SettingsView: View {
             Toggle("Show icon in the Dock", isOn: $model.showDockIcon)
         }
         Section("Updates") {
+            if !model.installedVersion.isEmpty {
+                LabeledContent("Installed version") { Text(verbatim: model.installedVersion) }
+            }
             HStack {
                 Button("Check for updates") { model.checkForUpdates() }
                     .disabled(model.checkingUpdates)

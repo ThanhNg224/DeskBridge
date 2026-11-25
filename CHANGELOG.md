@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.5.0 (2026-11-25)
+
+- **Connection** guides you through Accessibility access, installing Android tools when needed, and connecting and authorizing your phone by USB.
+- Once connected, choose the phone's position in **Connection** and follow the on-screen prompt to move the pointer between your Mac and phone.
+- **General → Updates** shows the installed DeskBridge version.
+- The Homebrew cask also installs Android Platform Tools. The direct ZIP download includes an in-app guide for installing the tools separately.
+
 ## 1.4.0 (2026-11-23)
 
 - The **Phone** list shows available phones by their Android device names, with a checkmark on the selected phone. A phone available over both USB and Wi-Fi appears once when DeskBridge can verify the match. Choose the transport in **Device connection**.

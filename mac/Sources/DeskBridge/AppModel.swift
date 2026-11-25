@@ -54,6 +54,10 @@ final class AppModel {
     private(set) var updateURL: URL?
     private(set) var mirrorPhase = MirrorPhase.idle
 
+    var installedVersion: String {
+        dependencies.installedVersion()
+    }
+
     var isOperatingWireless: Bool {
         wirelessOperation != .idle || isRestartingADB || autoWifiInProgress
     }
@@ -280,7 +284,7 @@ final class AppModel {
         Task {
             defer { checkingUpdates = false }
             do {
-                updateURL = try await dependencies.checkRelease(dependencies.installedVersion())
+                updateURL = try await dependencies.checkRelease(installedVersion)
                 updateMessage = updateURL == nil
                     ? String(localized: "DeskBridge is up to date.")
                     : String(localized: "A new version is available.")
